@@ -22,6 +22,7 @@ let package = Package(
             name: "MarkView",
             dependencies: ["MarkViewCore"],
             path: "Sources/MarkView",
+            exclude: ["Info.plist"],
             resources: [
                 .copy("Resources"),
             ]
@@ -53,6 +54,13 @@ let package = Package(
             dependencies: ["MarkViewCore"],
             path: "Tests/VisualTester",
             exclude: ["Goldens"]
+        ),
+        // Quick Look extension — renders .md files in Finder preview
+        .executableTarget(
+            name: "MarkViewQuickLook",
+            dependencies: ["MarkViewCore"],
+            path: "Sources/MarkViewQuickLook",
+            exclude: ["Info.plist"]
         ),
     ]
 )
