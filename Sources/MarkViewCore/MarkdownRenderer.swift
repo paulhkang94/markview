@@ -1,0 +1,74 @@
+import Foundation
+import cmark_gfm
+import cmark_gfm_extensions
+
+public final class MarkdownRenderer {
+
+    /// Render markdown string to GFM-compliant HTML
+    public static func renderHTML(from markdown: String) -> String {
+        // Register all GFM extensions — MUST call before using extensions
+        cmark_gfm_core_extensions_ensure_registered()
+
+        let options: Int32 = CMARK_OPT_UNSAFE | CMARK_OPT_SMART | CMARK_OPT_FOOTNOTES
+        guard let parser = cmark_parser_new(options) else { return "" }
+        defer { cmark_parser_free(parser) }
+
+        // Attach all GFM extensions
+        let extensionNames = ["table", "strikethrough", "autolink", "tagfilter", "tasklist"]
+        for name in extensionNames {
+            if let ext = cmark_find_syntax_extension(name) {
+                cmark_parser_attach_syntax_extension(parser, ext)
+            }
+        }
+
+        // Parse
+        cmark_parser_feed(parser, markdown, markdown.utf8.count)
+        guard let doc = cmark_parser_finish(parser) else { return "" }
+        defer { cmark_node_free(doc) }
+
+        // Render to HTML
+        guard let htmlPtr = cmark_render_html(
+            doc, options,
+            cmark_parser_get_syntax_extensions(parser)
+        ) else { return "" }
+        defer { free(htmlPtr) }
+
+        return String(cString: htmlPtr)
+    }
+
+    /// Wrap rendered HTML body in a full HTML document.
+    /// If a template is provided, replaces {{CONTENT}}. Otherwise uses built-in template.
+    public static func wrapInTemplate(_ bodyHTML: String, template: String? = nil) -> String {
+        if let template = template {
+            return template.replacingOccurrences(of: "{{CONTENT}}", with: bodyHTML)
+        }
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                :root { color-scheme: light dark; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
+                @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th { background: #161b22; } th, td { border-color: #30363d; } blockquote { border-left-color: #30363d; color: #8b949e; } hr { border-top-color: #30363d; } }
+                h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 0.3em; }
+                @media (prefers-color-scheme: dark) { h1, h2 { border-bottom-color: #30363d; } }
+                pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+                code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+                pre code { background: none; padding: 0; font-size: 100%; }
+                table { border-collapse: collapse; width: 100%; display: block; overflow: auto; }
+                th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
+                th { background: #f6f8fa; font-weight: 600; }
+                blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
+                img { max-width: 100%; }
+                input[type="checkbox"] { margin-right: 0.5em; }
+                hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+                a { color: #0969da; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body><article>\(bodyHTML)</article></body>
+        </html>
+        """
+    }
+}
