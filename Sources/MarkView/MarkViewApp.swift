@@ -111,6 +111,11 @@ struct MarkViewApp: App {
             CommandGroup(replacing: .newItem) {
                 Button(Strings.openFile) { openFile() }
                     .keyboardShortcut("o", modifiers: .command)
+
+                Button(Strings.closeWindow) {
+                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("w", modifiers: .command)
             }
 
             CommandGroup(replacing: .saveItem) {
