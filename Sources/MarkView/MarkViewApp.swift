@@ -43,6 +43,29 @@ struct MarkViewApp: App {
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             }
+
+            CommandGroup(after: .toolbar) {
+                Button("Increase Font Size") {
+                    let s = AppSettings.shared
+                    s.editorFontSize = min(s.editorFontSize + 1, 24)
+                    s.previewFontSize = min(s.previewFontSize + 1, 24)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Decrease Font Size") {
+                    let s = AppSettings.shared
+                    s.editorFontSize = max(s.editorFontSize - 1, 10)
+                    s.previewFontSize = max(s.previewFontSize - 1, 12)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Font Size") {
+                    let s = AppSettings.shared
+                    s.editorFontSize = 14
+                    s.previewFontSize = 16
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
         }
 
         Settings {

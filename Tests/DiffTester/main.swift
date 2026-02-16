@@ -6,24 +6,36 @@ import MarkViewCore
 
 print("=== MarkView Differential Tester ===")
 
-// Check if cmark-gfm is available
-let whichProcess = Process()
-whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-whichProcess.arguments = ["cmark-gfm"]
-let whichPipe = Pipe()
-whichProcess.standardOutput = whichPipe
-whichProcess.standardError = Pipe()
-try? whichProcess.run()
-whichProcess.waitUntilExit()
+// Check if cmark-gfm is available (check common locations)
+let cmarkCandidates = [
+    "/opt/homebrew/bin/cmark-gfm",
+    "/usr/local/bin/cmark-gfm",
+]
 
 let cmarkPath: String
-if whichProcess.terminationStatus == 0 {
-    cmarkPath = String(data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+if let found = cmarkCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+    cmarkPath = found
 } else {
-    print("⚠ cmark-gfm not found. Install with: brew install cmark-gfm")
-    print("  Skipping differential tests.")
-    exit(0)
+    // Fallback: try `which`
+    let whichProcess = Process()
+    whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    whichProcess.arguments = ["which", "cmark-gfm"]
+    let whichPipe = Pipe()
+    whichProcess.standardOutput = whichPipe
+    whichProcess.standardError = Pipe()
+    try? whichProcess.run()
+    whichProcess.waitUntilExit()
+
+    if whichProcess.terminationStatus == 0,
+       let path = String(data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+           .trimmingCharacters(in: .whitespacesAndNewlines),
+       !path.isEmpty {
+        cmarkPath = path
+    } else {
+        print("⚠ cmark-gfm not found. Install with: brew install cmark-gfm")
+        print("  Skipping differential tests.")
+        exit(0)
+    }
 }
 
 print("Using cmark-gfm at: \(cmarkPath)")
@@ -60,29 +72,35 @@ for file in fixtureFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponen
     // Render with MarkView
     let markviewHTML = MarkdownRenderer.renderHTML(from: markdown)
 
-    // Render with cmark-gfm CLI
+    // Render with cmark-gfm CLI (pass file path directly to avoid pipe deadlocks)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: cmarkPath)
     process.arguments = ["--to", "html", "--extension", "table", "--extension", "strikethrough",
                          "--extension", "autolink", "--extension", "tagfilter", "--extension", "tasklist",
-                         "--unsafe", "--smart"]
-    let inputPipe = Pipe()
+                         "--unsafe", "--smart", file.path]
     let outputPipe = Pipe()
-    process.standardInput = inputPipe
     process.standardOutput = outputPipe
     process.standardError = Pipe()
 
+    // Read output asynchronously to avoid pipe buffer deadlock
+    var outputData = Data()
+    outputPipe.fileHandleForReading.readabilityHandler = { handle in
+        outputData.append(handle.availableData)
+    }
+
     do {
         try process.run()
-        inputPipe.fileHandleForWriting.write(markdown.data(using: .utf8)!)
-        inputPipe.fileHandleForWriting.closeFile()
         process.waitUntilExit()
     } catch {
         print("  ⊘ \(name) (cmark-gfm failed: \(error))")
         continue
     }
 
-    let cmarkHTML = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+    outputPipe.fileHandleForReading.readabilityHandler = nil
+    // Read any remaining data
+    outputData.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+
+    let cmarkHTML = String(data: outputData, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
     // Normalize both outputs for comparison (whitespace-insensitive)

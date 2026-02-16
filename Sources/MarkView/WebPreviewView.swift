@@ -53,9 +53,10 @@ struct WebPreviewView: NSViewRepresentable {
         private func injectSettingsCSS(into html: String) -> String {
             var css = ""
 
-            // Preview width
+            // Preview width and font size
             let width = settings.previewWidth.cssValue
-            css += "body { max-width: \(width); }\n"
+            let fontSize = Int(settings.previewFontSize)
+            css += "body { max-width: \(width); font-size: \(fontSize)px; }\n"
 
             // Theme override
             switch settings.theme {
@@ -68,10 +69,14 @@ struct WebPreviewView: NSViewRepresentable {
                 css += "a { color: #58a6ff; }\n"
                 css += "code:not([class*=\"language-\"]) { background: #343942; }\n"
                 css += "pre { background: #161b22 !important; }\n"
-                css += "th { background: #161b22; }\n"
+                css += "th { background: #161b22; color: #e6edf3; }\n"
+                css += "td { color: #e6edf3; }\n"
                 css += "th, td { border-color: #30363d; }\n"
+                css += "tr:nth-child(2n) { background: #161b22; }\n"
                 css += "blockquote { border-left-color: #30363d; color: #8b949e; }\n"
+                css += "hr { border-top-color: #30363d; }\n"
                 css += "h1, h2 { border-bottom-color: #30363d; }\n"
+                css += "h6 { color: #8b949e; }\n"
             case .system:
                 break // Use CSS media query (default behavior)
             }
@@ -104,12 +109,19 @@ struct WebPreviewView: NSViewRepresentable {
                   let escapedContent = String(data: jsonData, encoding: .utf8) else { return }
 
             // Also update settings CSS
-            var css = "body { max-width: \(settings.previewWidth.cssValue); }"
+            var css = "body { max-width: \(settings.previewWidth.cssValue); font-size: \(Int(settings.previewFontSize))px; }"
             switch settings.theme {
             case .light:
                 css += " body { color: #1f2328; background: #fff; } :root { color-scheme: light; }"
             case .dark:
                 css += " body { color: #e6edf3; background: #0d1117; } :root { color-scheme: dark; }"
+                css += " a { color: #58a6ff; } code:not([class*=\"language-\"]) { background: #343942; }"
+                css += " pre { background: #161b22 !important; }"
+                css += " th { background: #161b22; color: #e6edf3; } td { color: #e6edf3; }"
+                css += " th, td { border-color: #30363d; } tr:nth-child(2n) { background: #161b22; }"
+                css += " blockquote { border-left-color: #30363d; color: #8b949e; }"
+                css += " hr { border-top-color: #30363d; } h1, h2 { border-bottom-color: #30363d; }"
+                css += " h6 { color: #8b949e; }"
             case .system:
                 break
             }

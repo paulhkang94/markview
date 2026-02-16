@@ -700,6 +700,65 @@ runner.test("full template dark mode CSS is complete") {
     try expect(full.contains("#30363d"), "Missing dark border color")
 }
 
+runner.test("dark mode CSS covers all styled elements") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+
+    // The dark mode media query must override every element that has a visible background/color in light mode
+    let requiredDarkOverrides = [
+        ("body", "body text/background"),
+        ("th", "table header"),
+        ("tr:nth-child(2n)", "alternating table rows"),
+        ("blockquote", "blockquote"),
+        ("hr", "horizontal rule"),
+        ("h1, h2", "heading borders"),
+        ("a {", "link color"),
+    ]
+
+    for (selector, description) in requiredDarkOverrides {
+        // Check the selector appears after the dark mode media query declaration
+        guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
+            throw TestError.assertionFailed("No dark mode media query found")
+        }
+        let afterDark = String(full[darkStart.upperBound...])
+        try expect(afterDark.contains(selector),
+                  "Dark mode missing override for \(description) ('\(selector)')")
+    }
+}
+
+runner.test("dark mode table has proper contrast") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+
+    // Table headers must have explicit text color in dark mode (not inherited default)
+    guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
+        throw TestError.assertionFailed("No dark mode media query found")
+    }
+    let afterDark = String(full[darkStart.upperBound...])
+
+    // th must have dark background (#161b22), not light (#f6f8fa)
+    try expect(afterDark.contains("th { background: #161b22") || afterDark.contains("th {background: #161b22"),
+              "Dark mode th missing dark background")
+
+    // Alternating rows must have dark background
+    try expect(afterDark.contains("tr:nth-child(2n) { background: #161b22") ||
+              afterDark.contains("tr:nth-child(2n) {background: #161b22"),
+              "Dark mode alternating rows missing dark background")
+}
+
+runner.test("dark mode table text is readable") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+
+    guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
+        throw TestError.assertionFailed("No dark mode media query found")
+    }
+    let afterDark = String(full[darkStart.upperBound...])
+
+    // Table cells must have light text color for dark backgrounds
+    try expect(afterDark.contains("th") && afterDark.contains("color: #e6edf3"),
+              "Dark mode table headers missing light text color")
+    try expect(afterDark.contains("td") && afterDark.contains("color: #e6edf3"),
+              "Dark mode table cells missing light text color")
+}
+
 // MARK: - Tier 3: Renderer Determinism Tests
 
 print("\n=== Tier 3: Renderer Determinism ===")

@@ -50,9 +50,8 @@ public final class MarkdownRenderer {
             <style>
                 :root { color-scheme: light dark; }
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
-                @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th { background: #161b22; } th, td { border-color: #30363d; } blockquote { border-left-color: #30363d; color: #8b949e; } hr { border-top-color: #30363d; } }
+                @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th { background: #161b22; color: #e6edf3; } td { color: #e6edf3; } th, td { border-color: #30363d; } tr:nth-child(2n) { background: #161b22; } blockquote { border-left-color: #30363d; color: #8b949e; } hr { border-top-color: #30363d; } h1, h2 { border-bottom-color: #30363d; } h6 { color: #8b949e; } }
                 h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 0.3em; }
-                @media (prefers-color-scheme: dark) { h1, h2 { border-bottom-color: #30363d; } }
                 pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
                 code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
                 pre code { background: none; padding: 0; font-size: 100%; }
