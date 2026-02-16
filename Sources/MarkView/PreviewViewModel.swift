@@ -36,7 +36,6 @@ final class PreviewViewModel: ObservableObject {
 
         loadTemplate()
         loadContent(from: path)
-        NSApplication.shared.mainWindow?.title = fileName
         watchFile(at: path)
         startAutoSaveTimer()
     }

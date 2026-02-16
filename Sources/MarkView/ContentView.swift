@@ -47,6 +47,7 @@ struct ContentView: View {
                 )
             }
         }
+        .navigationTitle(viewModel.fileName)
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 if viewModel.isLoaded {
@@ -98,6 +99,8 @@ struct ContentView: View {
                 return // duplicate closed, existing window activated
             }
             WindowFileTracker.shared.register(window: window, filePath: path)
+            // Single-window app: close any stale windows from previous file opens
+            WindowFileTracker.shared.closeOtherWindows(keeping: window)
         }
     }
 
@@ -156,8 +159,9 @@ struct DropTargetView: View {
         }
     }
 
-    private func isMarkdownFile(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "txt"].contains(ext)
-    }
+}
+
+private func isMarkdownFile(_ url: URL) -> Bool {
+    let ext = url.pathExtension.lowercased()
+    return ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "txt"].contains(ext)
 }

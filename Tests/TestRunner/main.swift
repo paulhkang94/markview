@@ -2377,6 +2377,102 @@ runner.test("window sizing uses animate: true for smooth transitions") {
 }
 
 // =============================================================================
+// MARK: - Window Title Tests
+// =============================================================================
+// Validates that window title stays in sync with the loaded file.
+// Bug: when opening a subsequent file, the title bar kept the old filename
+// because the imperative NSApplication.shared.mainWindow?.title could fail
+// silently when mainWindow was nil. Fix: use reactive .navigationTitle().
+
+print("\n=== Window Title Tests ===")
+
+runner.test("PreviewViewModel.fileName defaults to MarkView") {
+    try expect(viewModelSource.contains("fileName: String = \"MarkView\""),
+        "fileName should default to \"MarkView\"")
+}
+
+runner.test("loadFile sets fileName from path") {
+    // Verify loadFile extracts lastPathComponent
+    try expect(viewModelSource.contains("URL(fileURLWithPath: path).lastPathComponent"),
+        "loadFile must extract filename from path")
+}
+
+runner.test("no imperative mainWindow?.title in PreviewViewModel") {
+    // The old bug: NSApplication.shared.mainWindow?.title = fileName
+    // This fails silently when mainWindow is nil (e.g. after open panel dismisses)
+    try expect(!viewModelSource.contains("mainWindow?.title"),
+        "must NOT use imperative mainWindow?.title — use reactive .navigationTitle() instead")
+    try expect(!viewModelSource.contains("mainWindow!.title"),
+        "must NOT use forced mainWindow!.title")
+}
+
+runner.test("ContentView uses reactive .navigationTitle for window title") {
+    try expect(contentSource.contains(".navigationTitle(viewModel.fileName)"),
+        "ContentView must use .navigationTitle(viewModel.fileName) for reactive title updates")
+}
+
+runner.test("fileName updates correctly for various file paths") {
+    // Simulate the URL(fileURLWithPath:).lastPathComponent extraction
+    let testCases: [(path: String, expected: String)] = [
+        ("/Users/test/docs/README.md", "README.md"),
+        ("/Users/test/flow-business-plan.md", "flow-business-plan.md"),
+        ("/Users/test/docs/personal/prioritized-action-items.md", "prioritized-action-items.md"),
+        ("/tmp/test.md", "test.md"),
+        ("/Users/test/My Documents/notes.md", "notes.md"),
+    ]
+    for (path, expected) in testCases {
+        let result = URL(fileURLWithPath: path).lastPathComponent
+        try expect(result == expected,
+            "fileName for '\(path)' should be '\(expected)', got '\(result)'")
+    }
+}
+
+runner.test("sequential file loads produce different fileNames") {
+    // Simulate the exact scenario from the bug: open file A, then open file B
+    // The fileName property must change each time
+    let fileA = "/Users/test/flow-business-plan.md"
+    let fileB = "/Users/test/docs/personal/prioritized-action-items.md"
+
+    let nameA = URL(fileURLWithPath: fileA).lastPathComponent
+    let nameB = URL(fileURLWithPath: fileB).lastPathComponent
+
+    try expect(nameA == "flow-business-plan.md", "first file name wrong: \(nameA)")
+    try expect(nameB == "prioritized-action-items.md", "second file name wrong: \(nameB)")
+    try expect(nameA != nameB, "sequential file loads must produce different fileNames")
+}
+
+runner.test("onChange(of: initialFilePath) triggers loadFile for subsequent opens") {
+    // ContentView must watch for changes to initialFilePath and reload
+    try expect(contentSource.contains(".onChange(of: initialFilePath)"),
+        "ContentView must observe initialFilePath changes to handle subsequent file opens")
+    // The onChange handler must call loadFile
+    let onChangeSection: String
+    if let start = contentSource.range(of: ".onChange(of: initialFilePath)"),
+       let end = contentSource.range(of: ".onAppear", range: start.upperBound..<contentSource.endIndex) {
+        onChangeSection = String(contentSource[start.lowerBound..<end.lowerBound])
+    } else {
+        onChangeSection = ""
+    }
+    try expect(onChangeSection.contains("loadFile"),
+        "onChange(of: initialFilePath) must call viewModel.loadFile()")
+}
+
+runner.test("no duplicate title-setting mechanisms") {
+    // Ensure there's exactly ONE mechanism for window titles: .navigationTitle
+    // No leftover AppKit title-setting code
+    let appKitTitlePatterns = [
+        "window.title =",
+        "window?.title =",
+        ".title = fileName",
+        "mainWindow?.title",
+    ]
+    for pattern in appKitTitlePatterns {
+        try expect(!viewModelSource.contains(pattern),
+            "PreviewViewModel must not contain AppKit title pattern: '\(pattern)'")
+    }
+}
+
+// =============================================================================
 // MARK: — Launch Behavior Tests
 // =============================================================================
 // Validates that the app launch UX is correct:

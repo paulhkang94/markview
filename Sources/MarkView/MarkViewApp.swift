@@ -34,6 +34,24 @@ final class WindowFileTracker {
         }
         return false
     }
+
+    /// Single-window enforcement: close all other content windows.
+    /// Iterates NSApplication.shared.windows directly (not just tracked IDs)
+    /// to catch windows that were created by SwiftUI but never tracked.
+    func closeOtherWindows(keeping window: NSWindow) {
+        let keepID = ObjectIdentifier(window)
+        // Clean up tracker entries for other windows
+        for (id, _) in windowToPath where id != keepID {
+            windowToPath.removeValue(forKey: id)
+        }
+        // Close all other visible content windows (skip settings, panels, etc.)
+        for w in NSApplication.shared.windows where w !== window {
+            // Only close standard titled windows (not settings sheets, panels, etc.)
+            if w.styleMask.contains(.titled) && !w.styleMask.contains(.utilityWindow) && w.level == .normal {
+                w.close()
+            }
+        }
+    }
 }
 
 @main
@@ -188,7 +206,7 @@ extension Notification.Name {
 /// Sends performFindPanelAction: through the responder chain using a tagged NSMenuItem.
 /// NSTextView's find bar uses the sender's tag to determine which action to perform.
 enum FindHelper {
-    static func send(_ action: NSFindPanelAction, replace: Bool = false) {
+    @MainActor static func send(_ action: NSFindPanelAction, replace: Bool = false) {
         let item = NSMenuItem()
         item.tag = Int(action.rawValue)
         NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item)
