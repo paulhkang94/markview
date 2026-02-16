@@ -6,11 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+# Pin Swift 6.2 across all jobs to match local dev (macOS 15 ships Swift 6.0
+# which has stricter/different concurrency rules than 6.2).
+env:
+  SWIFT_VERSION: "6.2"
+
 jobs:
   build-and-test:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Build
         run: swift build
@@ -27,6 +36,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
       - name: Build fuzz tester
         run: swift build
 
@@ -40,6 +53,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
       - name: Build diff tester
         run: swift build
 
@@ -52,6 +69,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
       - name: Generate visual goldens
         run: swift run MarkViewVisualTester --generate-goldens
 
@@ -63,6 +84,10 @@ jobs:
     needs: build-and-test
     steps:
       - uses: actions/checkout@v4
+
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Regenerate goldens
         run: swift run MarkViewTestRunner --generate-goldens
