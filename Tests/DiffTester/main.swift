@@ -82,12 +82,6 @@ for file in fixtureFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponen
     process.standardOutput = outputPipe
     process.standardError = Pipe()
 
-    // Read output asynchronously to avoid pipe buffer deadlock
-    var outputData = Data()
-    outputPipe.fileHandleForReading.readabilityHandler = { handle in
-        outputData.append(handle.availableData)
-    }
-
     do {
         try process.run()
         process.waitUntilExit()
@@ -96,9 +90,7 @@ for file in fixtureFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponen
         continue
     }
 
-    outputPipe.fileHandleForReading.readabilityHandler = nil
-    // Read any remaining data
-    outputData.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
 
     let cmarkHTML = String(data: outputData, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

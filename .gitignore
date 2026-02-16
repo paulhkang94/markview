@@ -32,5 +32,8 @@ CLAUDE.md
 docs/LAUNCH-PLAN.md
 docs/MARKET-ANALYSIS.md
 
+# Release artifacts
+*.tar.gz
+
 # Personal/private docs
 docs/personal/

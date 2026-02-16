@@ -3,7 +3,7 @@ import Foundation
 /// Local-first, opt-in usage metrics.
 /// All data stays on disk at ~/Library/Application Support/MarkView/metrics.json.
 /// Never transmitted anywhere — purely for the user's own insight.
-public final class MetricsCollector {
+public final class MetricsCollector: @unchecked Sendable {
     public static let shared = MetricsCollector()
 
     private var isEnabled: Bool = false

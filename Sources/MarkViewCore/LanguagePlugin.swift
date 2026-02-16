@@ -18,7 +18,7 @@ public protocol LanguagePlugin {
 
 // MARK: - Plugin Registry
 
-public final class PluginRegistry {
+public final class PluginRegistry: @unchecked Sendable {
     public static let shared = PluginRegistry()
 
     private var plugins: [String: LanguagePlugin] = [:]

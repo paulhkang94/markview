@@ -6,6 +6,11 @@ cd "$PROJECT_DIR"
 
 echo "=== MarkView Verification ==="
 
+# Version sync check
+echo ""
+echo "--- Version Sync ---"
+bash "$PROJECT_DIR/scripts/check-version-sync.sh"
+
 # Tier 0: Build all targets
 echo ""
 echo "--- Tier 0: Build ---"

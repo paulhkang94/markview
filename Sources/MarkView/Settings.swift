@@ -57,6 +57,7 @@ enum TabBehavior: String, CaseIterable, Identifiable {
 // MARK: - Settings Model
 
 /// Persistent user settings stored in UserDefaults.
+@MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 

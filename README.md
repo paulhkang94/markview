@@ -24,12 +24,20 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 
 ## Installation
 
-### Prerequisites
+### Homebrew (recommended)
 
-- macOS 13+ (Ventura or later)
-- Swift 6.1+ (included with Xcode Command Line Tools)
+```bash
+# Full .app with Quick Look extension
+brew install --cask paulhkang94/markview/markview
+
+# CLI only (builds from source)
+brew tap paulhkang94/markview
+brew install markview
+```
 
 ### Build from source
+
+**Prerequisites:** macOS 13+, Swift 6.1+ (included with Xcode Command Line Tools)
 
 ```bash
 git clone https://github.com/paulhkang94/markview.git
@@ -72,6 +80,37 @@ Right-click any `.md`, `.markdown`, `.mdown`, `.mkd` file > **Open With** > **Ma
 open -a MarkView README.md
 ```
 
+## MCP Server (AI Integration)
+
+MarkView includes an MCP (Model Context Protocol) server for AI-powered workflows. It lets AI assistants like Claude preview markdown files directly in MarkView.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `preview_markdown` | Write content to a temp file and open it in MarkView |
+| `open_file` | Open an existing `.md` file in MarkView |
+
+### Claude Desktop Setup
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "markview": {
+      "command": "/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+    }
+  }
+}
+```
+
+### Test the MCP server
+
+```bash
+bash scripts/test-mcp.sh
+```
+
 ## Architecture
 
 ```
@@ -90,10 +129,14 @@ Sources/MarkView/               # SwiftUI app (macOS 13+)
   Settings.swift                # 17 settings with theme/width/font enums
   ExportManager.swift           # HTML/PDF export
 
+Sources/MarkViewMCPServer/      # MCP server for AI tool integration
+  main.swift                    # stdio JSON-RPC server (preview_markdown, open_file)
+
 Tests/TestRunner/               # 178 standalone tests (no XCTest)
 Tests/VisualTester/             # 19 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
+scripts/test-mcp.sh             # 29 MCP protocol + integration tests
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
@@ -101,7 +144,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (178 tests)
+# Run all tests (276 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + tests)

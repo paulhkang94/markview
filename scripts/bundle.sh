@@ -66,6 +66,17 @@ else
     echo "⚠ Quick Look extension binary not found — skipping"
 fi
 
+# Step 6c: Embed MCP server binary
+MCP_NAME="MarkViewMCPServer"
+MCP_BIN_NAME="markview-mcp-server"
+echo "--- Embedding MCP server ---"
+if [ -f "$BUILD_DIR/$MCP_NAME" ]; then
+    cp "$BUILD_DIR/$MCP_NAME" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME"
+    codesign -s - -f "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME" 2>/dev/null && echo "✓ MCP server embedded and signed" || echo "✓ MCP server embedded (unsigned)"
+else
+    echo "⚠ MCP server binary not found — skipping (build with: swift build -c release --product MarkViewMCPServer)"
+fi
+
 echo ""
 echo "✓ Bundle created at: $APP_DIR"
 

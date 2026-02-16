@@ -21,7 +21,7 @@ swift run MarkView test.md  # Open a specific file
 ## Running Tests
 
 ```bash
-# Core test suite (178 tests)
+# Core test suite (276 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + core tests)

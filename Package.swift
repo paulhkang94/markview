@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.1
 import PackageDescription
 
 let package = Package(
@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     dependencies: [
         .package(url: "https://github.com/apple/swift-cmark", from: "0.4.0"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.10.0"),
     ],
     targets: [
         // Core library with renderer and file watcher (no UI dependencies for testability)
@@ -26,6 +27,15 @@ let package = Package(
             resources: [
                 .copy("Resources"),
             ]
+        ),
+        // MCP server — stdio JSON-RPC server for AI tool integration
+        .executableTarget(
+            name: "MarkViewMCPServer",
+            dependencies: [
+                "MarkViewCore",
+                .product(name: "MCP", package: "swift-sdk"),
+            ],
+            path: "Sources/MarkViewMCPServer"
         ),
         // Test runner (standalone executable — no XCTest dependency)
         .executableTarget(

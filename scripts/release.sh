@@ -57,10 +57,24 @@ BUILD_NUMBER=$(git rev-list --count HEAD)
 BUILD_NUMBER=$((BUILD_NUMBER + 1))  # +1 for the upcoming commit
 echo "Build number: $BUILD_NUMBER"
 
-# Step 4: Update Info.plist
+# Step 4: Update all version sources
 plutil -replace CFBundleShortVersionString -string "$NEW_VERSION" "$PLIST"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$PLIST"
 echo "Updated Info.plist"
+
+# Quick Look Info.plist
+QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
+if [ -f "$QL_PLIST" ]; then
+    plutil -replace CFBundleShortVersionString -string "$NEW_VERSION" "$QL_PLIST"
+    echo "Updated QuickLook Info.plist"
+fi
+
+# MCP server version
+MCP_MAIN="$PROJECT_DIR/Sources/MarkViewMCPServer/main.swift"
+if [ -f "$MCP_MAIN" ]; then
+    sed -i '' "s/version: \"[0-9]*\.[0-9]*\.[0-9]*\"/version: \"$NEW_VERSION\"/" "$MCP_MAIN"
+    echo "Updated MCP server version"
+fi
 
 # Step 5: Run tests (unless --skip-tests)
 if [ "$SKIP_TESTS" = false ]; then

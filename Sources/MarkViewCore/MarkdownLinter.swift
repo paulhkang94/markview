@@ -24,7 +24,7 @@ public struct LintDiagnostic: Equatable {
     }
 }
 
-public enum LintRule: String, CaseIterable {
+public enum LintRule: String, CaseIterable, Sendable {
     case inconsistentHeadings = "inconsistent-headings"
     case trailingWhitespace = "trailing-whitespace"
     case missingBlankLines = "missing-blank-lines"

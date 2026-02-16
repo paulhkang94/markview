@@ -2,7 +2,7 @@ import Foundation
 
 /// Watches a file for changes using DispatchSource.
 /// Handles atomic saves (write-to-temp + rename) used by VS Code, Vim, etc.
-public final class FileWatcher {
+public final class FileWatcher: @unchecked Sendable {
     private let path: String
     private let onChange: () -> Void
     private var source: DispatchSourceFileSystemObject?
