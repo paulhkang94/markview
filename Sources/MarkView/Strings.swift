@@ -1,4 +1,5 @@
 import Foundation
+import MarkViewCore
 
 /// Centralized user-facing strings. Swap to NSLocalizedString when adding languages.
 enum Strings {
@@ -79,6 +80,42 @@ enum Strings {
     static func linesA11y(_ count: Int) -> String { "\(count) lines" }
     static func fontSizeA11y(_ size: Int) -> String { "\(size) points" }
     static func autoSaveIntervalA11y(_ seconds: Int) -> String { "\(seconds) seconds" }
+
+    // MARK: - Save & Format
+    static let saveDocument = "Save"
+    static let formatOnSave = "Format on Save"
+    static let formatOnSaveHint = "Auto-fix trailing whitespace and add missing blank lines when saving"
+
+    // MARK: - Find Menu
+    static let find = "Find..."
+    static let findAndReplace = "Find and Replace..."
+    static let findNext = "Find Next"
+    static let findPrevious = "Find Previous"
+    static let useSelectionForFind = "Use Selection for Find"
+
+    // MARK: - Lint Popover
+    static let lintClickHint = "Click to view lint diagnostics"
+    static let lintFixAll = "Fix All"
+    static let lintFixAllHint = "Auto-fix trailing whitespace and missing blank lines"
+    static let lintPopoverTitle = "Diagnostics"
+    static let lintPopoverA11yLabel = "Lint diagnostics panel"
+    static func lintA11yLabel(errors: Int, warnings: Int) -> String {
+        var parts: [String] = []
+        if errors > 0 { parts.append("\(errors) \(errors == 1 ? "error" : "errors")") }
+        if warnings > 0 { parts.append("\(warnings) \(warnings == 1 ? "warning" : "warnings")") }
+        return parts.joined(separator: ", ")
+    }
+    static func lintDiagnosticCount(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "issue" : "issues")"
+    }
+    static func lintLocation(line: Int, column: Int) -> String {
+        "L\(line):\(column)"
+    }
+    static func lintDiagnosticA11y(_ d: LintDiagnostic) -> String {
+        var label = "\(d.severity.rawValue): \(d.message) at line \(d.line)"
+        if let fix = d.fix { label += ". Suggestion: \(fix)" }
+        return label
+    }
 
     // MARK: - Document
     static let untitled = "Untitled"

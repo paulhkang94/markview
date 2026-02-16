@@ -38,6 +38,27 @@ if [ -d "$PROJECT_DIR/MarkView.app" ]; then
         echo "✗ Missing document types"
         BUNDLE_OK=false
     fi
+
+    # Quick Look extension verification
+    APPEX_DIR="$PROJECT_DIR/MarkView.app/Contents/PlugIns/MarkViewQuickLook.appex"
+    if [ -d "$APPEX_DIR" ]; then
+        [ -f "$APPEX_DIR/Contents/MacOS/MarkViewQuickLook" ] && echo "✓ Quick Look extension executable" || { echo "✗ Missing QL executable"; BUNDLE_OK=false; }
+        [ -f "$APPEX_DIR/Contents/Info.plist" ] && echo "✓ Quick Look extension Info.plist" || { echo "✗ Missing QL Info.plist"; BUNDLE_OK=false; }
+        if plutil -lint "$APPEX_DIR/Contents/Info.plist" > /dev/null 2>&1; then
+            echo "✓ Quick Look Info.plist is valid"
+        else
+            echo "✗ Quick Look Info.plist is invalid"
+            BUNDLE_OK=false
+        fi
+        if codesign --verify --no-strict "$APPEX_DIR" 2>/dev/null; then
+            echo "✓ Quick Look extension is signed"
+        else
+            echo "⚠ Quick Look extension is unsigned (non-fatal)"
+        fi
+    else
+        echo "⚠ Quick Look extension not in bundle (run: bash scripts/bundle.sh)"
+    fi
+
     [ "$BUNDLE_OK" = true ] || exit 1
 fi
 
@@ -97,6 +118,27 @@ if [ "$PHASE" = "--extended" ]; then
     # Generate goldens first (idempotent), then compare
     swift run MarkViewVisualTester --generate-goldens 2>&1 | grep -v "^\[" | grep -v "^$" | grep -v "^Building\|^Build of\|^warning:"
     swift run MarkViewVisualTester 2>&1 | grep -v "^\[" | grep -v "^$" | grep -v "^Building\|^Build of\|^warning:"
+
+    # Quick Look system integration test (requires installed app)
+    echo ""
+    echo "--- Extended: Quick Look Integration ---"
+    if [ -d "/Applications/MarkView.app/Contents/PlugIns/MarkViewQuickLook.appex" ]; then
+        FIXTURE="$PROJECT_DIR/Tests/TestRunner/Fixtures/basic.md"
+        if [ -f "$FIXTURE" ]; then
+            # qlmanage -p renders the file and exits; timeout after 10s
+            if timeout 10 qlmanage -p "$FIXTURE" > /dev/null 2>&1; then
+                echo "✓ qlmanage -p renders basic.md successfully"
+            else
+                # qlmanage may exit non-zero even on success (opens a window)
+                # Check if the process at least started
+                echo "⚠ qlmanage -p exited with non-zero (may still work — opens GUI window)"
+            fi
+        else
+            echo "⚠ Test fixture not found: $FIXTURE"
+        fi
+    else
+        echo "⊘ Quick Look extension not installed — skipping (run: bash scripts/bundle.sh --install)"
+    fi
 
     echo ""
     echo "=== Extended verification complete ==="

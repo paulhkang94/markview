@@ -11,6 +11,7 @@ final class PreviewViewModel: ObservableObject {
     @Published var externalChangeConflict: Bool = false
     @Published var lintWarnings: Int = 0
     @Published var lintErrors: Int = 0
+    @Published var lintDiagnostics: [LintDiagnostic] = []
 
     var currentFilePath: String?
     var fileName: String = "MarkView"
@@ -24,6 +25,7 @@ final class PreviewViewModel: ObservableObject {
     private var fileWatcher: FileWatcher?
     private var renderTask: Task<Void, Never>?
     private var lintTask: Task<Void, Never>?
+    private var autoSaveTimer: Timer?
     private var template: String?
     private var originalContent: String = ""
     private let linter = MarkdownLinter()
@@ -36,6 +38,7 @@ final class PreviewViewModel: ObservableObject {
         loadTemplate()
         loadContent(from: path)
         watchFile(at: path)
+        startAutoSaveTimer()
     }
 
     func contentDidChange(_ newText: String) {
@@ -51,11 +54,40 @@ final class PreviewViewModel: ObservableObject {
         externalChangeConflict = false
     }
 
+    func autoFixLint() {
+        let fixed = linter.autoFix(editorContent)
+        guard fixed != editorContent else { return }
+        editorContent = fixed
+        isDirty = fixed != originalContent
+        renderImmediate(fixed)
+        runLint(fixed)
+    }
+
     func save() throws {
         guard let path = currentFilePath else { return }
+        if AppSettings.shared.formatOnSave {
+            autoFixLint()
+        }
         try editorContent.write(toFile: path, atomically: true, encoding: .utf8)
         originalContent = editorContent
         isDirty = false
+    }
+
+    func startAutoSaveTimer() {
+        stopAutoSaveTimer()
+        guard AppSettings.shared.autoSave else { return }
+        let interval = AppSettings.shared.autoSaveInterval
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isDirty else { return }
+                try? self.save()
+            }
+        }
+    }
+
+    func stopAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
     }
 
     // MARK: - Private
@@ -101,6 +133,7 @@ final class PreviewViewModel: ObservableObject {
 
     private func runLint(_ markdown: String) {
         let diagnostics = linter.lint(markdown)
+        lintDiagnostics = diagnostics
         lintWarnings = diagnostics.filter { $0.severity == .warning }.count
         lintErrors = diagnostics.filter { $0.severity == .error }.count
     }
@@ -122,5 +155,6 @@ final class PreviewViewModel: ObservableObject {
 
     deinit {
         fileWatcher?.stop()
+        autoSaveTimer?.invalidate()
     }
 }

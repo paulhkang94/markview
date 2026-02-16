@@ -80,6 +80,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("windowRestore") var windowRestore: Bool = true
     @AppStorage("lineHighlight") var lineHighlight: Bool = false
     @AppStorage("minimapEnabled") var minimapEnabled: Bool = false
+    @AppStorage("formatOnSave") var formatOnSave: Bool = true
 
     var theme: AppTheme {
         get { AppTheme(rawValue: themeRaw) ?? .system }
@@ -157,6 +158,8 @@ struct SettingsView: View {
                 Toggle(Strings.spellCheck, isOn: $settings.spellCheck)
                 Toggle(Strings.highlightCurrentLine, isOn: $settings.lineHighlight)
                 Toggle(Strings.showMinimap, isOn: $settings.minimapEnabled)
+                Toggle(Strings.formatOnSave, isOn: $settings.formatOnSave)
+                    .help(Strings.formatOnSaveHint)
 
                 Picker(Strings.tabBehavior, selection: Binding(
                     get: { settings.tabBehavior },

@@ -371,6 +371,50 @@ public final class MarkdownLinter {
         return diagnostics
     }
 
+    // MARK: - Auto-Fix
+
+    /// Rules that can be safely auto-fixed without changing document semantics.
+    public static let autoFixableRules: Set<LintRule> = [
+        .trailingWhitespace,
+        .missingBlankLines,
+    ]
+
+    /// Apply automatic fixes for safe rules. Returns the fixed markdown.
+    /// Only fixes trailing whitespace and missing blank lines — these are
+    /// semantics-preserving and safe to apply without user review.
+    public func autoFix(_ markdown: String) -> String {
+        var lines = markdown.components(separatedBy: "\n")
+
+        // Fix trailing whitespace (preserve 2-space line breaks)
+        for i in 0..<lines.count {
+            let trimmed = lines[i].replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
+            let trailingCount = lines[i].count - trimmed.count
+            if trailingCount > 0 && trailingCount != 2 {
+                lines[i] = trimmed
+            }
+        }
+
+        // Fix missing blank lines before headings (insert blank lines, iterate in reverse to preserve indices)
+        var inFence = false
+        var insertions: [Int] = []
+        for (i, line) in lines.enumerated() {
+            if line.hasPrefix("```") { inFence.toggle(); continue }
+            if inFence { continue }
+
+            if headingLevel(line) != nil && i > 0 {
+                let prev = lines[i - 1]
+                if !prev.trimmingCharacters(in: .whitespaces).isEmpty && headingLevel(prev) == nil && !prev.hasPrefix("```") {
+                    insertions.append(i)
+                }
+            }
+        }
+        for idx in insertions.reversed() {
+            lines.insert("", at: idx)
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Helpers
 
     private func headingLevel(_ line: String) -> Int? {

@@ -48,6 +48,24 @@ echo "✓ Info.plist copied"
 # Step 6: Create PkgInfo
 echo -n "APPL????" > "$APP_DIR/Contents/PkgInfo"
 
+# Step 6b: Embed Quick Look extension (.appex)
+QL_NAME="MarkViewQuickLook"
+QL_APPEX_DIR="$APP_DIR/Contents/PlugIns/$QL_NAME.appex"
+QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
+
+echo "--- Embedding Quick Look extension ---"
+mkdir -p "$QL_APPEX_DIR/Contents/MacOS"
+
+if [ -f "$BUILD_DIR/$QL_NAME" ]; then
+    cp "$BUILD_DIR/$QL_NAME" "$QL_APPEX_DIR/Contents/MacOS/$QL_NAME"
+    cp "$QL_PLIST" "$QL_APPEX_DIR/Contents/Info.plist"
+    echo -n "XPC!????" > "$QL_APPEX_DIR/Contents/PkgInfo"
+    # Sign extension before parent app (signing order matters)
+    codesign -s - -f "$QL_APPEX_DIR" 2>/dev/null && echo "✓ Quick Look extension embedded and signed" || echo "✓ Quick Look extension embedded (unsigned)"
+else
+    echo "⚠ Quick Look extension binary not found — skipping"
+fi
+
 echo ""
 echo "✓ Bundle created at: $APP_DIR"
 
@@ -72,6 +90,12 @@ if grep -q "CFBundleDocumentTypes" "$APP_DIR/Contents/Info.plist"; then
 else
     echo "  ✗ Missing document types"
     VALID=false
+fi
+
+if [ -f "$QL_APPEX_DIR/Contents/MacOS/$QL_NAME" ]; then
+    echo "  ✓ Quick Look extension exists"
+else
+    echo "  ⚠ Quick Look extension missing (non-fatal)"
 fi
 
 if [ "$VALID" = true ]; then
@@ -99,6 +123,13 @@ if [ "${1:-}" = "--install" ]; then
         echo "✓ Registered with Launch Services"
     fi
 
+    # Register Quick Look extension with pluginkit
+    QL_INSTALLED="$INSTALL_DIR/Contents/PlugIns/MarkViewQuickLook.appex"
+    if [ -d "$QL_INSTALLED" ]; then
+        pluginkit -a "$QL_INSTALLED" 2>/dev/null && echo "✓ Quick Look extension registered" || echo "⚠ Quick Look extension registration failed (needs Developer ID for Finder spacebar — use qlmanage -p to test)"
+    fi
+
     echo ""
     echo "Done! Right-click any .md file → Open With → MarkView"
+    echo "Test Quick Look: qlmanage -p /path/to/file.md"
 fi

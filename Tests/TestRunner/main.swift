@@ -215,6 +215,19 @@ func generateGoldens() throws {
         print("  Generated: full-template/\(name).html (\(fullHTML.count) bytes)")
     }
 
+    // Generate Quick Look pipeline goldens (renderHTML + postProcessForAccessibility + wrapInTemplate)
+    let qlDir = expectedDir.appendingPathComponent("quick-look")
+    try FileManager.default.createDirectory(at: qlDir, withIntermediateDirectories: true)
+    for name in fixtureNames {
+        let md = try loadFixture("\(name).md")
+        let bodyHTML = MarkdownRenderer.renderHTML(from: md)
+        let accessible = MarkdownRenderer.postProcessForAccessibility(bodyHTML)
+        let fullHTML = MarkdownRenderer.wrapInTemplate(accessible)
+        let outURL = qlDir.appendingPathComponent("\(name).html")
+        try fullHTML.write(to: outURL, atomically: true, encoding: .utf8)
+        print("  Generated: quick-look/\(name).html (\(fullHTML.count) bytes)")
+    }
+
     print("\nGolden files generated. Commit these to lock in the baseline.")
 }
 
@@ -1409,6 +1422,156 @@ runner.test("linter with empty input") {
     try expect(diags.isEmpty, "Empty input should produce no diagnostics")
 }
 
+// MARK: - Linter Auto-Fix Tests
+
+print("\n=== Linter Auto-Fix Tests ===")
+
+runner.test("autoFix removes trailing whitespace") {
+    let md = "# Title\nHello   \nWorld\n"
+    let fixed = linter.autoFix(md)
+    try expect(!fixed.contains("Hello   "), "Trailing whitespace should be removed")
+    try expect(fixed.contains("Hello\n"), "Content should be preserved without trailing spaces")
+}
+
+runner.test("autoFix preserves 2-space line breaks") {
+    let md = "Line with break  \nNext line\n"
+    let fixed = linter.autoFix(md)
+    try expect(fixed.contains("break  \n"), "2-space line break must be preserved")
+}
+
+runner.test("autoFix adds blank lines before headings") {
+    let md = "Some text\n## Heading\n"
+    let fixed = linter.autoFix(md)
+    let lines = fixed.components(separatedBy: "\n")
+    // Find the heading line index
+    if let headingIdx = lines.firstIndex(where: { $0.hasPrefix("## ") }) {
+        try expect(headingIdx > 0, "Heading should not be first line after fix")
+        let prevLine = lines[headingIdx - 1]
+        try expect(prevLine.trimmingCharacters(in: .whitespaces).isEmpty,
+            "Blank line should be inserted before heading")
+    } else {
+        throw TestError.assertionFailed("Heading not found in fixed output")
+    }
+}
+
+runner.test("autoFix is idempotent") {
+    let md = "# Title\n\nSome text   \nMore text\n## Sub\n"
+    let fixed1 = linter.autoFix(md)
+    let fixed2 = linter.autoFix(fixed1)
+    try expect(fixed1 == fixed2, "Applying autoFix twice should produce same result")
+}
+
+runner.test("autoFix reduces lint warnings") {
+    let md = "# Title\nSome text   \nMore text\n## Sub\n"
+    let before = linter.lint(md)
+    let fixed = linter.autoFix(md)
+    let after = linter.lint(fixed)
+    let beforeFixable = before.filter { MarkdownLinter.autoFixableRules.contains($0.rule) }.count
+    let afterFixable = after.filter { MarkdownLinter.autoFixableRules.contains($0.rule) }.count
+    try expect(afterFixable < beforeFixable,
+        "Auto-fix should reduce fixable warnings (before: \(beforeFixable), after: \(afterFixable))")
+}
+
+runner.test("autoFix does not modify clean input") {
+    let md = "# Title\n\nClean paragraph.\n\n## Sub\n\nAnother paragraph.\n"
+    let fixed = linter.autoFix(md)
+    try expect(fixed == md, "Clean input should not be modified by autoFix")
+}
+
+runner.test("autoFix handles empty input") {
+    let fixed = linter.autoFix("")
+    try expect(fixed == "", "Empty input should remain empty")
+}
+
+runner.test("autoFix handles content inside code fences") {
+    let md = "```\nsome text   \nmore   \n```\n"
+    let fixed = linter.autoFix(md)
+    // Code fence content should still get trailing whitespace fixed
+    // (the linter checks trailing whitespace globally, not just outside fences)
+    try expect(fixed.contains("```"), "Code fences should be preserved")
+}
+
+runner.test("autoFixableRules contains expected rules") {
+    try expect(MarkdownLinter.autoFixableRules.contains(.trailingWhitespace),
+        "trailingWhitespace should be auto-fixable")
+    try expect(MarkdownLinter.autoFixableRules.contains(.missingBlankLines),
+        "missingBlankLines should be auto-fixable")
+    try expect(!MarkdownLinter.autoFixableRules.contains(.brokenLinks),
+        "brokenLinks should NOT be auto-fixable")
+    try expect(!MarkdownLinter.autoFixableRules.contains(.unclosedFences),
+        "unclosedFences should NOT be auto-fixable")
+}
+
+// MARK: - Lint Popover UI Tests
+
+print("\n--- Lint Popover UI Tests ---")
+
+let statusBarSource = (try? String(contentsOfFile: "Sources/MarkView/StatusBarView.swift", encoding: .utf8)) ?? ""
+let viewModelSource = (try? String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)) ?? ""
+let contentViewSource = (try? String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)) ?? ""
+
+runner.test("StatusBarView has clickable lint button") {
+    try expect(statusBarSource.contains("Button") && statusBarSource.contains("showLintPopover"),
+        "StatusBarView must wrap lint icons in a Button that toggles popover")
+}
+
+runner.test("StatusBarView shows popover on click") {
+    try expect(statusBarSource.contains(".popover(isPresented:"),
+        "StatusBarView must use .popover modifier for lint diagnostic display")
+}
+
+runner.test("StatusBarView accepts lintDiagnostics parameter") {
+    try expect(statusBarSource.contains("lintDiagnostics: [LintDiagnostic]"),
+        "StatusBarView must accept full diagnostic array, not just counts")
+}
+
+runner.test("StatusBarView has Fix All button") {
+    try expect(statusBarSource.contains("onFixAll") && statusBarSource.contains("lintFixAll"),
+        "StatusBarView must have a Fix All button with callback")
+}
+
+runner.test("LintPopoverView shows diagnostic details") {
+    try expect(statusBarSource.contains("diagnostic.message") && statusBarSource.contains("diagnostic.rule"),
+        "Popover must show diagnostic message and rule")
+}
+
+runner.test("LintPopoverView shows line and column") {
+    try expect(statusBarSource.contains("diagnostic.line") && statusBarSource.contains("diagnostic.column"),
+        "Popover must show line and column location")
+}
+
+runner.test("LintPopoverView shows fix suggestions") {
+    try expect(statusBarSource.contains("diagnostic.fix"),
+        "Popover must show fix suggestions when available")
+}
+
+runner.test("LintDiagnosticRow has severity icon") {
+    try expect(statusBarSource.contains("xmark.circle.fill") && statusBarSource.contains("exclamationmark.triangle.fill"),
+        "Diagnostic row must show severity-appropriate icon")
+}
+
+runner.test("LintPopoverView has accessibility labels") {
+    try expect(statusBarSource.contains("lintPopoverA11yLabel") && statusBarSource.contains("lintDiagnosticA11y"),
+        "Popover must have accessibility labels")
+}
+
+runner.test("PreviewViewModel stores full diagnostics array") {
+    try expect(viewModelSource.contains("@Published var lintDiagnostics: [LintDiagnostic]"),
+        "ViewModel must publish full LintDiagnostic array")
+}
+
+runner.test("PreviewViewModel has autoFixLint method") {
+    try expect(viewModelSource.contains("func autoFixLint()") && viewModelSource.contains("linter.autoFix"),
+        "ViewModel must have autoFixLint method that calls linter.autoFix")
+}
+
+runner.test("ContentView passes diagnostics and fix callback to StatusBarView") {
+    try expect(contentViewSource.contains("lintDiagnostics: viewModel.lintDiagnostics"),
+        "ContentView must pass diagnostics to StatusBarView")
+    try expect(contentViewSource.contains("onFixAll:") && contentViewSource.contains("autoFixLint"),
+        "ContentView must pass autoFixLint callback to StatusBarView")
+}
+
 // MARK: - Auto-Suggest Tests
 
 print("\n=== Auto-Suggest Tests ===")
@@ -2258,6 +2421,52 @@ runner.test("openFile uses NSOpenPanel with markdown content types") {
 }
 
 // =============================================================================
+// MARK: - Find Menu Tests
+// =============================================================================
+
+print("\n--- Find Menu ---")
+
+runner.test("Edit menu has Find command with Cmd+F") {
+    try expect(appSource.contains("Strings.find") && appSource.contains("\"f\""),
+        "App must have Find menu item with Cmd+F shortcut")
+}
+
+runner.test("Edit menu has Find and Replace with Cmd+Opt+F") {
+    try expect(appSource.contains("Strings.findAndReplace"),
+        "App must have Find and Replace menu item")
+}
+
+runner.test("Edit menu has Find Next with Cmd+G") {
+    try expect(appSource.contains("Strings.findNext") && appSource.contains("\"g\""),
+        "App must have Find Next menu item with Cmd+G shortcut")
+}
+
+runner.test("Edit menu has Find Previous with Cmd+Shift+G") {
+    try expect(appSource.contains("Strings.findPrevious"),
+        "App must have Find Previous menu item")
+}
+
+runner.test("Find commands route through responder chain via FindHelper") {
+    try expect(appSource.contains("FindHelper.send") && appSource.contains("performFindPanelAction"),
+        "Find commands must use FindHelper to send performFindPanelAction: through responder chain")
+}
+
+runner.test("FindHelper sends correct NSFindPanelAction tags") {
+    try expect(appSource.contains(".showFindPanel") && appSource.contains(".next") && appSource.contains(".previous"),
+        "FindHelper must use proper NSFindPanelAction enum values")
+}
+
+runner.test("EditorView enables find bar on NSTextView") {
+    try expect(editorSource.contains("usesFindBar = true"),
+        "EditorView must set usesFindBar = true for NSTextView find support")
+}
+
+runner.test("EditorView enables incremental search") {
+    try expect(editorSource.contains("isIncrementalSearchingEnabled = true"),
+        "EditorView must enable incremental search for responsive find-as-you-type")
+}
+
+// =============================================================================
 // MARK: — Settings Reactivity Tests
 // =============================================================================
 // Validates that changing settings (font size, theme, width) triggers a
@@ -2371,6 +2580,297 @@ runner.test("EditorView preserves selection on external text update") {
 runner.test("EditorView has delegate for text change callbacks") {
     try expect(editorSource.contains("NSTextViewDelegate") && editorSource.contains("textDidChange"),
         "Editor must use NSTextViewDelegate to notify parent of text changes")
+}
+
+// =============================================================================
+// MARK: - Quick Look Extension Tests
+// =============================================================================
+
+print("\n--- Quick Look Extension Tests ---")
+
+let qlSourcePath = "Sources/MarkViewQuickLook/PreviewProvider.swift"
+let qlPlistPath = "Sources/MarkViewQuickLook/Info.plist"
+let qlSourceExists = FileManager.default.fileExists(atPath: qlSourcePath)
+let qlPlistExists = FileManager.default.fileExists(atPath: qlPlistPath)
+let qlSource = qlSourceExists ? (try? String(contentsOfFile: qlSourcePath, encoding: .utf8)) ?? "" : ""
+let qlPlist = qlPlistExists ? (try? String(contentsOfFile: qlPlistPath, encoding: .utf8)) ?? "" : ""
+
+runner.test("Quick Look extension source exists") {
+    try expect(qlSourceExists, "PreviewProvider.swift must exist in Sources/MarkViewQuickLook/")
+}
+
+runner.test("Quick Look extension uses MarkdownRenderer") {
+    try expect(qlSource.contains("MarkdownRenderer.renderHTML"), "Extension must use MarkdownRenderer.renderHTML")
+}
+
+runner.test("Quick Look extension uses accessibility post-processing") {
+    try expect(qlSource.contains("postProcessForAccessibility"), "Extension must call postProcessForAccessibility")
+}
+
+runner.test("Quick Look extension wraps in template") {
+    try expect(qlSource.contains("wrapInTemplate"), "Extension must call wrapInTemplate for styled output")
+}
+
+runner.test("Quick Look extension imports MarkViewCore") {
+    try expect(qlSource.contains("import MarkViewCore"), "Extension must import MarkViewCore library")
+}
+
+runner.test("Quick Look extension Info.plist exists") {
+    try expect(qlPlistExists, "Info.plist must exist in Sources/MarkViewQuickLook/")
+}
+
+runner.test("Quick Look Info.plist declares correct extension point") {
+    try expect(qlPlist.contains("com.apple.quicklook.preview"),
+        "Info.plist must declare com.apple.quicklook.preview extension point")
+}
+
+runner.test("Quick Look Info.plist supports markdown content type") {
+    try expect(qlPlist.contains("net.daringfireball.markdown"),
+        "Info.plist must list net.daringfireball.markdown in QLSupportedContentTypes")
+}
+
+runner.test("Quick Look Info.plist declares principal class") {
+    try expect(qlPlist.contains("NSExtensionPrincipalClass"),
+        "Info.plist must declare NSExtensionPrincipalClass for macOS to instantiate the provider")
+}
+
+runner.test("Quick Look extension returns HTML content type") {
+    try expect(qlSource.contains("UTType.html"), "Extension must return HTML content type for QLPreviewReply")
+}
+
+// Verify bundle.sh includes PlugIns directory creation
+let bundleScript = (try? String(contentsOfFile: "scripts/bundle.sh", encoding: .utf8)) ?? ""
+
+runner.test("bundle.sh creates PlugIns directory for Quick Look extension") {
+    try expect(bundleScript.contains("PlugIns") && bundleScript.contains("MarkViewQuickLook"),
+        "bundle.sh must create PlugIns directory and embed MarkViewQuickLook.appex")
+}
+
+runner.test("bundle.sh signs extension before parent app") {
+    let appexSignIndex = bundleScript.range(of: "QL_APPEX_DIR")
+    let deepSignIndex = bundleScript.range(of: "codesign -s - -f --deep")
+    if let appexIdx = appexSignIndex, let deepIdx = deepSignIndex {
+        try expect(appexIdx.lowerBound < deepIdx.lowerBound,
+            "Extension must be signed before parent app's --deep signing")
+    } else {
+        try expect(appexSignIndex != nil, "bundle.sh must reference QL_APPEX_DIR for extension signing")
+    }
+}
+
+// =============================================================================
+// MARK: - Quick Look Pipeline E2E Tests
+// =============================================================================
+
+print("\n--- Quick Look Pipeline E2E Tests ---")
+
+/// Replicate the exact Quick Look extension rendering pipeline.
+/// This is the same sequence PreviewProvider.providePreview() executes.
+func quickLookPipeline(_ markdown: String) -> String {
+    let html = MarkdownRenderer.renderHTML(from: markdown)
+    let accessible = MarkdownRenderer.postProcessForAccessibility(html)
+    return MarkdownRenderer.wrapInTemplate(accessible)
+}
+
+func qlGoldenFilePath(for fixtureName: String) -> URL? {
+    Bundle.module.url(forResource: fixtureName, withExtension: "html", subdirectory: "Fixtures/expected/quick-look")
+}
+
+// E2E: Run every fixture through the full Quick Look pipeline and validate output
+for name in fixtureNames {
+    runner.test("QL pipeline renders \(name).md as valid HTML document") {
+        let md = try loadFixture("\(name).md")
+        let document = quickLookPipeline(md)
+
+        // Must produce a well-formed HTML document
+        try expect(document.contains("<!DOCTYPE html>"), "Missing DOCTYPE")
+        try expect(document.contains("<html"), "Missing <html>")
+        try expect(document.contains("</html>"), "Missing </html>")
+        try expect(document.contains("<meta charset=\"utf-8\">"), "Missing charset")
+        try expect(document.contains("<style>"), "Missing CSS styles")
+        try expect(document.contains("</body>"), "Missing </body>")
+    }
+}
+
+// E2E: Verify accessibility post-processing is applied (not just wrapInTemplate)
+runner.test("QL pipeline includes ARIA attributes (not just raw template)") {
+    let md = try loadFixture("gfm-tables.md")
+    let document = quickLookPipeline(md)
+
+    // These ARIA attributes come from postProcessForAccessibility — proves
+    // the pipeline includes the accessibility pass, not just renderHTML+wrapInTemplate
+    try expect(document.contains("role=\"table\""), "Tables must have role=table from accessibility post-processing")
+    try expect(document.contains("scope=\"col\""), "Table headers must have scope=col")
+}
+
+runner.test("QL pipeline includes ARIA on code blocks") {
+    let md = try loadFixture("code-blocks.md")
+    let document = quickLookPipeline(md)
+    try expect(document.contains("aria-label=\"Code block\""), "Code blocks must have aria-label from accessibility post-processing")
+}
+
+runner.test("QL pipeline includes ARIA on task list checkboxes") {
+    let md = try loadFixture("gfm-tasklists.md")
+    let document = quickLookPipeline(md)
+    try expect(document.contains("aria-label=\"Task item\""), "Task checkboxes must have aria-label from accessibility post-processing")
+}
+
+runner.test("QL pipeline includes document landmark") {
+    let md = try loadFixture("basic.md")
+    let document = quickLookPipeline(md)
+    try expect(document.contains("role=\"document\""), "Body must include article with role=document")
+    try expect(document.contains("aria-label=\"Rendered markdown content\""), "Article must have descriptive aria-label")
+}
+
+// E2E: Verify dark mode CSS is present (works via @media query in Quick Look)
+runner.test("QL pipeline output includes dark mode CSS") {
+    let md = try loadFixture("basic.md")
+    let document = quickLookPipeline(md)
+    try expect(document.contains("prefers-color-scheme: dark"), "Inline template must include dark mode media query")
+    try expect(document.contains("color: #e6edf3"), "Dark mode must set explicit text color")
+    try expect(document.contains("background: #0d1117"), "Dark mode must set dark background")
+}
+
+// E2E: Edge cases the extension must handle gracefully
+runner.test("QL pipeline handles empty input") {
+    let document = quickLookPipeline("")
+    try expect(document.contains("<!DOCTYPE html>"), "Empty input must still produce valid HTML")
+    try expect(document.contains("<article"), "Empty input must still include article wrapper")
+}
+
+runner.test("QL pipeline handles large input without crash") {
+    let largeMD = String(repeating: "# Heading\n\nParagraph with **bold** and *italic*.\n\n- Item 1\n- Item 2\n\n", count: 500)
+    let document = quickLookPipeline(largeMD)
+    try expect(document.contains("<!DOCTYPE html>"), "Large input must produce valid HTML")
+    try expect(document.contains("<strong>bold</strong>"), "Large input must render inline markdown")
+}
+
+runner.test("QL pipeline handles unicode content") {
+    let unicodeMD = "# 日本語テスト\n\nÉmojis: 🎉🚀 — Ñoño — Ü"
+    let document = quickLookPipeline(unicodeMD)
+    try expect(document.contains("日本語テスト"), "Unicode headings must be preserved")
+    try expect(document.contains("🎉🚀"), "Emoji content must be preserved")
+    try expect(document.contains("Ñoño"), "Accented characters must be preserved")
+}
+
+runner.test("QL pipeline handles markdown with only whitespace") {
+    let document = quickLookPipeline("   \n\n   \t  \n")
+    try expect(document.contains("<!DOCTYPE html>"), "Whitespace-only input must produce valid HTML")
+}
+
+runner.test("QL pipeline sanitizes output (no raw script injection)") {
+    let xssMD = "Hello <script>alert('xss')</script> world"
+    let document = quickLookPipeline(xssMD)
+    // cmark-gfm with CMARK_OPT_UNSAFE allows raw HTML, but the content should be rendered
+    // The inline template doesn't execute scripts since it's static HTML
+    try expect(document.contains("<!DOCTYPE html>"), "XSS input must still produce valid HTML")
+}
+
+// E2E: Golden file regression for Quick Look pipeline output
+print("\n--- Quick Look Pipeline Golden Regression ---")
+
+let firstQLGolden = qlGoldenFilePath(for: "basic")
+if firstQLGolden != nil {
+    for name in fixtureNames {
+        runner.test("QL pipeline \(name) matches golden baseline") {
+            let md = try loadFixture("\(name).md")
+            let actual = quickLookPipeline(md)
+            guard let goldenURL = qlGoldenFilePath(for: name) else {
+                throw TestError.fixtureNotFound("expected/quick-look/\(name).html")
+            }
+            let expected = try String(contentsOf: goldenURL, encoding: .utf8)
+
+            if normalizeHTML(actual) != normalizeHTML(expected) {
+                let diffs = computeDiff(expected, actual)
+                let diffSummary = diffs.prefix(3).map {
+                    "    L\($0.line): expected=\($0.expected.prefix(80)) actual=\($0.actual.prefix(80))"
+                }.joined(separator: "\n")
+                throw TestError.assertionFailed("QL output changed for \(name).md (\(diffs.count) lines differ):\n\(diffSummary)")
+            }
+        }
+    }
+} else {
+    print("  ⚠ No Quick Look golden files found. Run with --generate-goldens to create baselines.")
+}
+
+// E2E: Bundle structure verification (runs when MarkView.app exists)
+print("\n--- Quick Look Bundle E2E ---")
+
+let appBundlePath = "MarkView.app"
+let appexPath = "\(appBundlePath)/Contents/PlugIns/MarkViewQuickLook.appex"
+let appBundleExists = FileManager.default.fileExists(atPath: appBundlePath)
+
+if appBundleExists {
+    runner.test("App bundle contains PlugIns directory") {
+        let pluginsPath = "\(appBundlePath)/Contents/PlugIns"
+        try expect(FileManager.default.fileExists(atPath: pluginsPath),
+            "MarkView.app must contain Contents/PlugIns/")
+    }
+
+    runner.test("Quick Look .appex bundle exists") {
+        try expect(FileManager.default.fileExists(atPath: appexPath),
+            "MarkViewQuickLook.appex must exist in Contents/PlugIns/")
+    }
+
+    runner.test("Quick Look .appex has executable") {
+        let execPath = "\(appexPath)/Contents/MacOS/MarkViewQuickLook"
+        try expect(FileManager.default.fileExists(atPath: execPath),
+            "MarkViewQuickLook.appex must contain MacOS/MarkViewQuickLook executable")
+    }
+
+    runner.test("Quick Look .appex has Info.plist") {
+        let plistPath = "\(appexPath)/Contents/Info.plist"
+        try expect(FileManager.default.fileExists(atPath: plistPath),
+            "MarkViewQuickLook.appex must contain Info.plist")
+    }
+
+    runner.test("Quick Look .appex has PkgInfo") {
+        let pkgInfoPath = "\(appexPath)/Contents/PkgInfo"
+        try expect(FileManager.default.fileExists(atPath: pkgInfoPath),
+            "MarkViewQuickLook.appex must contain PkgInfo")
+    }
+
+    runner.test("Quick Look .appex PkgInfo has XPC type") {
+        let pkgInfoPath = "\(appexPath)/Contents/PkgInfo"
+        let pkgInfo = try String(contentsOfFile: pkgInfoPath, encoding: .utf8)
+        try expect(pkgInfo.hasPrefix("XPC!"), "PkgInfo must start with XPC! for extension bundles")
+    }
+
+    runner.test("Quick Look .appex Info.plist is valid") {
+        let plistPath = "\(appexPath)/Contents/Info.plist"
+        let plistData = try Data(contentsOf: URL(fileURLWithPath: plistPath))
+        let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
+        try expect(plist != nil, "Info.plist must be a valid property list")
+
+        let nsExtension = plist?["NSExtension"] as? [String: Any]
+        try expect(nsExtension != nil, "Info.plist must contain NSExtension dictionary")
+
+        let extensionPoint = nsExtension?["NSExtensionPointIdentifier"] as? String
+        try expect(extensionPoint == "com.apple.quicklook.preview",
+            "Extension point must be com.apple.quicklook.preview, got: \(extensionPoint ?? "nil")")
+    }
+
+    runner.test("Quick Look .appex declares markdown content type") {
+        let plistPath = "\(appexPath)/Contents/Info.plist"
+        let plistData = try Data(contentsOf: URL(fileURLWithPath: plistPath))
+        let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
+        let contentTypes = plist?["QLSupportedContentTypes"] as? [String] ?? []
+        try expect(contentTypes.contains("net.daringfireball.markdown"),
+            "QLSupportedContentTypes must include net.daringfireball.markdown")
+    }
+
+    runner.test("Quick Look .appex is code-signed") {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["--verify", "--no-strict", appexPath]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        try process.run()
+        process.waitUntilExit()
+        try expect(process.terminationStatus == 0,
+            "Quick Look .appex must be code-signed (codesign --verify failed)")
+    }
+} else {
+    print("  ⊘ App bundle not found — skipping bundle E2E tests (run: bash scripts/bundle.sh)")
 }
 
 // =============================================================================

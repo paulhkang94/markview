@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root { color-scheme: light dark; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
+        @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code:not([class*="language-"]) { background: #343942; color: #e6edf3; } pre { background: #161b22 !important; color: #e6edf3; } th, td { border-color: #3d444d; color: #e6edf3; } tr { background-color: #0d1117; border-top-color: #3d444db3; } tr:nth-child(2n) { background-color: #151b23; } blockquote { border-left-color: #3d444d; color: #8b949e; } hr { border-top-color: #3d444d; } h1, h2, h3, h4, h5 { color: #e6edf3; } h1, h2 { border-bottom-color: #3d444d; } h6 { color: #8b949e; } }
+        h1, h2 { border-bottom: 1px solid #d1d9e0; padding-bottom: 0.3em; }
+        pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+        code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        pre code { background: none; padding: 0; font-size: 100%; }
+        table { border-spacing: 0; border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant: tabular-nums; }
+        th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
+        th { font-weight: 600; }
+        tr { background-color: #ffffff; border-top: 1px solid #d1d9e0b3; }
+        tr:nth-child(2n) { background-color: #f6f8fa; }
+        blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
+        img { max-width: 100%; }
+        input[type="checkbox"] { margin-right: 0.5em; }
+        hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body><article role="document" aria-label="Rendered markdown content"><h1>GFM Task Lists</h1>
+<h2>Basic Task List</h2>
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Set up project repository</li>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Configure CI/CD pipeline</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Write unit tests for parser</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Add integration tests</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Update README</li>
+</ul>
+<h2>Nested Task Lists</h2>
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Backend
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Database migrations</li>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Model definitions</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> API controllers
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Auth controller</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> User controller</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Admin controller</li>
+</ul>
+</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Middleware</li>
+</ul>
+</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Frontend
+<ul>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Component library
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Button component</li>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Input component</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Modal component</li>
+</ul>
+</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Page layouts</li>
+</ul>
+</li>
+</ul>
+<h2>Mixed with Regular Lists</h2>
+<ol>
+<li>Performance optimization
+<ul>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Profile slow queries</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Add caching layer</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Optimize image loading</li>
+</ul>
+</li>
+<li>Security hardening
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Enable HTTPS</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Add rate limiting</li>
+</ul>
+</li>
+</ol>
+<h2>Task List with Descriptions</h2>
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> <strong>Authentication</strong> — OAuth 2.0 with refresh tokens</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> <strong>Search</strong> — Full-text search with fuzzy matching</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> <strong>Export</strong> — CSV, JSON, or PDF formats</li>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> <strong>Email notifications</strong> — Transactional emails via SendGrid</li>
+</ul>
+<h2>All Checked</h2>
+<ul>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Item one</li>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Item two</li>
+<li><input type="checkbox" aria-label="Task item" checked="" disabled="" /> Item three</li>
+</ul>
+<h2>All Unchecked</h2>
+<ul>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Item one</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Item two</li>
+<li><input type="checkbox" aria-label="Task item" disabled="" /> Item three</li>
+</ul>
+</article></body>
+</html>

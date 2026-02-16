@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root { color-scheme: light dark; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
+        @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code:not([class*="language-"]) { background: #343942; color: #e6edf3; } pre { background: #161b22 !important; color: #e6edf3; } th, td { border-color: #3d444d; color: #e6edf3; } tr { background-color: #0d1117; border-top-color: #3d444db3; } tr:nth-child(2n) { background-color: #151b23; } blockquote { border-left-color: #3d444d; color: #8b949e; } hr { border-top-color: #3d444d; } h1, h2, h3, h4, h5 { color: #e6edf3; } h1, h2 { border-bottom-color: #3d444d; } h6 { color: #8b949e; } }
+        h1, h2 { border-bottom: 1px solid #d1d9e0; padding-bottom: 0.3em; }
+        pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+        code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        pre code { background: none; padding: 0; font-size: 100%; }
+        table { border-spacing: 0; border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant: tabular-nums; }
+        th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
+        th { font-weight: 600; }
+        tr { background-color: #ffffff; border-top: 1px solid #d1d9e0b3; }
+        tr:nth-child(2n) { background-color: #f6f8fa; }
+        blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
+        img { max-width: 100%; }
+        input[type="checkbox"] { margin-right: 0.5em; }
+        hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body><article role="document" aria-label="Rendered markdown content"><h1>Edge Cases</h1>
+<h2>Deeply Nested Blockquotes</h2>
+<blockquote>
+<p>Level 1</p>
+<blockquote>
+<p>Level 2</p>
+<blockquote>
+<p>Level 3</p>
+<blockquote>
+<p>Level 4</p>
+<blockquote>
+<p>Level 5</p>
+</blockquote>
+</blockquote>
+</blockquote>
+</blockquote>
+</blockquote>
+<h2>Deeply Nested Lists</h2>
+<ul>
+<li>Level 1
+<ul>
+<li>Level 2
+<ul>
+<li>Level 3
+<ul>
+<li>Level 4
+<ul>
+<li>Level 5</li>
+</ul>
+</li>
+<li>Level 4b</li>
+</ul>
+</li>
+<li>Level 3b</li>
+</ul>
+</li>
+<li>Level 2b</li>
+</ul>
+</li>
+<li>Level 1b</li>
+</ul>
+<ol>
+<li>First
+<ol>
+<li>Nested first
+<ol>
+<li>Double nested
+<ol>
+<li>Triple nested</li>
+<li>Triple second</li>
+</ol>
+</li>
+<li>Double second</li>
+</ol>
+</li>
+<li>Nested second</li>
+</ol>
+</li>
+<li>Second</li>
+</ol>
+<h2>HTML Entities</h2>
+<p>Common: &amp; &lt; &gt; &quot;</p>
+<p>Numeric: © — ☃</p>
+<p>Copyright © 2026. Arrows: ← →</p>
+<h2>Unicode Characters</h2>
+<p>Chinese: 这是一个测试段落。</p>
+<p>Japanese: マークダウンのテストです。</p>
+<p>Korean: 마크다운 테스트입니다.</p>
+<p>Math: ∑ ∏ ∫ ∂ √ ∞ ≈ ≠ ≤ ≥</p>
+<p>Accented: café résumé naïve über Zürich</p>
+<p>Currency: $ € £ ¥ ₹ ₿</p>
+<h2>Emoji</h2>
+<p>Standalone: 🚀 🎉 ✅ ❌ ⚠️ 💡 🔧 📝</p>
+<h3>🚀 Emoji in Heading</h3>
+<p>Emoji in lists:</p>
+<ul>
+<li>✅ Tests passing</li>
+<li>❌ Build failing</li>
+<li>⚠️ Warnings present</li>
+</ul>
+<table role="table">
+<thead>
+<tr>
+<th scope="col">Status</th>
+<th scope="col">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✅</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>❌</td>
+<td>Fail</td>
+</tr>
+</tbody>
+</table>
+<h2>Whitespace Edge Cases</h2>
+<p>Text before empty lines.</p>
+<p>Text after multiple empty lines.</p>
+<p>Text with trailing spaces
+and a hard line break.</p>
+<p>Text with backslash<br />
+line break.</p>
+<h2>Very Long Line</h2>
+<p>This is an extremely long line that exceeds two hundred characters in length and is designed to test how the renderer handles text that does not contain any line breaks and just keeps going and going and going until it becomes quite unwieldy and forces the layout engine to wrap properly.</p>
+<h2>Backslash Escapes</h2>
+<p>*not italic*</p>
+<p>**not bold**</p>
+<p># not a heading</p>
+<p>- not a list item</p>
+<p>`not code`</p>
+<p>Literal backslash: \</p>
+<h2>Consecutive Headings</h2>
+<h1>Heading 1</h1>
+<h2>Heading 2</h2>
+<h3>Heading 3</h3>
+<h4>Heading 4</h4>
+<p>No content between them.</p>
+<h2>Mixed Content Stress</h2>
+<p>A paragraph with <strong>bold</strong>, <em>italic</em>, <del>strikethrough</del>, <code>code</code>, and a <a href="https://example.com">link</a> — all inline.</p>
+<blockquote>
+<p>Blockquote with <strong>bold</strong>, <em>italic</em>, <code>code</code>, and a <a href="https://example.com">link</a>.</p>
+<ul>
+<li>List inside blockquote</li>
+<li>With <a href="https://example.com">links</a></li>
+</ul>
+<blockquote>
+<p>Nested quote with <del>strikethrough</del>.</p>
+</blockquote>
+</blockquote>
+<h2>Setext Headings</h2>
+<h1>Heading Level 1</h1>
+<h2>Heading Level 2</h2>
+<h2>Thematic Break Variations</h2>
+<hr />
+<hr />
+<hr />
+<h2>Empty Document Sections</h2>
+<p>Content before.</p>
+<p>Content after.</p>
+</article></body>
+</html>
