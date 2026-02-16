@@ -20,12 +20,12 @@ struct ContentView: View {
                             .frame(minWidth: 200)
                             .accessibilityElement(children: .contain)
 
-                            WebPreviewView(html: viewModel.renderedHTML)
+                            WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL)
                                 .frame(minWidth: 200)
                                 .accessibilityElement(children: .contain)
                         }
                     } else {
-                        WebPreviewView(html: viewModel.renderedHTML)
+                        WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL)
                     }
                 } else {
                     DropTargetView { url in

@@ -1854,7 +1854,7 @@ let requiredExplicitColorSelectors = [
     ("code:not([class*=\"language-\"])", "inline code"),
     ("th, td", "table cells"),
     ("pre", "code blocks"),
-    ("h1, h2", "headings"),
+    ("h1, h2, h3, h4, h5", "headings"),
 ]
 
 runner.test("inline template: all text elements have explicit dark color") {

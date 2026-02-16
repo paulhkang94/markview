@@ -29,6 +29,9 @@ struct MarkViewApp: App {
                         if FileManager.default.fileExists(atPath: path) {
                             filePath = path
                         }
+                    } else {
+                        // No file argument — show Open panel so the user isn't stuck on the drop target
+                        DispatchQueue.main.async { openFile() }
                     }
 
                     // Defer window sizing to next run loop — window may not exist yet during onAppear.

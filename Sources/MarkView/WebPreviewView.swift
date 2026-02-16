@@ -3,6 +3,7 @@ import WebKit
 
 struct WebPreviewView: NSViewRepresentable {
     let html: String
+    var baseDirectoryURL: URL?
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -26,6 +27,7 @@ struct WebPreviewView: NSViewRepresentable {
         case .system:
             webView.appearance = nil // inherit from system
         }
+        context.coordinator.baseDirectoryURL = baseDirectoryURL
         context.coordinator.updateContent(html, in: webView)
     }
 
@@ -35,6 +37,7 @@ struct WebPreviewView: NSViewRepresentable {
 
     class Coordinator {
         weak var webView: WKWebView?
+        var baseDirectoryURL: URL?
         private var hasLoadedInitialPage = false
         private var lastHTML: String = ""
         private var prismJS: String?
@@ -54,11 +57,27 @@ struct WebPreviewView: NSViewRepresentable {
 
             if !hasLoadedInitialPage {
                 let fullHTML = injectPrism(into: styledHTML)
-                webView.loadHTMLString(fullHTML, baseURL: nil)
+                loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true
             } else {
                 updateContentViaJS(styledHTML, in: webView)
             }
+        }
+
+        /// Write HTML to a temp file and load via loadFileURL so WKWebView can access local images.
+        /// loadHTMLString(baseURL:) does NOT grant file system access even with allowFileAccessFromFileURLs.
+        private func loadViaFileURL(_ html: String, in webView: WKWebView) {
+            var finalHTML = html
+            // Inject <base> tag so relative paths (images, links) resolve from the markdown file's directory
+            if let dir = baseDirectoryURL {
+                let baseTag = "<base href=\"\(dir.absoluteString)\">"
+                finalHTML = finalHTML.replacingOccurrences(of: "<head>", with: "<head>\(baseTag)")
+            }
+            let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview.html")
+            try? finalHTML.write(to: tempFile, atomically: true, encoding: .utf8)
+            // Grant read access to / so WKWebView can load local images.
+            // This is a non-sandboxed desktop app — broad file access is expected.
+            webView.loadFileURL(tempFile, allowingReadAccessTo: URL(fileURLWithPath: "/"))
         }
 
         private func injectSettingsCSS(into html: String) -> String {
@@ -164,7 +183,8 @@ struct WebPreviewView: NSViewRepresentable {
             "tr:nth-child(2n) { background-color: #151b23; }",
             "blockquote { border-left-color: #3d444d; color: #8b949e; }",
             "hr { border-top-color: #3d444d; }",
-            "h1, h2 { border-bottom-color: #3d444d; color: #e6edf3; }",
+            "h1, h2, h3, h4, h5 { color: #e6edf3; }",
+            "h1, h2 { border-bottom-color: #3d444d; }",
             "h6 { color: #8b949e; }",
         ].joined(separator: " ")
 

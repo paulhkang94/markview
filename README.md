@@ -90,7 +90,7 @@ Sources/MarkView/               # SwiftUI app (macOS 13+)
   Settings.swift                # 17 settings with theme/width/font enums
   ExportManager.swift           # HTML/PDF export
 
-Tests/TestRunner/               # 158 standalone tests (no XCTest)
+Tests/TestRunner/               # 178 standalone tests (no XCTest)
 Tests/VisualTester/             # 19 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
@@ -101,7 +101,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (158 tests)
+# Run all tests (178 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + tests)

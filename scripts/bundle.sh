@@ -29,9 +29,9 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# Step 3: Copy executable
+# Step 3: Copy executable and ad-hoc sign
 cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
-echo "✓ Executable copied"
+codesign -s - -f "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null && echo "✓ Executable copied and signed (ad-hoc)" || echo "✓ Executable copied (unsigned)"
 
 # Step 4: Copy resources
 if [ -d "Sources/MarkView/Resources" ]; then
@@ -89,7 +89,8 @@ if [ "${1:-}" = "--install" ]; then
     echo "--- Installing to /Applications ---"
     rm -rf "$INSTALL_DIR"
     cp -R "$APP_DIR" "$INSTALL_DIR"
-    echo "✓ Installed to $INSTALL_DIR"
+    xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null || true
+    codesign -s - -f --deep "$INSTALL_DIR" 2>/dev/null && echo "✓ Installed and signed at $INSTALL_DIR" || echo "✓ Installed to $INSTALL_DIR"
 
     # Register with Launch Services
     LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

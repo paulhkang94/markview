@@ -15,6 +15,12 @@ final class PreviewViewModel: ObservableObject {
     var currentFilePath: String?
     var fileName: String = "MarkView"
 
+    /// Directory URL of the current file, used as base URL for resolving relative paths (images, links)
+    var currentFileDirectoryURL: URL? {
+        guard let path = currentFilePath else { return nil }
+        return URL(fileURLWithPath: path).deletingLastPathComponent()
+    }
+
     private var fileWatcher: FileWatcher?
     private var renderTask: Task<Void, Never>?
     private var lintTask: Task<Void, Never>?
