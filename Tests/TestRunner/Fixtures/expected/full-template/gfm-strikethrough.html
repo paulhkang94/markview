@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root { color-scheme: light dark; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
+        @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th { background: #161b22; } th, td { border-color: #30363d; } blockquote { border-left-color: #30363d; color: #8b949e; } hr { border-top-color: #30363d; } }
+        h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 0.3em; }
+        @media (prefers-color-scheme: dark) { h1, h2 { border-bottom-color: #30363d; } }
+        pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+        code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        pre code { background: none; padding: 0; font-size: 100%; }
+        table { border-collapse: collapse; width: 100%; display: block; overflow: auto; }
+        th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
+        th { background: #f6f8fa; font-weight: 600; }
+        blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
+        img { max-width: 100%; }
+        input[type="checkbox"] { margin-right: 0.5em; }
+        hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body><article><h1>GFM Strikethrough</h1>
+<h2>Basic Strikethrough</h2>
+<p><del>This entire line is struck through.</del></p>
+<p>This sentence has <del>deleted text</del> in the middle.</p>
+<h2>Strikethrough with Other Formatting</h2>
+<p><strong><del>Bold and strikethrough</del></strong></p>
+<p><em><del>Italic and strikethrough</del></em></p>
+<p><em><strong><del>Bold, italic, and strikethrough</del></strong></em></p>
+<p><del><strong>Bold inside strikethrough</strong></del></p>
+<p><del><em>Italic inside strikethrough</em></del></p>
+<h2>Strikethrough in Links</h2>
+<p><a href="https://example.com"><del>Struck-through link text</del></a></p>
+<p><del><a href="https://example.com">Link inside strikethrough</a></del></p>
+<h2>Strikethrough in Lists</h2>
+<ul>
+<li><del>Completed and removed</del></li>
+<li>Still active</li>
+<li><del>Also removed</del></li>
+</ul>
+<h2>Strikethrough in Blockquotes</h2>
+<blockquote>
+<p><del>This quoted text has been retracted.</del></p>
+</blockquote>
+<h2>Strikethrough in Tables</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Login</td>
+<td><del>Deprecated</del></td>
+</tr>
+<tr>
+<td>Dashboard</td>
+<td>Active</td>
+</tr>
+<tr>
+<td><del>Reports</del></td>
+<td><del>Removed</del></td>
+</tr>
+</tbody>
+</table>
+<h2>Partial Strikethrough</h2>
+<p>The price was <del>$99</del> $79 after the discount.</p>
+<p>Version <del>2.0</del> 3.0 is now available.</p>
+</article></body>
+</html>

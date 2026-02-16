@@ -1,0 +1,130 @@
+<h1>Code Blocks</h1>
+<h2>Python</h2>
+<pre><code class="language-python">def fibonacci(n: int) -&gt; list[int]:
+    fib = [0, 1]
+    for i in range(2, n):
+        fib.append(fib[-1] + fib[-2])
+    return fib[:n]
+
+if __name__ == &quot;__main__&quot;:
+    print(fibonacci(10))
+</code></pre>
+<h2>JavaScript</h2>
+<pre><code class="language-javascript">const debounce = (fn, ms) =&gt; {
+  let timer;
+  return (...args) =&gt; {
+    clearTimeout(timer);
+    timer = setTimeout(() =&gt; fn(...args), ms);
+  };
+};
+</code></pre>
+<h2>Swift</h2>
+<pre><code class="language-swift">struct MarkdownRenderer {
+    func render(_ markdown: String) -&gt; AttributedString {
+        let parser = Parser(markdown)
+        return parser.parse().map { node in
+            node.attributedString
+        }.joined()
+    }
+}
+</code></pre>
+<h2>Rust</h2>
+<pre><code class="language-rust">fn main() {
+    let numbers: Vec&lt;i32&gt; = (1..=10).collect();
+    let sum: i32 = numbers.iter().sum();
+    println!(&quot;Sum: {sum}&quot;);
+}
+</code></pre>
+<h2>Go</h2>
+<pre><code class="language-go">func handler(w http.ResponseWriter, r *http.Request) {
+    data := map[string]string{&quot;status&quot;: &quot;ok&quot;}
+    json.NewEncoder(w).Encode(data)
+}
+</code></pre>
+<h2>Bash</h2>
+<pre><code class="language-bash">#!/bin/bash
+set -euo pipefail
+for f in *.md; do
+    echo &quot;Processing $f&quot;
+    wc -l &quot;$f&quot;
+done
+</code></pre>
+<h2>JSON</h2>
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;markview&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;dependencies&quot;: {
+    &quot;cmark-gfm&quot;: &quot;^0.4.0&quot;
+  }
+}
+</code></pre>
+<h2>YAML</h2>
+<pre><code class="language-yaml">name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+</code></pre>
+<h2>HTML</h2>
+<pre><code class="language-html">&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot;&gt;
+    &lt;title&gt;Preview&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;div id=&quot;content&quot;&gt;&lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<h2>CSS</h2>
+<pre><code class="language-css">.markdown-body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    max-width: 900px;
+    margin: 0 auto;
+}
+</code></pre>
+<h2>SQL</h2>
+<pre><code class="language-sql">SELECT u.name, COUNT(p.id) AS post_count
+FROM users u
+LEFT JOIN posts p ON p.author_id = u.id
+WHERE u.active = true
+GROUP BY u.id
+ORDER BY post_count DESC
+LIMIT 10;
+</code></pre>
+<h2>TypeScript</h2>
+<pre><code class="language-typescript">interface Config {
+    theme: 'light' | 'dark';
+    fontSize: number;
+    extensions: string[];
+}
+
+const defaultConfig: Config = {
+    theme: 'light',
+    fontSize: 14,
+    extensions: ['table', 'strikethrough'],
+};
+</code></pre>
+<h2>Indented Code Block</h2>
+<pre><code>This is an indented code block.
+It uses 4 spaces of indentation.
+No language hint is available.
+</code></pre>
+<h2>Inline Code</h2>
+<p>Use <code>git status</code> to check the working tree. The <code>--short</code> flag gives compact output.</p>
+<p>Run <code>npm install</code> then <code>npm start</code>.</p>
+<h2>Nested Backticks</h2>
+<p>Use <code>`backticks`</code> inside inline code by doubling the outer backticks.</p>
+<h2>Code Block with No Language</h2>
+<pre><code>Plain code block
+No syntax highlighting
+Just monospace text
+</code></pre>
+<h2>Empty Code Block</h2>
+<pre><code></code></pre>

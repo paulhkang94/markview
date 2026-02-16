@@ -1,0 +1,142 @@
+<h1>Edge Cases</h1>
+<h2>Deeply Nested Blockquotes</h2>
+<blockquote>
+<p>Level 1</p>
+<blockquote>
+<p>Level 2</p>
+<blockquote>
+<p>Level 3</p>
+<blockquote>
+<p>Level 4</p>
+<blockquote>
+<p>Level 5</p>
+</blockquote>
+</blockquote>
+</blockquote>
+</blockquote>
+</blockquote>
+<h2>Deeply Nested Lists</h2>
+<ul>
+<li>Level 1
+<ul>
+<li>Level 2
+<ul>
+<li>Level 3
+<ul>
+<li>Level 4
+<ul>
+<li>Level 5</li>
+</ul>
+</li>
+<li>Level 4b</li>
+</ul>
+</li>
+<li>Level 3b</li>
+</ul>
+</li>
+<li>Level 2b</li>
+</ul>
+</li>
+<li>Level 1b</li>
+</ul>
+<ol>
+<li>First
+<ol>
+<li>Nested first
+<ol>
+<li>Double nested
+<ol>
+<li>Triple nested</li>
+<li>Triple second</li>
+</ol>
+</li>
+<li>Double second</li>
+</ol>
+</li>
+<li>Nested second</li>
+</ol>
+</li>
+<li>Second</li>
+</ol>
+<h2>HTML Entities</h2>
+<p>Common: &amp; &lt; &gt; &quot;</p>
+<p>Numeric: © — ☃</p>
+<p>Copyright © 2026. Arrows: ← →</p>
+<h2>Unicode Characters</h2>
+<p>Chinese: 这是一个测试段落。</p>
+<p>Japanese: マークダウンのテストです。</p>
+<p>Korean: 마크다운 테스트입니다.</p>
+<p>Math: ∑ ∏ ∫ ∂ √ ∞ ≈ ≠ ≤ ≥</p>
+<p>Accented: café résumé naïve über Zürich</p>
+<p>Currency: $ € £ ¥ ₹ ₿</p>
+<h2>Emoji</h2>
+<p>Standalone: 🚀 🎉 ✅ ❌ ⚠️ 💡 🔧 📝</p>
+<h3>🚀 Emoji in Heading</h3>
+<p>Emoji in lists:</p>
+<ul>
+<li>✅ Tests passing</li>
+<li>❌ Build failing</li>
+<li>⚠️ Warnings present</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>✅</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>❌</td>
+<td>Fail</td>
+</tr>
+</tbody>
+</table>
+<h2>Whitespace Edge Cases</h2>
+<p>Text before empty lines.</p>
+<p>Text after multiple empty lines.</p>
+<p>Text with trailing spaces
+and a hard line break.</p>
+<p>Text with backslash<br />
+line break.</p>
+<h2>Very Long Line</h2>
+<p>This is an extremely long line that exceeds two hundred characters in length and is designed to test how the renderer handles text that does not contain any line breaks and just keeps going and going and going until it becomes quite unwieldy and forces the layout engine to wrap properly.</p>
+<h2>Backslash Escapes</h2>
+<p>*not italic*</p>
+<p>**not bold**</p>
+<p># not a heading</p>
+<p>- not a list item</p>
+<p>`not code`</p>
+<p>Literal backslash: \</p>
+<h2>Consecutive Headings</h2>
+<h1>Heading 1</h1>
+<h2>Heading 2</h2>
+<h3>Heading 3</h3>
+<h4>Heading 4</h4>
+<p>No content between them.</p>
+<h2>Mixed Content Stress</h2>
+<p>A paragraph with <strong>bold</strong>, <em>italic</em>, <del>strikethrough</del>, <code>code</code>, and a <a href="https://example.com">link</a> — all inline.</p>
+<blockquote>
+<p>Blockquote with <strong>bold</strong>, <em>italic</em>, <code>code</code>, and a <a href="https://example.com">link</a>.</p>
+<ul>
+<li>List inside blockquote</li>
+<li>With <a href="https://example.com">links</a></li>
+</ul>
+<blockquote>
+<p>Nested quote with <del>strikethrough</del>.</p>
+</blockquote>
+</blockquote>
+<h2>Setext Headings</h2>
+<h1>Heading Level 1</h1>
+<h2>Heading Level 2</h2>
+<h2>Thematic Break Variations</h2>
+<hr />
+<hr />
+<hr />
+<h2>Empty Document Sections</h2>
+<p>Content before.</p>
+<p>Content after.</p>

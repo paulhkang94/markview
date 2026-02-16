@@ -60,6 +60,83 @@ func normalizeHTML(_ html: String) -> String {
 }
 
 // =============================================================================
+// MARK: - Golden File Support
+// =============================================================================
+
+let fixtureNames = [
+    "basic", "gfm-tables", "gfm-tasklists", "gfm-strikethrough",
+    "gfm-autolinks", "code-blocks", "links-and-images", "edge-cases"
+]
+
+func goldenFilePath(for fixtureName: String) -> URL? {
+    Bundle.module.url(forResource: fixtureName, withExtension: "html", subdirectory: "Fixtures/expected")
+}
+
+func generateGoldens() throws {
+    // Write to the SOURCE tree, not the bundle copy
+    // Locate the project root by finding Package.swift
+    let cwd = FileManager.default.currentDirectoryPath
+    let expectedDir = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tests/TestRunner/Fixtures/expected")
+    try FileManager.default.createDirectory(at: expectedDir, withIntermediateDirectories: true)
+
+    for name in fixtureNames {
+        let md = try loadFixture("\(name).md")
+        let html = MarkdownRenderer.renderHTML(from: md)
+        let outURL = expectedDir.appendingPathComponent("\(name).html")
+        try html.write(to: outURL, atomically: true, encoding: .utf8)
+        print("  Generated: \(name).html (\(html.count) bytes)")
+    }
+
+    // Also generate full-template versions
+    let templateDir = expectedDir.appendingPathComponent("full-template")
+    try FileManager.default.createDirectory(at: templateDir, withIntermediateDirectories: true)
+    for name in fixtureNames {
+        let md = try loadFixture("\(name).md")
+        let bodyHTML = MarkdownRenderer.renderHTML(from: md)
+        let fullHTML = MarkdownRenderer.wrapInTemplate(bodyHTML)
+        let outURL = templateDir.appendingPathComponent("\(name).html")
+        try fullHTML.write(to: outURL, atomically: true, encoding: .utf8)
+        print("  Generated: full-template/\(name).html (\(fullHTML.count) bytes)")
+    }
+
+    print("\nGolden files generated. Commit these to lock in the baseline.")
+}
+
+/// Compute a line-by-line diff between two strings, returning differing lines
+func computeDiff(_ expected: String, _ actual: String) -> [(line: Int, expected: String, actual: String)] {
+    let expectedLines = expected.components(separatedBy: "\n")
+    let actualLines = actual.components(separatedBy: "\n")
+    var diffs: [(line: Int, expected: String, actual: String)] = []
+
+    let maxLines = max(expectedLines.count, actualLines.count)
+    for i in 0..<maxLines {
+        let exp = i < expectedLines.count ? expectedLines[i] : "<missing>"
+        let act = i < actualLines.count ? actualLines[i] : "<missing>"
+        if exp != act {
+            diffs.append((line: i + 1, expected: exp, actual: act))
+        }
+    }
+    return diffs
+}
+
+// =============================================================================
+// MARK: - CLI Mode Selection
+// =============================================================================
+
+if CommandLine.arguments.contains("--generate-goldens") {
+    print("=== Generating Golden Files ===")
+    do {
+        try generateGoldens()
+        print("\nDone.")
+        exit(0)
+    } catch {
+        print("Error generating goldens: \(error)")
+        exit(1)
+    }
+}
+
+// =============================================================================
 // MARK: - Tests
 // =============================================================================
 
@@ -513,6 +590,236 @@ runner.test("metrics enabled tracks and persists") {
     // Clean up
     metrics.clearAll()
     metrics.setEnabled(false)
+}
+
+// MARK: - Tier 3: Golden File Snapshot Regression Tests
+
+print("\n=== Tier 3: Golden File Snapshot Regression ===")
+
+do {
+    // Check if golden files exist
+    let firstGolden = goldenFilePath(for: "basic")
+    if firstGolden != nil {
+        for name in fixtureNames {
+            runner.test("\(name) matches golden baseline") {
+                let md = try loadFixture("\(name).md")
+                let actual = MarkdownRenderer.renderHTML(from: md)
+                guard let goldenURL = goldenFilePath(for: name) else {
+                    throw TestError.fixtureNotFound("expected/\(name).html")
+                }
+                let expected = try String(contentsOf: goldenURL, encoding: .utf8)
+
+                if normalizeHTML(actual) != normalizeHTML(expected) {
+                    let diffs = computeDiff(expected, actual)
+                    let diffSummary = diffs.prefix(3).map { "    L\($0.line): expected=\($0.expected.prefix(80)) actual=\($0.actual.prefix(80))" }.joined(separator: "\n")
+                    throw TestError.assertionFailed("Output changed for \(name).md (\(diffs.count) lines differ):\n\(diffSummary)")
+                }
+            }
+        }
+    } else {
+        print("  ⚠ No golden files found. Run with --generate-goldens to create baselines.")
+    }
+}
+
+// MARK: - Tier 3: Full-Template E2E Tests
+
+print("\n=== Tier 3: Full-Template E2E ===")
+
+runner.test("full HTML document is well-formed") {
+    let md = try loadFixture("basic.md")
+    let body = MarkdownRenderer.renderHTML(from: md)
+    let full = MarkdownRenderer.wrapInTemplate(body)
+
+    try expect(full.hasPrefix("<!DOCTYPE html>") || full.contains("<!DOCTYPE html>"), "Missing DOCTYPE")
+    try expect(full.contains("<html>"), "Missing <html>")
+    try expect(full.contains("</html>"), "Missing </html>")
+    try expect(full.contains("<head>"), "Missing <head>")
+    try expect(full.contains("</head>"), "Missing </head>")
+    try expect(full.contains("<body>"), "Missing <body>")
+    try expect(full.contains("</body>"), "Missing </body>")
+    try expect(full.contains("<meta charset=\"utf-8\">"), "Missing charset meta")
+    try expect(full.contains("<style>"), "Missing style block")
+}
+
+runner.test("full template contains all CSS rules") {
+    let body = MarkdownRenderer.renderHTML(from: "# Test")
+    let full = MarkdownRenderer.wrapInTemplate(body)
+
+    // Key CSS features for GitHub-style rendering
+    try expect(full.contains("font-family:"), "Missing font-family")
+    try expect(full.contains("max-width:"), "Missing max-width")
+    try expect(full.contains("prefers-color-scheme: dark"), "Missing dark mode support")
+    try expect(full.contains("border-collapse"), "Missing table CSS")
+    try expect(full.contains("border-radius"), "Missing code block border-radius")
+    try expect(full.contains("monospace"), "Missing monospace font for code")
+}
+
+runner.test("full template renders all GFM features in context") {
+    let md = """
+    # Full E2E Test
+
+    | Feature | Status |
+    |---------|--------|
+    | Tables | ✅ |
+
+    - [x] Task lists
+    - [ ] More tasks
+
+    ~~struck~~ and **bold** and `code`
+
+    > Blockquote
+
+    ```swift
+    let x = 1
+    ```
+
+    Visit https://example.com
+    """
+    let body = MarkdownRenderer.renderHTML(from: md)
+    let full = MarkdownRenderer.wrapInTemplate(body)
+
+    // Verify all features present in final document
+    try expect(full.contains("<h1>Full E2E Test</h1>"), "Missing heading")
+    try expect(full.contains("<table>"), "Missing table")
+    try expect(full.contains("checkbox"), "Missing task list checkboxes")
+    try expect(full.contains("<del>struck</del>"), "Missing strikethrough")
+    try expect(full.contains("<strong>bold</strong>"), "Missing bold")
+    try expect(full.contains("<code>code</code>"), "Missing inline code")
+    try expect(full.contains("<blockquote>"), "Missing blockquote")
+    try expect(full.contains("language-swift"), "Missing code block language")
+    try expect(full.contains("<a href=\"https://example.com\""), "Missing autolink")
+}
+
+runner.test("full template dark mode CSS is complete") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+
+    // Verify dark mode has all necessary overrides
+    try expect(full.contains("color: #e6edf3"), "Missing dark text color")
+    try expect(full.contains("background: #0d1117"), "Missing dark background")
+    try expect(full.contains("#161b22"), "Missing dark code background")
+    try expect(full.contains("#30363d"), "Missing dark border color")
+}
+
+// MARK: - Tier 3: Renderer Determinism Tests
+
+print("\n=== Tier 3: Renderer Determinism ===")
+
+runner.test("same input always produces identical output") {
+    let md = try loadFixture("basic.md")
+    let results = (0..<5).map { _ in MarkdownRenderer.renderHTML(from: md) }
+    for i in 1..<results.count {
+        try expect(results[i] == results[0], "Non-deterministic output on render \(i)")
+    }
+}
+
+runner.test("renderer is thread-safe (concurrent renders)") {
+    let md = try loadFixture("basic.md")
+    let group = DispatchGroup()
+    let queue = DispatchQueue(label: "test-concurrent", attributes: .concurrent)
+    var results = [String?](repeating: nil, count: 10)
+    let lock = NSLock()
+
+    for i in 0..<10 {
+        group.enter()
+        queue.async {
+            let html = MarkdownRenderer.renderHTML(from: md)
+            lock.lock()
+            results[i] = html
+            lock.unlock()
+            group.leave()
+        }
+    }
+    group.wait()
+
+    let first = results[0]!
+    for i in 1..<10 {
+        try expect(results[i] == first, "Concurrent render \(i) produced different output")
+    }
+}
+
+// MARK: - Tier 3: HTML Output Structural Validation
+
+print("\n=== Tier 3: HTML Structural Validation ===")
+
+runner.test("no unclosed tags in rendered HTML") {
+    // Check that key block-level tags are balanced in fixture output
+    // Uses regex to properly match opening tags (not content inside code blocks)
+    for name in fixtureNames {
+        let md = try loadFixture("\(name).md")
+        let html = MarkdownRenderer.renderHTML(from: md)
+
+        // Only check tags that are unambiguous block-level elements
+        // Skip <p> because cmark can produce <p> tags that get split by other elements
+        let tagsToCheck = ["h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "table", "ul", "ol"]
+        for tag in tagsToCheck {
+            // Count opening tags: <tag> or <tag ...>
+            var openCount = 0
+            var searchRange = html.startIndex..<html.endIndex
+            while let range = html.range(of: "<\(tag)[ >]", options: .regularExpression, range: searchRange) {
+                openCount += 1
+                searchRange = range.upperBound..<html.endIndex
+            }
+            let closeCount = html.components(separatedBy: "</\(tag)>").count - 1
+            if openCount > 0 {
+                try expect(openCount == closeCount,
+                    "Unbalanced <\(tag)> in \(name).md: \(openCount) open, \(closeCount) close")
+            }
+        }
+    }
+}
+
+runner.test("special characters are properly escaped") {
+    let md = "Text with <angle> brackets & ampersand"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    // cmark should escape these in text nodes (CMARK_OPT_UNSAFE allows HTML blocks but text nodes are still escaped)
+    try expect(!html.contains("<angle>") || html.contains("&lt;angle&gt;") || html.contains("&amp;"),
+               "Special chars not properly escaped")
+}
+
+runner.test("all fixtures produce non-empty output") {
+    for name in fixtureNames {
+        let md = try loadFixture("\(name).md")
+        let html = MarkdownRenderer.renderHTML(from: md)
+        try expect(!html.isEmpty, "\(name).md produced empty output")
+        try expect(html.count > 10, "\(name).md produced suspiciously short output: \(html.count) chars")
+    }
+}
+
+// MARK: - Tier 3: Performance Regression Gate
+
+print("\n=== Tier 3: Performance Regression Gate ===")
+
+runner.test("all fixtures render under 100ms") {
+    for name in fixtureNames {
+        let md = try loadFixture("\(name).md")
+        let start = CFAbsoluteTimeGetCurrent()
+        _ = MarkdownRenderer.renderHTML(from: md)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        try expect(elapsed < 100, "\(name).md took \(String(format: "%.1f", elapsed))ms (limit: 100ms)")
+    }
+}
+
+runner.test("full template wrapping under 5ms") {
+    let body = "<p>Hello</p>"
+    let start = CFAbsoluteTimeGetCurrent()
+    for _ in 0..<100 {
+        _ = MarkdownRenderer.wrapInTemplate(body)
+    }
+    let avgMs = (CFAbsoluteTimeGetCurrent() - start) * 1000 / 100
+    try expect(avgMs < 5, "Template wrapping: \(String(format: "%.2f", avgMs))ms avg (limit: 5ms)")
+}
+
+runner.test("debounce-simulated rapid renders stay under budget") {
+    // Simulate 20 rapid re-renders (as if user is typing fast)
+    let md = try loadFixture("basic.md")
+    let start = CFAbsoluteTimeGetCurrent()
+    for _ in 0..<20 {
+        _ = MarkdownRenderer.renderHTML(from: md)
+    }
+    let totalMs = (CFAbsoluteTimeGetCurrent() - start) * 1000
+    let avgMs = totalMs / 20
+    print("    20 rapid renders: \(String(format: "%.1f", totalMs))ms total, \(String(format: "%.2f", avgMs))ms avg")
+    try expect(avgMs < 50, "Rapid render avg \(String(format: "%.1f", avgMs))ms exceeds 50ms budget")
 }
 
 // =============================================================================

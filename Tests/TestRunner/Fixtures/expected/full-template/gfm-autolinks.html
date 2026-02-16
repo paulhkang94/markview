@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root { color-scheme: light dark; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
+        @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th { background: #161b22; } th, td { border-color: #30363d; } blockquote { border-left-color: #30363d; color: #8b949e; } hr { border-top-color: #30363d; } }
+        h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 0.3em; }
+        @media (prefers-color-scheme: dark) { h1, h2 { border-bottom-color: #30363d; } }
+        pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+        code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        pre code { background: none; padding: 0; font-size: 100%; }
+        table { border-collapse: collapse; width: 100%; display: block; overflow: auto; }
+        th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
+        th { background: #f6f8fa; font-weight: 600; }
+        blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
+        img { max-width: 100%; }
+        input[type="checkbox"] { margin-right: 0.5em; }
+        hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+        a { color: #0969da; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body><article><h1>GFM Autolinks</h1>
+<h2>Plain URLs</h2>
+<p>Visit <a href="https://example.com">https://example.com</a> for more information.</p>
+<p>Check out <a href="https://github.com/apple/swift-cmark">https://github.com/apple/swift-cmark</a> for the parser.</p>
+<p>The API is at <a href="https://api.example.com/v2/users?page=1&amp;limit=10">https://api.example.com/v2/users?page=1&amp;limit=10</a> with query params.</p>
+<h2>HTTPS and HTTP</h2>
+<p>Secure: <a href="https://example.com">https://example.com</a></p>
+<p>Insecure: <a href="http://example.com">http://example.com</a></p>
+<h2>URLs with Paths</h2>
+<p>Documentation at <a href="https://docs.example.com/guide/getting-started">https://docs.example.com/guide/getting-started</a></p>
+<p>File at <a href="https://example.com/path/to/file.md">https://example.com/path/to/file.md</a></p>
+<h2>www Prefixed URLs</h2>
+<p>Visit <a href="http://www.example.com">www.example.com</a> for details.</p>
+<p>Check <a href="http://www.github.com/user/repo">www.github.com/user/repo</a> for the source code.</p>
+<h2>Email Addresses</h2>
+<p>Contact <a href="mailto:support@example.com">support@example.com</a> for help.</p>
+<p>Send feedback to <a href="mailto:feedback@markview.dev">feedback@markview.dev</a> or <a href="mailto:admin@example.org">admin@example.org</a>.</p>
+<h2>Mixed in Text</h2>
+<p>The project (<a href="https://github.com/user/repo">https://github.com/user/repo</a>) was started by <a href="mailto:user@example.com">user@example.com</a> and is hosted at <a href="http://www.example.com">www.example.com</a> alongside other tools.</p>
+<h2>Autolinks vs Explicit Links</h2>
+<p>Autolink: <a href="https://example.com">https://example.com</a></p>
+<p>Explicit: <a href="https://example.com">Example</a></p>
+<p>Both should render as clickable links.</p>
+</article></body>
+</html>
