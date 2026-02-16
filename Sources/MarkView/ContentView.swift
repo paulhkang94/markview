@@ -64,11 +64,13 @@ struct ContentView: View {
         .onChange(of: initialFilePath) { newPath in
             if let path = newPath {
                 viewModel.loadFile(at: path)
+                registerFileInWindow(path)
             }
         }
         .onAppear {
             if let path = initialFilePath {
                 viewModel.loadFile(at: path)
+                registerFileInWindow(path)
             }
         }
         .alert(Strings.fileChanged, isPresented: $showExternalChangeAlert) {
@@ -82,6 +84,16 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveDocument)) { _ in
             try? viewModel.save()
+        }
+    }
+
+    /// Register the current file path with the window tracker so AppDelegate
+    /// can find existing windows by file path and avoid duplicates.
+    private func registerFileInWindow(_ path: String) {
+        DispatchQueue.main.async {
+            guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow })
+                    ?? NSApplication.shared.windows.first(where: { $0.isVisible }) else { return }
+            WindowFileTracker.shared.register(window: window, filePath: path)
         }
     }
 

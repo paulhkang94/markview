@@ -1,7 +1,59 @@
 import SwiftUI
 
+/// Intercepts Finder file-open events to bring existing windows to front
+/// instead of letting SwiftUI create duplicate windows.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.isFileURL {
+            let canonicalPath = (url.path as NSString).standardizingPath
+            // Check if any existing window already has this file open
+            if let existingWindow = application.windows.first(where: { window in
+                guard let filePath = WindowFileTracker.shared.filePath(for: window) else {
+                    return false
+                }
+                return (filePath as NSString).standardizingPath == canonicalPath
+            }) {
+                existingWindow.makeKeyAndOrderFront(nil)
+                return
+            }
+            // No existing window — notify SwiftUI to handle it
+            NotificationCenter.default.post(name: .openFileRequest, object: canonicalPath)
+        }
+    }
+}
+
+/// Tracks which file path is displayed in each window.
+final class WindowFileTracker: @unchecked Sendable {
+    static let shared = WindowFileTracker()
+    private var windowToPath: [ObjectIdentifier: String] = [:]
+    private let lock = NSLock()
+
+    func register(window: NSWindow, filePath: String) {
+        lock.lock()
+        windowToPath[ObjectIdentifier(window)] = filePath
+        lock.unlock()
+    }
+
+    func filePath(for window: NSWindow) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return windowToPath[ObjectIdentifier(window)]
+    }
+
+    func unregister(window: NSWindow) {
+        lock.lock()
+        windowToPath.removeValue(forKey: ObjectIdentifier(window))
+        lock.unlock()
+    }
+}
+
+extension Notification.Name {
+    static let openFileRequest = Notification.Name("openFileRequest")
+}
+
 @main
 struct MarkViewApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var filePath: String?
 
     /// Default window size for preview-only mode: 55% width, 85% height.
@@ -44,7 +96,13 @@ struct MarkViewApp: App {
                         }
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .openFileRequest)) { notification in
+                    if let path = notification.object as? String {
+                        filePath = path
+                    }
+                }
                 .onOpenURL { url in
+                    // Fallback for URL-scheme opens; Finder double-clicks go through AppDelegate
                     if url.isFileURL {
                         filePath = url.path
                     }
