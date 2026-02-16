@@ -697,7 +697,7 @@ runner.test("full template dark mode CSS is complete") {
     try expect(full.contains("color: #e6edf3"), "Missing dark text color")
     try expect(full.contains("background: #0d1117"), "Missing dark background")
     try expect(full.contains("#161b22"), "Missing dark code background")
-    try expect(full.contains("#30363d"), "Missing dark border color")
+    try expect(full.contains("#3d444d"), "Missing dark border color")
 }
 
 runner.test("dark mode CSS covers all styled elements") {
@@ -725,26 +725,22 @@ runner.test("dark mode CSS covers all styled elements") {
     }
 }
 
-runner.test("dark mode table has proper contrast") {
+runner.test("dark mode table has proper contrast (GitHub Primer)") {
     let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
 
-    // Table headers must have explicit text color in dark mode (not inherited default)
     guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
         throw TestError.assertionFailed("No dark mode media query found")
     }
     let afterDark = String(full[darkStart.upperBound...])
 
-    // th must have dark background (#161b22), not light (#f6f8fa)
-    try expect(afterDark.contains("th { background: #161b22") || afterDark.contains("th {background: #161b22"),
-              "Dark mode th missing dark background")
+    // Alternating rows use subtle dark background (#151b23), not same as body (#0d1117)
+    try expect(afterDark.contains("#151b23"), "Dark mode alternating rows should use #151b23")
 
-    // Alternating rows must have dark background
-    try expect(afterDark.contains("tr:nth-child(2n) { background: #161b22") ||
-              afterDark.contains("tr:nth-child(2n) {background: #161b22"),
-              "Dark mode alternating rows missing dark background")
+    // Borders should use GitHub dark border color #3d444d
+    try expect(afterDark.contains("#3d444d"), "Dark mode borders should use #3d444d")
 }
 
-runner.test("dark mode table text is readable") {
+runner.test("dark mode inherits text color from body") {
     let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
 
     guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
@@ -752,11 +748,17 @@ runner.test("dark mode table text is readable") {
     }
     let afterDark = String(full[darkStart.upperBound...])
 
-    // Table cells must have light text color for dark backgrounds
-    try expect(afterDark.contains("th") && afterDark.contains("color: #e6edf3"),
-              "Dark mode table headers missing light text color")
-    try expect(afterDark.contains("td") && afterDark.contains("color: #e6edf3"),
-              "Dark mode table cells missing light text color")
+    // Body sets light text color — table cells inherit it (GitHub Primer approach)
+    try expect(afterDark.contains("body") && afterDark.contains("color: #e6edf3"),
+              "Dark mode body must set light text color for inheritance")
+}
+
+runner.test("tables use max-content width not 100%") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+
+    // Tables should fit content (GitHub Primer: width: max-content; max-width: 100%)
+    try expect(full.contains("max-content"), "Tables should use width: max-content")
+    try expect(full.contains("max-width: 100%"), "Tables should cap at 100% to prevent overflow")
 }
 
 // MARK: - Tier 3: Renderer Determinism Tests
@@ -901,19 +903,21 @@ enum TestAppTheme: String, CaseIterable {
 }
 
 enum TestPreviewWidth: String, CaseIterable {
-    case narrow, medium, wide
+    case narrow, medium, wide, full
     var label: String {
         switch self {
-        case .narrow: return "Narrow"
-        case .medium: return "Medium"
-        case .wide: return "Wide"
+        case .narrow: return "Narrow (700px)"
+        case .medium: return "Medium (900px)"
+        case .wide: return "Wide (1200px)"
+        case .full: return "Full Width"
         }
     }
     var cssValue: String {
         switch self {
         case .narrow: return "700px"
         case .medium: return "900px"
-        case .wide: return "100%"
+        case .wide: return "1200px"
+        case .full: return "100%"
         }
     }
 }
@@ -949,11 +953,12 @@ runner.test("AppTheme default is system") {
     try expect(TestAppTheme.system.rawValue == "system", "Default theme should be 'system'")
 }
 
-runner.test("PreviewWidth has 3 cases and correct CSS values") {
-    try expect(TestPreviewWidth.allCases.count == 3, "Expected 3 PreviewWidth cases")
+runner.test("PreviewWidth has 4 cases and correct CSS values") {
+    try expect(TestPreviewWidth.allCases.count == 4, "Expected 4 PreviewWidth cases")
     try expect(TestPreviewWidth.narrow.cssValue == "700px", "Narrow should be 700px")
     try expect(TestPreviewWidth.medium.cssValue == "900px", "Medium should be 900px")
-    try expect(TestPreviewWidth.wide.cssValue == "100%", "Wide should be 100%")
+    try expect(TestPreviewWidth.wide.cssValue == "1200px", "Wide should be 1200px")
+    try expect(TestPreviewWidth.full.cssValue == "100%", "Full should be 100%")
 }
 
 runner.test("PreviewWidth default is medium") {
@@ -978,9 +983,10 @@ runner.test("AppTheme labels are correct") {
 }
 
 runner.test("PreviewWidth labels are correct") {
-    try expect(TestPreviewWidth.narrow.label == "Narrow", "Narrow label")
-    try expect(TestPreviewWidth.medium.label == "Medium", "Medium label")
-    try expect(TestPreviewWidth.wide.label == "Wide", "Wide label")
+    try expect(TestPreviewWidth.narrow.label == "Narrow (700px)", "Narrow label")
+    try expect(TestPreviewWidth.medium.label == "Medium (900px)", "Medium label")
+    try expect(TestPreviewWidth.wide.label == "Wide (1200px)", "Wide label")
+    try expect(TestPreviewWidth.full.label == "Full Width", "Full label")
 }
 
 runner.test("TabBehavior labels are correct") {

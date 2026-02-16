@@ -27,12 +27,12 @@
             a { color: #58a6ff; }
             code:not([class*="language-"]) { background: #343942; }
             pre { background: #161b22 !important; }
-            th { background: #161b22; }
-            th, td { border-color: #30363d; }
-            blockquote { border-left-color: #30363d; color: #8b949e; }
-            hr { border-top-color: #30363d; }
-            tr:nth-child(2n) { background: #161b22; }
-            h1, h2 { border-bottom-color: #30363d; }
+            th, td { border-color: #3d444d; }
+            tr { background-color: #0d1117; border-top-color: #3d444db3; }
+            tr:nth-child(2n) { background-color: #151b23; }
+            blockquote { border-left-color: #3d444d; color: #8b949e; }
+            hr { border-top-color: #3d444d; }
+            h1, h2 { border-bottom-color: #3d444d; }
             h6 { color: #8b949e; }
             .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8b949e; }
             .token.punctuation { color: #e6edf3; }
@@ -85,11 +85,12 @@
             font-size: 100%;
         }
 
-        /* Tables */
-        table { border-collapse: collapse; width: 100%; margin-bottom: 16px; overflow: auto; display: block; }
-        th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
-        th { font-weight: 600; background: #f6f8fa; }
-        tr:nth-child(2n) { background: #f6f8fa; }
+        /* Tables — matches GitHub Primer */
+        table { border-spacing: 0; border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant: tabular-nums; margin-bottom: 16px; }
+        th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
+        th { font-weight: 600; }
+        tr { background-color: #ffffff; border-top: 1px solid #d1d9e0b3; }
+        tr:nth-child(2n) { background-color: #f6f8fa; }
 
         /* Blockquotes */
         blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }

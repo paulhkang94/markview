@@ -50,14 +50,16 @@ public final class MarkdownRenderer {
             <style>
                 :root { color-scheme: light dark; }
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 32px; line-height: 1.6; color: #1f2328; background: #fff; }
-                @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th { background: #161b22; color: #e6edf3; } td { color: #e6edf3; } th, td { border-color: #30363d; } tr:nth-child(2n) { background: #161b22; } blockquote { border-left-color: #30363d; color: #8b949e; } hr { border-top-color: #30363d; } h1, h2 { border-bottom-color: #30363d; } h6 { color: #8b949e; } }
-                h1, h2 { border-bottom: 1px solid #d0d7de; padding-bottom: 0.3em; }
+                @media (prefers-color-scheme: dark) { body { color: #e6edf3; background: #0d1117; } a { color: #58a6ff; } code, pre { background: #161b22; } th, td { border-color: #3d444d; } tr { background-color: #0d1117; border-top-color: #3d444db3; } tr:nth-child(2n) { background-color: #151b23; } blockquote { border-left-color: #3d444d; color: #8b949e; } hr { border-top-color: #3d444d; } h1, h2 { border-bottom-color: #3d444d; } h6 { color: #8b949e; } }
+                h1, h2 { border-bottom: 1px solid #d1d9e0; padding-bottom: 0.3em; }
                 pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
                 code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
                 pre code { background: none; padding: 0; font-size: 100%; }
-                table { border-collapse: collapse; width: 100%; display: block; overflow: auto; }
-                th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
-                th { background: #f6f8fa; font-weight: 600; }
+                table { border-spacing: 0; border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant: tabular-nums; }
+                th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
+                th { font-weight: 600; }
+                tr { background-color: #ffffff; border-top: 1px solid #d1d9e0b3; }
+                tr:nth-child(2n) { background-color: #f6f8fa; }
                 blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
                 img { max-width: 100%; }
                 input[type="checkbox"] { margin-right: 0.5em; }

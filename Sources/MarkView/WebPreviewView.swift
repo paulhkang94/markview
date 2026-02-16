@@ -69,13 +69,12 @@ struct WebPreviewView: NSViewRepresentable {
                 css += "a { color: #58a6ff; }\n"
                 css += "code:not([class*=\"language-\"]) { background: #343942; }\n"
                 css += "pre { background: #161b22 !important; }\n"
-                css += "th { background: #161b22; color: #e6edf3; }\n"
-                css += "td { color: #e6edf3; }\n"
-                css += "th, td { border-color: #30363d; }\n"
-                css += "tr:nth-child(2n) { background: #161b22; }\n"
-                css += "blockquote { border-left-color: #30363d; color: #8b949e; }\n"
-                css += "hr { border-top-color: #30363d; }\n"
-                css += "h1, h2 { border-bottom-color: #30363d; }\n"
+                css += "th, td { border-color: #3d444d; }\n"
+                css += "tr { background-color: #0d1117; border-top-color: #3d444db3; }\n"
+                css += "tr:nth-child(2n) { background-color: #151b23; }\n"
+                css += "blockquote { border-left-color: #3d444d; color: #8b949e; }\n"
+                css += "hr { border-top-color: #3d444d; }\n"
+                css += "h1, h2 { border-bottom-color: #3d444d; }\n"
                 css += "h6 { color: #8b949e; }\n"
             case .system:
                 break // Use CSS media query (default behavior)
@@ -112,15 +111,16 @@ struct WebPreviewView: NSViewRepresentable {
             var css = "body { max-width: \(settings.previewWidth.cssValue); font-size: \(Int(settings.previewFontSize))px; }"
             switch settings.theme {
             case .light:
-                css += " body { color: #1f2328; background: #fff; } :root { color-scheme: light; }"
+                css += " body { color: #1f2328; background: #ffffff; } :root { color-scheme: light; }"
             case .dark:
                 css += " body { color: #e6edf3; background: #0d1117; } :root { color-scheme: dark; }"
                 css += " a { color: #58a6ff; } code:not([class*=\"language-\"]) { background: #343942; }"
                 css += " pre { background: #161b22 !important; }"
-                css += " th { background: #161b22; color: #e6edf3; } td { color: #e6edf3; }"
-                css += " th, td { border-color: #30363d; } tr:nth-child(2n) { background: #161b22; }"
-                css += " blockquote { border-left-color: #30363d; color: #8b949e; }"
-                css += " hr { border-top-color: #30363d; } h1, h2 { border-bottom-color: #30363d; }"
+                css += " th, td { border-color: #3d444d; }"
+                css += " tr { background-color: #0d1117; border-top-color: #3d444db3; }"
+                css += " tr:nth-child(2n) { background-color: #151b23; }"
+                css += " blockquote { border-left-color: #3d444d; color: #8b949e; }"
+                css += " hr { border-top-color: #3d444d; } h1, h2 { border-bottom-color: #3d444d; }"
                 css += " h6 { color: #8b949e; }"
             case .system:
                 break

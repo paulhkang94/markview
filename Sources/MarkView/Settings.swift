@@ -15,20 +15,22 @@ enum AppTheme: String, CaseIterable, Identifiable {
 }
 
 enum PreviewWidth: String, CaseIterable, Identifiable {
-    case narrow, medium, wide
+    case narrow, medium, wide, full
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .narrow: return "Narrow"
-        case .medium: return "Medium"
-        case .wide: return "Wide"
+        case .narrow: return "Narrow (700px)"
+        case .medium: return "Medium (900px)"
+        case .wide: return "Wide (1200px)"
+        case .full: return "Full Width"
         }
     }
     var cssValue: String {
         switch self {
         case .narrow: return "700px"
         case .medium: return "900px"
-        case .wide: return "100%"
+        case .wide: return "1200px"
+        case .full: return "100%"
         }
     }
 }
