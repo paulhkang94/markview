@@ -11,7 +11,6 @@ struct WebPreviewView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.setAccessibilityLabel(Strings.markdownPreview)
-        webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
         return webView
     }
@@ -34,54 +33,16 @@ struct WebPreviewView: NSViewRepresentable {
         Coordinator()
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    class Coordinator {
         weak var webView: WKWebView?
         private var hasLoadedInitialPage = false
-        private var hasSizedWindow = false
         private var lastHTML: String = ""
         private var prismJS: String?
         private let settings = AppSettings.shared
 
-        override init() {
+        init() {
             if let prismURL = Bundle.module.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
                 prismJS = try? String(contentsOf: prismURL, encoding: .utf8)
-            }
-            super.init()
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard !hasSizedWindow else { return }
-            hasSizedWindow = true
-            sizeWindowToContent(webView)
-        }
-
-        private func sizeWindowToContent(_ webView: WKWebView) {
-            let js = "JSON.stringify({w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight})"
-            webView.evaluateJavaScript(js) { [weak webView] result, _ in
-                guard let webView = webView,
-                      let json = result as? String,
-                      let data = json.data(using: .utf8),
-                      let dict = try? JSONSerialization.jsonObject(with: data) as? [String: CGFloat],
-                      let contentWidth = dict["w"],
-                      let contentHeight = dict["h"],
-                      let window = webView.window,
-                      let screen = window.screen ?? NSScreen.main else { return }
-
-                let screenFrame = screen.visibleFrame
-                let titleBarHeight: CGFloat = 28
-                let statusBarHeight: CGFloat = 24
-                let chrome = titleBarHeight + statusBarHeight
-                let horizontalPadding: CGFloat = 40
-
-                let targetWidth = min(contentWidth + horizontalPadding, screenFrame.width)
-                let targetHeight = min(contentHeight + chrome, screenFrame.height)
-
-                let width = max(targetWidth, 600)
-                let height = max(targetHeight, 400)
-
-                let x = screenFrame.origin.x + (screenFrame.width - width) / 2
-                let y = screenFrame.origin.y + (screenFrame.height - height) / 2
-                window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true, animate: true)
             }
         }
 
