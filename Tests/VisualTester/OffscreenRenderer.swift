@@ -1,10 +1,10 @@
 import AppKit
-import WebKit
+@preconcurrency import WebKit
 
 /// Renders HTML in an offscreen WKWebView and captures a screenshot as PNG data.
-/// Uses @preconcurrency to opt out of WKNavigationDelegate's implicit @MainActor isolation,
-/// since this class manages its own thread safety via DispatchQueue.main.async.
-final class OffscreenRenderer: NSObject, @preconcurrency WKNavigationDelegate {
+/// @preconcurrency import WebKit prevents WKNavigationDelegate from inferring @MainActor
+/// on the entire class, since this class manages its own thread safety.
+final class OffscreenRenderer: NSObject, WKNavigationDelegate {
     private let width: CGFloat
     private let height: CGFloat
     private var webView: WKWebView?

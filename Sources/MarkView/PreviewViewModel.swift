@@ -13,8 +13,8 @@ final class PreviewViewModel: ObservableObject {
     @Published var lintErrors: Int = 0
     @Published var lintDiagnostics: [LintDiagnostic] = []
 
-    var currentFilePath: String?
-    var fileName: String = "MarkView"
+    @Published var currentFilePath: String?
+    @Published var fileName: String = "MarkView"
 
     /// Directory URL of the current file, used as base URL for resolving relative paths (images, links)
     var currentFileDirectoryURL: URL? {
