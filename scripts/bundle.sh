@@ -34,6 +34,7 @@ echo "✓ Executable copied"
 if [ -d "Sources/MarkView/Resources" ]; then
     cp Sources/MarkView/Resources/template.html "$APP_DIR/Contents/Resources/" 2>/dev/null || true
     cp Sources/MarkView/Resources/prism-bundle.min.js "$APP_DIR/Contents/Resources/" 2>/dev/null || true
+    cp Sources/MarkView/Resources/AppIcon.icns "$APP_DIR/Contents/Resources/" 2>/dev/null || true
     echo "✓ Resources copied"
 fi
 
