@@ -2214,6 +2214,50 @@ runner.test("window sizing uses animate: true for smooth transitions") {
 }
 
 // =============================================================================
+// MARK: — Launch Behavior Tests
+// =============================================================================
+// Validates that the app launch UX is correct:
+// - No file argument: shows DropTargetView only (no auto-open panel)
+// - With file argument: loads file directly
+// =============================================================================
+
+print("\n--- Launch Behavior ---")
+
+runner.test("no-file launch must NOT auto-show Open panel") {
+    // The onAppear block should NOT call openFile() in the else branch
+    // Having both DropTargetView AND an Open panel creates cluttered two-window UX
+    let onAppearSection: String
+    if let start = appSource.range(of: ".onAppear {"),
+       let end = appSource.range(of: ".onOpenURL", range: start.upperBound..<appSource.endIndex) {
+        onAppearSection = String(appSource[start.lowerBound..<end.lowerBound])
+    } else {
+        onAppearSection = ""
+    }
+    try expect(!onAppearSection.contains("openFile()"),
+        "onAppear must not call openFile() — DropTargetView with Cmd+O hint is sufficient")
+}
+
+runner.test("DropTargetView shows file open guidance") {
+    try expect(contentSource.contains("dropSubprompt") || contentSource.contains("Open"),
+        "DropTargetView must guide user to File → Open")
+}
+
+runner.test("DropTargetView accepts markdown file extensions") {
+    try expect(contentSource.contains("\"md\"") && contentSource.contains("\"markdown\""),
+        "DropTargetView must accept .md and .markdown extensions")
+}
+
+runner.test("File → Open menu exists with Cmd+O shortcut") {
+    try expect(appSource.contains("openFile()") && appSource.contains("\"o\""),
+        "File menu must have Open with Cmd+O keyboard shortcut")
+}
+
+runner.test("openFile uses NSOpenPanel with markdown content types") {
+    try expect(appSource.contains("NSOpenPanel") && appSource.contains("filenameExtension: \"md\""),
+        "openFile must use NSOpenPanel configured for markdown files")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
