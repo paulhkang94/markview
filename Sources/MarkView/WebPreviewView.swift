@@ -16,6 +16,16 @@ struct WebPreviewView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        // Sync WKWebView appearance with system so @media (prefers-color-scheme) works
+        let settings = AppSettings.shared
+        switch settings.theme {
+        case .light:
+            webView.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            webView.appearance = NSAppearance(named: .darkAqua)
+        case .system:
+            webView.appearance = nil // inherit from system
+        }
         context.coordinator.updateContent(html, in: webView)
     }
 
@@ -67,7 +77,11 @@ struct WebPreviewView: NSViewRepresentable {
             case .dark:
                 css += Self.darkModeCSS + "\n"
             case .system:
-                break // Use CSS media query (default behavior)
+                // Detect current system appearance and inject dark CSS explicitly,
+                // because WKWebView's @media (prefers-color-scheme) is unreliable
+                if Self.systemIsDarkMode {
+                    css += Self.darkModeCSS + "\n"
+                }
             }
 
             if css.isEmpty { return html }
@@ -105,7 +119,9 @@ struct WebPreviewView: NSViewRepresentable {
             case .dark:
                 css += " " + Self.darkModeCSS
             case .system:
-                break
+                if Self.systemIsDarkMode {
+                    css += " " + Self.darkModeCSS
+                }
             }
 
             let js = """
@@ -128,20 +144,27 @@ struct WebPreviewView: NSViewRepresentable {
             webView.evaluateJavaScript(js)
         }
 
+        /// Detect if the system is currently in dark mode.
+        private static var systemIsDarkMode: Bool {
+            NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        }
+
         /// Single source of truth for forced-dark theme CSS (GitHub Primer colors).
         /// Used by both injectSettingsCSS (initial load) and updateContentViaJS (live updates).
+        /// IMPORTANT: Every element with a visual property MUST have an explicit color set here —
+        /// do NOT rely on CSS inheritance from body, as WKWebView dark mode is unreliable.
         private static let darkModeCSS = [
             "body { color: #e6edf3; background: #0d1117; }",
             ":root { color-scheme: dark; }",
             "a { color: #58a6ff; }",
             "code:not([class*=\"language-\"]) { background: #343942; color: #e6edf3; }",
-            "pre { background: #161b22 !important; }",
-            "th, td { border-color: #3d444d; }",
+            "pre { background: #161b22 !important; color: #e6edf3; }",
+            "th, td { border-color: #3d444d; color: #e6edf3; }",
             "tr { background-color: #0d1117; border-top-color: #3d444db3; }",
             "tr:nth-child(2n) { background-color: #151b23; }",
             "blockquote { border-left-color: #3d444d; color: #8b949e; }",
             "hr { border-top-color: #3d444d; }",
-            "h1, h2 { border-bottom-color: #3d444d; }",
+            "h1, h2 { border-bottom-color: #3d444d; color: #e6edf3; }",
             "h6 { color: #8b949e; }",
         ].joined(separator: " ")
 

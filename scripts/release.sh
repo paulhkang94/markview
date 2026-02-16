@@ -83,7 +83,36 @@ echo ""
 echo "--- Installing CLI ---"
 bash "$PROJECT_DIR/scripts/install-cli.sh"
 
-# Step 8: Summary
+# Step 8: Restart app if running (ensures user gets the new binary)
+echo ""
+echo "--- Restarting MarkView if running ---"
+if pgrep -x MarkView > /dev/null 2>&1; then
+    pkill -x MarkView
+    sleep 1
+    open -a MarkView
+    echo "Killed old process and relaunched"
+else
+    echo "MarkView was not running"
+fi
+
+# Step 9: Verify the installed binary has the expected version
+echo ""
+echo "--- Post-install verification ---"
+INSTALLED_VERSION=$(plutil -extract CFBundleShortVersionString raw /Applications/MarkView.app/Contents/Info.plist 2>/dev/null || echo "?")
+if [ "$INSTALLED_VERSION" = "$NEW_VERSION" ]; then
+    echo "Installed version: $INSTALLED_VERSION"
+else
+    echo "WARNING: Installed version ($INSTALLED_VERSION) does not match expected ($NEW_VERSION)"
+fi
+
+# Verify dark mode CSS is present in binary (regression guard)
+if strings /Applications/MarkView.app/Contents/MacOS/MarkView | grep -q 'color: #e6edf3'; then
+    echo "Dark mode CSS: present in binary"
+else
+    echo "WARNING: Dark mode CSS NOT found in binary"
+fi
+
+# Step 11: Summary
 echo ""
 echo "=== Released MarkView v$NEW_VERSION (build $BUILD_NUMBER) ==="
 echo ""
