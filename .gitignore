@@ -27,3 +27,7 @@ Package.resolved
 # Claude
 .claude/
 CLAUDE.md
+
+# Private docs (not for public repo)
+docs/LAUNCH-PLAN.md
+docs/MARKET-ANALYSIS.md

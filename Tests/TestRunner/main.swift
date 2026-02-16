@@ -2313,6 +2313,67 @@ runner.test("Cmd+/- updates both editor and preview font size") {
 }
 
 // =============================================================================
+// MARK: — Editor (NSTextView) Tests
+// =============================================================================
+// Validates that EditorView uses NSTextView with find/replace support.
+
+let editorSource = try! String(contentsOfFile: "Sources/MarkView/EditorView.swift", encoding: .utf8)
+
+print("\n--- Editor (NSTextView) ---")
+
+runner.test("EditorView uses NSViewRepresentable (not SwiftUI TextEditor)") {
+    try expect(editorSource.contains("NSViewRepresentable"),
+        "EditorView must use NSViewRepresentable for native text editing")
+    try expect(!editorSource.contains("TextEditor(text:"),
+        "EditorView must not use SwiftUI TextEditor")
+}
+
+runner.test("EditorView enables find bar") {
+    try expect(editorSource.contains("usesFindBar = true"),
+        "NSTextView must have usesFindBar enabled for Cmd+F support")
+}
+
+runner.test("EditorView enables incremental search") {
+    try expect(editorSource.contains("isIncrementalSearchingEnabled = true"),
+        "NSTextView must have incremental searching for live find-as-you-type")
+}
+
+runner.test("EditorView supports undo") {
+    try expect(editorSource.contains("allowsUndo = true"),
+        "NSTextView must have allowsUndo for Cmd+Z support")
+}
+
+runner.test("EditorView uses monospaced font from settings") {
+    try expect(editorSource.contains("monospacedSystemFont") && editorSource.contains("editorFontSize"),
+        "Editor font must be monospaced and respect editorFontSize setting")
+}
+
+runner.test("EditorView respects word wrap setting") {
+    try expect(editorSource.contains("settings.wordWrap"),
+        "Editor must check wordWrap setting to toggle text wrapping")
+}
+
+runner.test("EditorView respects spell check setting") {
+    try expect(editorSource.contains("settings.spellCheck"),
+        "Editor must check spellCheck setting")
+}
+
+runner.test("EditorView avoids unnecessary text resets") {
+    try expect(editorSource.contains("textView.string != text"),
+        "updateNSView must guard against resetting text when unchanged (prevents cursor jump)")
+}
+
+runner.test("EditorView preserves selection on external text update") {
+    try expect(editorSource.contains("selectedRanges"),
+        "Editor must save/restore selectedRanges when text is updated externally")
+}
+
+runner.test("EditorView has delegate for text change callbacks") {
+    try expect(editorSource.contains("NSTextViewDelegate") && editorSource.contains("textDidChange"),
+        "Editor must use NSTextViewDelegate to notify parent of text changes")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
