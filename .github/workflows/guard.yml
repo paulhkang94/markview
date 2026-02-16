@@ -1,0 +1,16 @@
+name: Public Repo Guard
+on: [push, pull_request]
+
+jobs:
+  repl-leak-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for REPL infrastructure leaks
+        run: |
+          blocked=$(git ls-tree -r --name-only HEAD | grep -E '^\.(claude|vscode)/|^CLAUDE\.md$|^hooks/|^scripts/claude-' || true)
+          if [ -n "$blocked" ]; then
+            echo "::error::REPL infrastructure detected in public repo:"
+            echo "$blocked"
+            exit 1
+          fi
