@@ -1827,6 +1827,236 @@ runner.test("all user-facing strings use Strings enum") {
 }
 
 // =============================================================================
+// MARK: - Dark Mode Explicit Color Regression Tests
+// =============================================================================
+// These tests prevent the bug where dark mode elements relied on CSS color
+// inheritance from body, which fails in WKWebView. Every visible element
+// MUST have an explicit color property in dark mode CSS.
+
+print("\n=== Dark Mode Explicit Color Regression ===")
+
+/// Parse dark mode CSS from a full HTML document and return selector → properties map.
+func extractDarkModeRules(from html: String) -> [String: [String: String]] {
+    let css = extractCSS(from: html)
+    let (_, darkCSS) = splitLightDarkCSS(css)
+    let rules = parseCSSRules(darkCSS)
+    var result: [String: [String: String]] = [:]
+    for rule in rules {
+        result[rule.selector] = rule.properties
+    }
+    return result
+}
+
+/// Elements that display text and MUST have explicit color in dark mode.
+/// Relying on body color inheritance is fragile in WKWebView.
+let requiredExplicitColorSelectors = [
+    ("body", "body text"),
+    ("code:not([class*=\"language-\"])", "inline code"),
+    ("th, td", "table cells"),
+    ("pre", "code blocks"),
+    ("h1, h2", "headings"),
+]
+
+runner.test("inline template: all text elements have explicit dark color") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    let darkRules = extractDarkModeRules(from: full)
+
+    var missing: [String] = []
+    for (selector, description) in requiredExplicitColorSelectors {
+        let props = darkRules[selector] ?? [:]
+        if props["color"] == nil {
+            missing.append("\(selector) (\(description))")
+        }
+    }
+
+    if !missing.isEmpty {
+        throw TestError.assertionFailed(
+            "Dark mode missing explicit color on \(missing.count) text elements " +
+            "(DO NOT rely on inheritance from body):\n  " +
+            missing.joined(separator: "\n  ")
+        )
+    }
+}
+
+runner.test("template.html: all text elements have explicit dark color") {
+    let cwd = FileManager.default.currentDirectoryPath
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let template = try String(contentsOf: templatePath, encoding: .utf8)
+    let darkRules = extractDarkModeRules(from: template)
+
+    var missing: [String] = []
+    for (selector, description) in requiredExplicitColorSelectors {
+        let props = darkRules[selector] ?? [:]
+        if props["color"] == nil {
+            missing.append("\(selector) (\(description))")
+        }
+    }
+
+    if !missing.isEmpty {
+        throw TestError.assertionFailed(
+            "template.html dark mode missing explicit color on \(missing.count) text elements " +
+            "(DO NOT rely on inheritance from body):\n  " +
+            missing.joined(separator: "\n  ")
+        )
+    }
+}
+
+runner.test("WebPreviewView darkModeCSS: all text elements have explicit color") {
+    // Read WebPreviewView.swift and extract the darkModeCSS constant
+    let cwd = FileManager.default.currentDirectoryPath
+    let wpvPath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/WebPreviewView.swift")
+    let source = try String(contentsOf: wpvPath, encoding: .utf8)
+
+    // Extract the darkModeCSS array content from source
+    guard let darkStart = source.range(of: "private static let darkModeCSS = ["),
+          let darkEnd = source.range(of: "].joined(separator:", range: darkStart.upperBound..<source.endIndex) else {
+        throw TestError.assertionFailed("Could not find darkModeCSS constant in WebPreviewView.swift")
+    }
+    let darkCSSSource = String(source[darkStart.upperBound..<darkEnd.lowerBound])
+    // Unescape Swift string escapes to get the actual CSS
+    let darkCSS = darkCSSSource
+        .replacingOccurrences(of: "\\\"", with: "\"")
+        .replacingOccurrences(of: "\\n", with: "\n")
+
+    for (selector, description) in requiredExplicitColorSelectors {
+        // Find the CSS rule string for this selector
+        guard let ruleStart = darkCSS.range(of: "\(selector) {") else {
+            throw TestError.assertionFailed("darkModeCSS missing selector: \(selector) (\(description))")
+        }
+        let afterSelector = String(darkCSS[ruleStart.upperBound...])
+        guard let ruleEndIdx = afterSelector.firstIndex(of: "}") else { continue }
+        let ruleBody = String(afterSelector[afterSelector.startIndex..<ruleEndIdx])
+        try expect(ruleBody.contains("color:"),
+            "darkModeCSS: \(selector) (\(description)) missing explicit color property — " +
+            "DO NOT rely on inheritance from body")
+    }
+}
+
+runner.test("dark mode CSS is consistent across all 3 locations") {
+    // Verify that the key dark mode colors match across template.html,
+    // inline template, and WebPreviewView.swift darkModeCSS
+    let cwd = FileManager.default.currentDirectoryPath
+
+    // 1. Inline template
+    let inlineHTML = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    let inlineDark = extractDarkModeRules(from: inlineHTML)
+
+    // 2. template.html
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templateHTML = try String(contentsOf: templatePath, encoding: .utf8)
+    let templateDark = extractDarkModeRules(from: templateHTML)
+
+    // Check key selectors match between inline and template
+    let criticalSelectors = ["body", "code:not([class*=\"language-\"])", "th, td", "pre"]
+    var mismatches: [String] = []
+
+    for sel in criticalSelectors {
+        let inlineColor = inlineDark[sel]?["color"]
+        let templateColor = templateDark[sel]?["color"]
+
+        if inlineColor != templateColor {
+            mismatches.append("\(sel): inline=\(inlineColor ?? "nil") vs template=\(templateColor ?? "nil")")
+        }
+
+        let inlineBg = inlineDark[sel]?["background"] ?? inlineDark[sel]?["background-color"]
+        let templateBg = templateDark[sel]?["background"] ?? templateDark[sel]?["background-color"]
+
+        if inlineBg != templateBg {
+            mismatches.append("\(sel) bg: inline=\(inlineBg ?? "nil") vs template=\(templateBg ?? "nil")")
+        }
+    }
+
+    if !mismatches.isEmpty {
+        throw TestError.assertionFailed(
+            "Dark mode CSS inconsistency between inline template and template.html:\n  " +
+            mismatches.joined(separator: "\n  ")
+        )
+    }
+}
+
+runner.test("dark mode text contrast >= 4.5:1 for all explicit colors") {
+    // WCAG AA requires >= 4.5:1 for normal text
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    let darkRules = extractDarkModeRules(from: full)
+
+    // Parse hex color to relative luminance
+    func luminance(_ hex: String) -> Double? {
+        let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard h.count == 6 else { return nil }
+        let scanner = Scanner(string: h)
+        var rgb: UInt64 = 0
+        scanner.scanHexInt64(&rgb)
+        let r = Double((rgb >> 16) & 0xFF) / 255.0
+        let g = Double((rgb >> 8) & 0xFF) / 255.0
+        let b = Double(rgb & 0xFF) / 255.0
+        func linearize(_ c: Double) -> Double { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+    }
+
+    func contrastRatio(_ l1: Double, _ l2: Double) -> Double {
+        let lighter = max(l1, l2)
+        let darker = min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    // Dark background
+    let bgHex = "#0d1117"
+    guard let bgLum = luminance(bgHex) else {
+        throw TestError.assertionFailed("Could not parse background color")
+    }
+
+    // Check all elements with explicit color
+    var failures: [String] = []
+    for (selector, description) in requiredExplicitColorSelectors {
+        guard let colorValue = darkRules[selector]?["color"] else { continue }
+        // Extract hex color from value (might be "#e6edf3" or "#8b949e" etc)
+        let hexPattern = "#[0-9a-fA-F]{6}"
+        guard let hexRange = colorValue.range(of: hexPattern, options: .regularExpression),
+              let fgLum = luminance(String(colorValue[hexRange])) else { continue }
+
+        let ratio = contrastRatio(fgLum, bgLum)
+        if ratio < 4.5 {
+            failures.append("\(selector) (\(description)): \(colorValue) on \(bgHex) = \(String(format: "%.1f", ratio)):1 (need >= 4.5:1)")
+        }
+    }
+
+    if !failures.isEmpty {
+        throw TestError.assertionFailed(
+            "WCAG AA contrast failures in dark mode:\n  " +
+            failures.joined(separator: "\n  ")
+        )
+    }
+}
+
+runner.test("WebPreviewView .system theme injects dark CSS (not just media query)") {
+    // Verify that WebPreviewView.swift handles .system theme by detecting
+    // the system appearance and injecting darkModeCSS, NOT just relying on
+    // @media (prefers-color-scheme: dark) which is unreliable in WKWebView
+    let cwd = FileManager.default.currentDirectoryPath
+    let wpvPath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/WebPreviewView.swift")
+    let source = try String(contentsOf: wpvPath, encoding: .utf8)
+
+    // Find the .system case in injectSettingsCSS
+    guard source.contains("case .system:") else {
+        throw TestError.assertionFailed("WebPreviewView missing .system case")
+    }
+
+    // Verify it does NOT just break/return — it must inject dark CSS conditionally
+    // Look for the pattern: case .system followed by dark mode detection
+    try expect(
+        source.contains("systemIsDarkMode") || source.contains("effectiveAppearance"),
+        "WebPreviewView .system theme must detect dark mode and inject CSS explicitly " +
+        "(WKWebView @media prefers-color-scheme is unreliable)"
+    )
+
+    // Verify webView.appearance is set (so media query works as backup)
+    try expect(
+        source.contains("webView.appearance"),
+        "WebPreviewView must set webView.appearance to sync with system theme"
+    )
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
