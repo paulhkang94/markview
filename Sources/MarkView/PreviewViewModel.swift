@@ -9,14 +9,18 @@ final class PreviewViewModel: ObservableObject {
     @Published var editorContent: String = ""
     @Published var isDirty: Bool = false
     @Published var externalChangeConflict: Bool = false
+    @Published var lintWarnings: Int = 0
+    @Published var lintErrors: Int = 0
 
     var currentFilePath: String?
     var fileName: String = "MarkView"
 
     private var fileWatcher: FileWatcher?
     private var renderTask: Task<Void, Never>?
+    private var lintTask: Task<Void, Never>?
     private var template: String?
     private var originalContent: String = ""
+    private let linter = MarkdownLinter()
 
     func loadFile(at path: String) {
         currentFilePath = path
@@ -32,6 +36,7 @@ final class PreviewViewModel: ObservableObject {
         editorContent = newText
         isDirty = newText != originalContent
         renderDebounced(newText)
+        lintDebounced(newText)
     }
 
     func reloadFromDisk() {
@@ -61,6 +66,7 @@ final class PreviewViewModel: ObservableObject {
         originalContent = content
         isDirty = false
         renderImmediate(content)
+        runLint(content)
         isLoaded = true
     }
 
@@ -78,16 +84,29 @@ final class PreviewViewModel: ObservableObject {
         }
     }
 
+    private func lintDebounced(_ markdown: String) {
+        lintTask?.cancel()
+        lintTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            guard !Task.isCancelled else { return }
+            runLint(markdown)
+        }
+    }
+
+    private func runLint(_ markdown: String) {
+        let diagnostics = linter.lint(markdown)
+        lintWarnings = diagnostics.filter { $0.severity == .warning }.count
+        lintErrors = diagnostics.filter { $0.severity == .error }.count
+    }
+
     private func watchFile(at path: String) {
         fileWatcher?.stop()
         fileWatcher = FileWatcher(path: path) { [weak self] in
             Task { @MainActor in
                 guard let self = self else { return }
                 if self.isDirty {
-                    // Editor has unsaved changes — prompt user
                     self.externalChangeConflict = true
                 } else {
-                    // Clean state — auto-reload
                     self.loadContent(from: path)
                 }
             }

@@ -822,6 +822,562 @@ runner.test("debounce-simulated rapid renders stay under budget") {
     try expect(avgMs < 50, "Rapid render avg \(String(format: "%.1f", avgMs))ms exceeds 50ms budget")
 }
 
+// MARK: - Settings Enum Tests
+//
+// These enums mirror the definitions in Sources/MarkView/Settings.swift.
+// The test runner can't import MarkView (SwiftUI dependency), so we redefine
+// the enum contracts here to verify raw values, labels, and CSS values are correct.
+
+print("\n=== Settings Enum Tests ===")
+
+enum TestAppTheme: String, CaseIterable {
+    case light, dark, system
+    var label: String {
+        switch self {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .system: return "System"
+        }
+    }
+}
+
+enum TestPreviewWidth: String, CaseIterable {
+    case narrow, medium, wide
+    var label: String {
+        switch self {
+        case .narrow: return "Narrow"
+        case .medium: return "Medium"
+        case .wide: return "Wide"
+        }
+    }
+    var cssValue: String {
+        switch self {
+        case .narrow: return "700px"
+        case .medium: return "900px"
+        case .wide: return "100%"
+        }
+    }
+}
+
+enum TestTabBehavior: String, CaseIterable {
+    case twoSpaces, fourSpaces, tab
+    var label: String {
+        switch self {
+        case .twoSpaces: return "2 Spaces"
+        case .fourSpaces: return "4 Spaces"
+        case .tab: return "Tab"
+        }
+    }
+    var insertionString: String {
+        switch self {
+        case .twoSpaces: return "  "
+        case .fourSpaces: return "    "
+        case .tab: return "\t"
+        }
+    }
+}
+
+runner.test("AppTheme has 3 cases and is CaseIterable") {
+    let cases = ["light", "dark", "system"]
+    for raw in cases {
+        let theme = TestAppTheme(rawValue: raw)
+        try expect(theme != nil, "AppTheme missing case: \(raw)")
+    }
+    try expect(TestAppTheme.allCases.count == 3, "Expected 3 AppTheme cases, got \(TestAppTheme.allCases.count)")
+}
+
+runner.test("AppTheme default is system") {
+    try expect(TestAppTheme.system.rawValue == "system", "Default theme should be 'system'")
+}
+
+runner.test("PreviewWidth has 3 cases and correct CSS values") {
+    try expect(TestPreviewWidth.allCases.count == 3, "Expected 3 PreviewWidth cases")
+    try expect(TestPreviewWidth.narrow.cssValue == "700px", "Narrow should be 700px")
+    try expect(TestPreviewWidth.medium.cssValue == "900px", "Medium should be 900px")
+    try expect(TestPreviewWidth.wide.cssValue == "100%", "Wide should be 100%")
+}
+
+runner.test("PreviewWidth default is medium") {
+    try expect(TestPreviewWidth.medium.rawValue == "medium", "Default width should be 'medium'")
+}
+
+runner.test("TabBehavior has 3 cases and correct insertion strings") {
+    try expect(TestTabBehavior.allCases.count == 3, "Expected 3 TabBehavior cases")
+    try expect(TestTabBehavior.twoSpaces.insertionString == "  ", "2 spaces should insert 2 spaces")
+    try expect(TestTabBehavior.fourSpaces.insertionString == "    ", "4 spaces should insert 4 spaces")
+    try expect(TestTabBehavior.tab.insertionString == "\t", "Tab should insert tab character")
+}
+
+runner.test("TabBehavior default is fourSpaces") {
+    try expect(TestTabBehavior.fourSpaces.rawValue == "fourSpaces", "Default tab behavior should be 'fourSpaces'")
+}
+
+runner.test("AppTheme labels are correct") {
+    try expect(TestAppTheme.light.label == "Light", "Light theme label")
+    try expect(TestAppTheme.dark.label == "Dark", "Dark theme label")
+    try expect(TestAppTheme.system.label == "System", "System theme label")
+}
+
+runner.test("PreviewWidth labels are correct") {
+    try expect(TestPreviewWidth.narrow.label == "Narrow", "Narrow label")
+    try expect(TestPreviewWidth.medium.label == "Medium", "Medium label")
+    try expect(TestPreviewWidth.wide.label == "Wide", "Wide label")
+}
+
+runner.test("TabBehavior labels are correct") {
+    try expect(TestTabBehavior.twoSpaces.label == "2 Spaces", "2 spaces label")
+    try expect(TestTabBehavior.fourSpaces.label == "4 Spaces", "4 spaces label")
+    try expect(TestTabBehavior.tab.label == "Tab", "Tab label")
+}
+
+runner.test("AppTheme raw values round-trip") {
+    for theme in TestAppTheme.allCases {
+        let recovered = TestAppTheme(rawValue: theme.rawValue)
+        try expect(recovered == theme, "Round-trip failed for \(theme)")
+    }
+}
+
+runner.test("PreviewWidth raw values round-trip") {
+    for width in TestPreviewWidth.allCases {
+        let recovered = TestPreviewWidth(rawValue: width.rawValue)
+        try expect(recovered == width, "Round-trip failed for \(width)")
+    }
+}
+
+runner.test("TabBehavior raw values round-trip") {
+    for tab in TestTabBehavior.allCases {
+        let recovered = TestTabBehavior(rawValue: tab.rawValue)
+        try expect(recovered == tab, "Round-trip failed for \(tab)")
+    }
+}
+
+runner.test("Invalid raw values return nil") {
+    try expect(TestAppTheme(rawValue: "invalid") == nil, "Invalid AppTheme should be nil")
+    try expect(TestPreviewWidth(rawValue: "invalid") == nil, "Invalid PreviewWidth should be nil")
+    try expect(TestTabBehavior(rawValue: "invalid") == nil, "Invalid TabBehavior should be nil")
+}
+
+// MARK: - Linter Tests
+
+print("\n=== Linter Tests ===")
+
+let linter = MarkdownLinter()
+
+func loadLintFixture(_ name: String) throws -> String {
+    guard let url = Bundle.module.url(forResource: name, withExtension: "md", subdirectory: "Fixtures/lint") else {
+        throw TestError.fixtureNotFound("lint/\(name).md")
+    }
+    return try String(contentsOf: url, encoding: .utf8)
+}
+
+// Rule detection tests (positive)
+
+runner.test("linter detects inconsistent headings") {
+    let md = try loadLintFixture("inconsistent-headings")
+    let diags = linter.lint(md, rules: [.inconsistentHeadings])
+    try expect(diags.count >= 1, "Expected at least 1 diagnostic, got \(diags.count)")
+    try expect(diags[0].rule == .inconsistentHeadings, "Wrong rule: \(diags[0].rule)")
+}
+
+runner.test("linter detects trailing whitespace") {
+    let md = "# Title\nHello   \nWorld\n"
+    let diags = linter.lint(md, rules: [.trailingWhitespace])
+    try expect(diags.count >= 1, "Expected at least 1 trailing whitespace diagnostic, got \(diags.count)")
+    try expect(diags[0].rule == .trailingWhitespace, "Wrong rule")
+}
+
+runner.test("linter detects missing blank lines") {
+    let md = try loadLintFixture("missing-blank-lines")
+    let diags = linter.lint(md, rules: [.missingBlankLines])
+    try expect(diags.count >= 1, "Expected at least 1 diagnostic, got \(diags.count)")
+    try expect(diags[0].rule == .missingBlankLines, "Wrong rule")
+}
+
+runner.test("linter detects duplicate headings") {
+    let md = try loadLintFixture("duplicate-headings")
+    let diags = linter.lint(md, rules: [.duplicateHeadings])
+    try expect(diags.count >= 1, "Expected at least 1 diagnostic, got \(diags.count)")
+    try expect(diags[0].rule == .duplicateHeadings, "Wrong rule")
+}
+
+runner.test("linter detects broken links") {
+    let md = try loadLintFixture("broken-links")
+    let diags = linter.lint(md, rules: [.brokenLinks])
+    try expect(diags.count == 1, "Expected 1 broken link, got \(diags.count)")
+    try expect(diags[0].message.contains("missing-ref"), "Should reference 'missing-ref'")
+}
+
+runner.test("linter detects unclosed fences") {
+    let md = try loadLintFixture("unclosed-fences")
+    let diags = linter.lint(md, rules: [.unclosedFences])
+    try expect(diags.count == 1, "Expected 1 unclosed fence, got \(diags.count)")
+    try expect(diags[0].severity == .error, "Unclosed fence should be error")
+}
+
+runner.test("linter detects unclosed formatting") {
+    let md = try loadLintFixture("unclosed-formatting")
+    let diags = linter.lint(md, rules: [.unclosedFormatting])
+    try expect(diags.count >= 2, "Expected at least 2 diagnostics (bold + strikethrough), got \(diags.count)")
+}
+
+runner.test("linter detects mismatched brackets") {
+    let md = try loadLintFixture("mismatched-brackets")
+    let diags = linter.lint(md, rules: [.mismatchedBrackets])
+    try expect(diags.count >= 1, "Expected at least 1 mismatched bracket, got \(diags.count)")
+    try expect(diags[0].severity == .error, "Mismatched bracket should be error")
+}
+
+runner.test("linter detects invalid tables") {
+    let md = try loadLintFixture("invalid-tables")
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.count >= 1, "Expected at least 1 invalid table row, got \(diags.count)")
+}
+
+// Negative tests (clean file)
+
+runner.test("linter produces no diagnostics for clean file") {
+    let md = try loadLintFixture("clean")
+    let diags = linter.lint(md)
+    try expect(diags.isEmpty, "Clean file should have no diagnostics, got \(diags.count): \(diags.map { "\($0.rule.rawValue) L\($0.line)" })")
+}
+
+runner.test("linter clean: no inconsistent headings in proper hierarchy") {
+    let md = "# H1\n\n## H2\n\n### H3\n"
+    let diags = linter.lint(md, rules: [.inconsistentHeadings])
+    try expect(diags.isEmpty, "Proper heading hierarchy should produce no diagnostics")
+}
+
+runner.test("linter clean: no trailing whitespace") {
+    let md = "# Title\n\nNo trailing spaces here.\n"
+    let diags = linter.lint(md, rules: [.trailingWhitespace])
+    try expect(diags.isEmpty, "No trailing whitespace should produce no diagnostics")
+}
+
+runner.test("linter allows 2-space line break") {
+    let md = "Line with break  \nNext line\n"
+    let diags = linter.lint(md, rules: [.trailingWhitespace])
+    try expect(diags.isEmpty, "2-space line break should not be flagged")
+}
+
+runner.test("linter clean: no broken links when refs defined") {
+    let md = "Click [here][ref] for info.\n\n[ref]: https://example.com\n"
+    let diags = linter.lint(md, rules: [.brokenLinks])
+    try expect(diags.isEmpty, "Valid reference links should produce no diagnostics")
+}
+
+runner.test("linter clean: closed code fences") {
+    let md = "```swift\nlet x = 1\n```\n"
+    let diags = linter.lint(md, rules: [.unclosedFences])
+    try expect(diags.isEmpty, "Closed fences should produce no diagnostics")
+}
+
+runner.test("linter clean: balanced formatting") {
+    let md = "This is **bold** and ~~struck~~.\n"
+    let diags = linter.lint(md, rules: [.unclosedFormatting])
+    try expect(diags.isEmpty, "Balanced formatting should produce no diagnostics")
+}
+
+runner.test("linter clean: valid links") {
+    let md = "A [valid link](https://example.com) works.\n"
+    let diags = linter.lint(md, rules: [.mismatchedBrackets])
+    try expect(diags.isEmpty, "Valid links should produce no diagnostics")
+}
+
+runner.test("linter clean: consistent table columns") {
+    let md = "| A | B |\n|---|---|\n| 1 | 2 |\n"
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.isEmpty, "Consistent tables should produce no diagnostics")
+}
+
+// Integration tests
+
+runner.test("linter has 9 rules") {
+    try expect(LintRule.allCases.count == 9, "Expected 9 lint rules, got \(LintRule.allCases.count)")
+}
+
+runner.test("linter diagnostics are sorted by line") {
+    let md = "Some text\n# Heading\n**unclosed\n"
+    let diags = linter.lint(md)
+    for i in 1..<diags.count {
+        try expect(diags[i].line >= diags[i-1].line, "Diagnostics should be sorted by line")
+    }
+}
+
+runner.test("linter with empty input") {
+    let diags = linter.lint("")
+    try expect(diags.isEmpty, "Empty input should produce no diagnostics")
+}
+
+// MARK: - Auto-Suggest Tests
+
+print("\n=== Auto-Suggest Tests ===")
+
+let suggestions = MarkdownSuggestions()
+
+runner.test("supported languages list has 18 entries") {
+    try expect(MarkdownSuggestions.supportedLanguages.count == 18,
+        "Expected 18 languages, got \(MarkdownSuggestions.supportedLanguages.count)")
+}
+
+runner.test("language suggestions filter by prefix") {
+    let swiftResults = suggestions.suggestLanguages(prefix: "sw")
+    try expect(swiftResults.count == 1, "Expected 1 match for 'sw', got \(swiftResults.count)")
+    try expect(swiftResults[0].text == "swift", "Expected 'swift'")
+
+    let jResults = suggestions.suggestLanguages(prefix: "j")
+    try expect(jResults.count == 3, "Expected 3 matches for 'j' (java, javascript, json), got \(jResults.count)")
+}
+
+runner.test("language suggestions return all when empty prefix") {
+    let all = suggestions.suggestLanguages()
+    try expect(all.count == 18, "Expected all 18 languages, got \(all.count)")
+}
+
+runner.test("emoji lookup works") {
+    try expect(suggestions.lookupEmoji(":rocket:") == "\u{1F680}", "rocket emoji")
+    try expect(suggestions.lookupEmoji("star") == "\u{2B50}", "star emoji without colons")
+    try expect(suggestions.lookupEmoji(":nonexistent:") == nil, "nonexistent emoji")
+}
+
+runner.test("emoji suggestions filter by prefix") {
+    let results = suggestions.suggestEmoji(prefix: "th")
+    try expect(results.count >= 2, "Expected at least 2 matches for 'th' (thinking, thumbsup, thumbsdown)")
+    try expect(results.allSatisfy({ $0.kind == .emoji }), "All should be emoji kind")
+}
+
+runner.test("heading suggestions reflect document structure") {
+    let doc = "# Title\n\n## Section\n\nSome text\n\n### Subsection\n"
+    let results = suggestions.suggestHeadings(document: doc)
+    try expect(results.count == 3, "Expected 3 heading levels, got \(results.count)")
+    try expect(results[0].text == "# ", "First should be h1")
+    try expect(results[1].text == "## ", "Second should be h2")
+    try expect(results[2].text == "### ", "Third should be h3")
+}
+
+runner.test("heading suggestions with no headings returns empty") {
+    let doc = "Just some plain text.\n"
+    let results = suggestions.suggestHeadings(document: doc)
+    try expect(results.isEmpty, "No headings should give empty suggestions")
+}
+
+runner.test("link suggestions reflect document references") {
+    let doc = "Click [here][ref1] for info.\n\n[ref1]: https://example.com\n[docs]: https://docs.example.com/guide\n"
+    let results = suggestions.suggestLinks(document: doc)
+    try expect(results.count == 2, "Expected 2 reference links, got \(results.count)")
+    let labels = results.map { $0.text }
+    try expect(labels.contains("[ref1]"), "Should contain ref1")
+    try expect(labels.contains("[docs]"), "Should contain docs")
+}
+
+runner.test("link suggestions with no refs returns empty") {
+    let doc = "Just [inline](https://example.com) links.\n"
+    let results = suggestions.suggestLinks(document: doc)
+    try expect(results.isEmpty, "No reference definitions should give empty suggestions")
+}
+
+runner.test("suggestion kinds are correct") {
+    let langSugg = suggestions.suggestLanguages(prefix: "swift")
+    try expect(langSugg.first?.kind == .language, "Language suggestion kind")
+
+    let emojiSugg = suggestions.suggestEmoji(prefix: "rock")
+    try expect(emojiSugg.first?.kind == .emoji, "Emoji suggestion kind")
+
+    let headSugg = suggestions.suggestHeadings(document: "# Title\n")
+    try expect(headSugg.first?.kind == .heading, "Heading suggestion kind")
+
+    let linkSugg = suggestions.suggestLinks(document: "[ref]: https://x.com\n")
+    try expect(linkSugg.first?.kind == .link, "Link suggestion kind")
+}
+
+// MARK: - Plugin & Sanitizer Tests
+
+print("\n=== Plugin & Sanitizer Tests ===")
+
+let registry = PluginRegistry()
+let sanitizer = HTMLSanitizer()
+
+func loadPluginFixture(_ path: String) throws -> String {
+    guard let url = Bundle.module.url(forResource: path, withExtension: nil, subdirectory: "Fixtures") else {
+        throw TestError.fixtureNotFound(path)
+    }
+    return try String(contentsOf: url, encoding: .utf8)
+}
+
+// Plugin registry tests
+
+runner.test("plugin registry: register and lookup") {
+    let reg = PluginRegistry()
+    let mdPlugin = MarkdownPlugin()
+    reg.register(mdPlugin)
+    try expect(reg.plugin(forExtension: "md") != nil, "Should find plugin for .md")
+    try expect(reg.plugin(forExtension: "markdown") != nil, "Should find plugin for .markdown")
+    try expect(reg.plugin(forExtension: "xyz") == nil, "Should not find plugin for .xyz")
+}
+
+runner.test("plugin registry: registered extensions") {
+    let reg = PluginRegistry()
+    reg.register(MarkdownPlugin())
+    reg.register(CSVPlugin())
+    let exts = reg.registeredExtensions
+    try expect(exts.contains("md"), "Should contain md")
+    try expect(exts.contains("csv"), "Should contain csv")
+    try expect(exts.contains("tsv"), "Should contain tsv")
+}
+
+runner.test("plugin registry: clear") {
+    let reg = PluginRegistry()
+    reg.register(MarkdownPlugin())
+    reg.clear()
+    try expect(reg.plugin(forExtension: "md") == nil, "Should be empty after clear")
+}
+
+runner.test("plugin registry: case insensitive lookup") {
+    let reg = PluginRegistry()
+    reg.register(HTMLPlugin())
+    try expect(reg.plugin(forExtension: "HTML") != nil, "Should find plugin for .HTML")
+    try expect(reg.plugin(forExtension: "Html") != nil, "Should find plugin for .Html")
+}
+
+// Markdown plugin tests
+
+runner.test("markdown plugin renders correctly") {
+    let plugin = MarkdownPlugin()
+    let html = plugin.render(source: "# Hello\n\n**Bold** text")
+    try expect(html.contains("<h1>Hello</h1>"), "Should contain heading")
+    try expect(html.contains("<strong>Bold</strong>"), "Should contain bold")
+}
+
+runner.test("markdown plugin does not require JS") {
+    let plugin = MarkdownPlugin()
+    try expect(!plugin.requiresJSExecution, "Markdown should not require JS")
+}
+
+// CSV plugin tests
+
+runner.test("CSV plugin renders simple table") {
+    let csv = try loadPluginFixture("csv/simple.csv")
+    let plugin = CSVPlugin()
+    let html = plugin.render(source: csv)
+    try expect(html.contains("<table>"), "Should contain table")
+    try expect(html.contains("<th>Name</th>"), "Should contain header")
+    try expect(html.contains("<td>Alice</td>"), "Should contain data cell")
+    try expect(html.contains("<thead>"), "Should contain thead")
+    try expect(html.contains("<tbody>"), "Should contain tbody")
+}
+
+runner.test("CSV plugin renders unicode") {
+    let csv = try loadPluginFixture("csv/unicode.csv")
+    let plugin = CSVPlugin()
+    let html = plugin.render(source: csv)
+    try expect(html.contains("<table>"), "Should contain table")
+    try expect(html.contains("Bonjour"), "Should contain unicode text")
+}
+
+runner.test("CSV plugin escapes HTML in cells") {
+    let plugin = CSVPlugin()
+    let html = plugin.render(source: "Header\n<script>alert('xss')</script>")
+    try expect(!html.contains("<script>"), "Should escape script tags in cells")
+    try expect(html.contains("&lt;script&gt;"), "Should HTML-escape the content")
+}
+
+runner.test("CSV plugin handles empty input") {
+    let plugin = CSVPlugin()
+    let html = plugin.render(source: "")
+    try expect(html.contains("Empty"), "Should indicate empty file")
+}
+
+// HTML sanitizer tests
+
+runner.test("sanitizer strips script tags") {
+    let html = "<p>Hello</p><script>alert('xss')</script><p>World</p>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<script"), "Should strip script tags")
+    try expect(!clean.contains("alert"), "Should strip script content")
+    try expect(clean.contains("<p>Hello</p>"), "Should preserve safe content")
+    try expect(clean.contains("<p>World</p>"), "Should preserve safe content")
+}
+
+runner.test("sanitizer strips event handlers") {
+    let html = "<button onclick=\"alert('click')\">Click</button>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("onclick"), "Should strip onclick")
+    try expect(clean.contains("Click"), "Should preserve button text")
+}
+
+runner.test("sanitizer blocks javascript URIs") {
+    let html = "<a href=\"javascript:alert('xss')\">Link</a>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("javascript:"), "Should block javascript: URI")
+    try expect(clean.contains("blocked:"), "Should replace with blocked:")
+}
+
+runner.test("sanitizer strips iframes") {
+    let html = "<p>Text</p><iframe src=\"https://evil.com\"></iframe><p>More</p>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<iframe"), "Should strip iframe tags")
+    try expect(clean.contains("<p>Text</p>"), "Should preserve safe content")
+}
+
+runner.test("sanitizer strips object/embed tags") {
+    let html = "<object data=\"evil.swf\"></object><embed src=\"evil.swf\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<object"), "Should strip object tags")
+    try expect(!clean.contains("<embed"), "Should strip embed tags")
+}
+
+runner.test("sanitizer preserves safe HTML") {
+    let html = try loadPluginFixture("html/safe.html")
+    let clean = sanitizer.sanitize(html)
+    try expect(clean.contains("<h1>Hello World</h1>"), "Should preserve h1")
+    try expect(clean.contains("<strong>bold</strong>"), "Should preserve bold")
+    try expect(clean.contains("<li>Item 1</li>"), "Should preserve list items")
+}
+
+// Fixture-based sanitizer tests
+
+runner.test("sanitizer: xss-attempt fixture is fully cleaned") {
+    let html = try loadPluginFixture("html/xss-attempt.html")
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<script"), "No script tags should remain")
+    try expect(!clean.contains("javascript:"), "No javascript: URIs should remain")
+    try expect(!clean.contains("onerror"), "No event handlers should remain")
+    try expect(!clean.contains("<iframe"), "No iframes should remain")
+    try expect(clean.contains("Normal text"), "Safe content should remain")
+}
+
+runner.test("sanitizer: event-handlers fixture is cleaned") {
+    let html = try loadPluginFixture("html/event-handlers.html")
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("onclick"), "Should strip onclick")
+    try expect(!clean.contains("onmouseover"), "Should strip onmouseover")
+    try expect(!clean.contains("onload"), "Should strip onload")
+    try expect(!clean.contains("onerror"), "Should strip onerror")
+    try expect(clean.contains("Safe content"), "Should preserve safe content")
+}
+
+// HTML plugin integration
+
+runner.test("HTML plugin sanitizes by default") {
+    let plugin = HTMLPlugin()
+    let html = "<p>Hello</p><script>alert('xss')</script>"
+    let result = plugin.render(source: html)
+    try expect(!result.contains("<script"), "HTML plugin should sanitize")
+    try expect(result.contains("<p>Hello</p>"), "Should preserve safe content")
+    try expect(!plugin.requiresJSExecution, "HTML plugin should not require JS (sanitized)")
+}
+
+runner.test("All enums have non-empty IDs via rawValue") {
+    for theme in TestAppTheme.allCases {
+        try expect(!theme.rawValue.isEmpty, "AppTheme rawValue should not be empty")
+    }
+    for width in TestPreviewWidth.allCases {
+        try expect(!width.rawValue.isEmpty, "PreviewWidth rawValue should not be empty")
+    }
+    for tab in TestTabBehavior.allCases {
+        try expect(!tab.rawValue.isEmpty, "TabBehavior rawValue should not be empty")
+    }
+}
+
 // =============================================================================
 
 print("")

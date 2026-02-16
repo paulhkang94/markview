@@ -35,5 +35,17 @@ let package = Package(
                 .copy("Fixtures"),
             ]
         ),
+        // Fuzz tester — random markdown inputs, assert no crashes
+        .executableTarget(
+            name: "MarkViewFuzzTester",
+            dependencies: ["MarkViewCore"],
+            path: "Tests/FuzzTester"
+        ),
+        // Differential tester — compare output vs cmark-gfm CLI
+        .executableTarget(
+            name: "MarkViewDiffTester",
+            dependencies: ["MarkViewCore"],
+            path: "Tests/DiffTester"
+        ),
     ]
 )

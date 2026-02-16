@@ -17,7 +17,13 @@ struct MarkViewApp: App {
                         }
                     }
                 }
+                .onOpenURL { url in
+                    if url.isFileURL {
+                        filePath = url.path
+                    }
+                }
         }
+        .handlesExternalEvents(matching: Set(arrayLiteral: "*"))
         .windowStyle(.titleBar)
         .defaultSize(width: 1000, height: 700)
         .commands {

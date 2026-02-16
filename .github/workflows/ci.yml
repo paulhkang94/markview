@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build
+
+      - name: Run tests
+        run: swift run MarkViewTestRunner
+
+      - name: Verify
+        run: bash verify.sh
+
+  fuzz-test:
+    runs-on: macos-14
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build fuzz tester
+        run: swift build
+
+      - name: Run fuzz tests (10,000 inputs)
+        run: swift run MarkViewFuzzTester
+        timeout-minutes: 10
+
+  diff-test:
+    runs-on: macos-14
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build diff tester
+        run: swift build
+
+      - name: Run differential tests
+        run: swift run MarkViewDiffTester
+
+  golden-check:
+    runs-on: macos-14
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate goldens
+        run: swift run MarkViewTestRunner --generate-goldens
+
+      - name: Check for golden drift
+        run: git diff --exit-code Tests/TestRunner/Fixtures/expected/

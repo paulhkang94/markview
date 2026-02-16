@@ -1,10 +1,21 @@
 import SwiftUI
+import MarkViewCore
 
 /// Bottom status bar showing document stats and file info.
 struct StatusBarView: View {
     let content: String
     let filePath: String?
     let isDirty: Bool
+    let lintWarnings: Int
+    let lintErrors: Int
+
+    init(content: String, filePath: String?, isDirty: Bool, lintWarnings: Int = 0, lintErrors: Int = 0) {
+        self.content = content
+        self.filePath = filePath
+        self.isDirty = isDirty
+        self.lintWarnings = lintWarnings
+        self.lintErrors = lintErrors
+    }
 
     private var wordCount: Int {
         content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
@@ -19,7 +30,7 @@ struct StatusBarView: View {
     }
 
     private var readingTime: String {
-        let minutes = max(1, wordCount / 200) // ~200 WPM average
+        let minutes = max(1, wordCount / 200)
         return "\(minutes) min read"
     }
 
@@ -36,6 +47,18 @@ struct StatusBarView: View {
             Text("\(charCount) chars")
             Text("\(lineCount) lines")
             Text(readingTime)
+
+            if lintErrors > 0 || lintWarnings > 0 {
+                Divider().frame(height: 12)
+                if lintErrors > 0 {
+                    Label("\(lintErrors)", systemImage: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                }
+                if lintWarnings > 0 {
+                    Label("\(lintWarnings)", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                }
+            }
 
             Spacer()
 

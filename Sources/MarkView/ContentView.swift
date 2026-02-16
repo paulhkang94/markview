@@ -36,7 +36,9 @@ struct ContentView: View {
                 StatusBarView(
                     content: viewModel.editorContent,
                     filePath: viewModel.currentFilePath,
-                    isDirty: viewModel.isDirty
+                    isDirty: viewModel.isDirty,
+                    lintWarnings: viewModel.lintWarnings,
+                    lintErrors: viewModel.lintErrors
                 )
             }
         }

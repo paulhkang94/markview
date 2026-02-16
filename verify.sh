@@ -19,6 +19,28 @@ else
 fi
 [ "$PHASE" = "0" ] && exit 0
 
+# Tier 0b: Bundle structure (if bundle.sh has been run)
+if [ -d "$PROJECT_DIR/MarkView.app" ]; then
+    echo ""
+    echo "--- Tier 0b: Bundle Verification ---"
+    BUNDLE_OK=true
+    [ -f "$PROJECT_DIR/MarkView.app/Contents/MacOS/MarkView" ] && echo "✓ Executable in bundle" || { echo "✗ Missing executable"; BUNDLE_OK=false; }
+    [ -f "$PROJECT_DIR/MarkView.app/Contents/Info.plist" ] && echo "✓ Info.plist in bundle" || { echo "✗ Missing Info.plist"; BUNDLE_OK=false; }
+    if plutil -lint "$PROJECT_DIR/MarkView.app/Contents/Info.plist" > /dev/null 2>&1; then
+        echo "✓ Info.plist is valid"
+    else
+        echo "✗ Info.plist is invalid"
+        BUNDLE_OK=false
+    fi
+    if grep -q "CFBundleDocumentTypes" "$PROJECT_DIR/MarkView.app/Contents/Info.plist"; then
+        echo "✓ Document types registered"
+    else
+        echo "✗ Missing document types"
+        BUNDLE_OK=false
+    fi
+    [ "$BUNDLE_OK" = true ] || exit 1
+fi
+
 # Tier 1-3: Run full test suite (unit, GFM compliance, performance, golden files, E2E)
 echo ""
 echo "--- Tier 1-3: Full Test Suite ---"
@@ -31,9 +53,22 @@ RESULT=$(echo "$TEST_OUTPUT" | tail -1)
 if echo "$RESULT" | grep -q "0 failed"; then
     echo ""
     echo "=== All checks passed ==="
-    exit 0
 else
     echo ""
     echo "=== Some checks failed ==="
     exit 1
+fi
+
+# Extended tests (fuzz + differential) — only with --extended flag
+if [ "$PHASE" = "--extended" ]; then
+    echo ""
+    echo "--- Extended: Fuzz Testing ---"
+    swift run MarkViewFuzzTester 2>&1 | grep -v "^\[" | grep -v "^$"
+
+    echo ""
+    echo "--- Extended: Differential Testing ---"
+    swift run MarkViewDiffTester 2>&1 | grep -v "^\[" | grep -v "^$"
+
+    echo ""
+    echo "=== Extended verification complete ==="
 fi

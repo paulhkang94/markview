@@ -1,0 +1,7 @@
+<h1>XSS Test</h1>
+<script>alert('xss')</script>
+<p>Normal text</p>
+<script type="text/javascript">document.cookie</script>
+<img src="x" onerror="alert('xss')">
+<a href="javascript:alert('xss')">Click me</a>
+<iframe src="https://evil.com"></iframe>
