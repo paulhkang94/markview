@@ -9,7 +9,6 @@ struct MarkViewApp: App {
             ContentView(initialFilePath: filePath)
                 .frame(minWidth: 600, minHeight: 400)
                 .onAppear {
-                    // Check for CLI argument: markview /path/to/file.md
                     let args = CommandLine.arguments
                     if args.count > 1 {
                         let path = args[1]
@@ -20,6 +19,7 @@ struct MarkViewApp: App {
                 }
         }
         .windowStyle(.titleBar)
+        .defaultSize(width: 1000, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open...") {
@@ -32,9 +32,11 @@ struct MarkViewApp: App {
 
     private func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "md")!,
-                                      .init(filenameExtension: "markdown")!,
-                                      .plainText]
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "md")!,
+            .init(filenameExtension: "markdown")!,
+            .plainText,
+        ]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {

@@ -1,17 +1,45 @@
 import SwiftUI
+import MarkViewCore
 
 struct ContentView: View {
     let initialFilePath: String?
 
     @StateObject private var viewModel = PreviewViewModel()
+    @State private var showEditor = false
+    @State private var showExternalChangeAlert = false
 
     var body: some View {
         Group {
             if viewModel.isLoaded {
-                WebPreviewView(html: viewModel.renderedHTML)
+                if showEditor {
+                    HSplitView {
+                        EditorView(text: $viewModel.editorContent) { newText in
+                            viewModel.contentDidChange(newText)
+                        }
+                        .frame(minWidth: 200)
+
+                        WebPreviewView(html: viewModel.renderedHTML)
+                            .frame(minWidth: 200)
+                    }
+                } else {
+                    WebPreviewView(html: viewModel.renderedHTML)
+                }
             } else {
                 DropTargetView { url in
                     viewModel.loadFile(at: url.path)
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .automatic) {
+                if viewModel.isLoaded {
+                    Button {
+                        showEditor.toggle()
+                    } label: {
+                        Image(systemName: showEditor ? "doc.plaintext" : "rectangle.split.2x1")
+                    }
+                    .help(showEditor ? "Hide Editor (⌘E)" : "Show Editor (⌘E)")
+                    .keyboardShortcut("e", modifiers: .command)
                 }
             }
         }
@@ -24,6 +52,15 @@ struct ContentView: View {
             if let path = initialFilePath {
                 viewModel.loadFile(at: path)
             }
+        }
+        .alert("File Changed", isPresented: $showExternalChangeAlert) {
+            Button("Reload") { viewModel.reloadFromDisk() }
+            Button("Keep Mine", role: .cancel) { }
+        } message: {
+            Text("This file has been modified externally. Reload to see changes, or keep your edits?")
+        }
+        .onReceive(viewModel.$externalChangeConflict) { conflict in
+            if conflict { showExternalChangeAlert = true }
         }
     }
 }
@@ -61,6 +98,6 @@ struct DropTargetView: View {
 
     private func isMarkdownFile(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
-        return ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdtxt", "mdtext", "txt"].contains(ext)
+        return ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "txt"].contains(ext)
     }
 }
