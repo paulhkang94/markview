@@ -9,25 +9,35 @@ struct ContentView: View {
     @State private var showExternalChangeAlert = false
 
     var body: some View {
-        Group {
-            if viewModel.isLoaded {
-                if showEditor {
-                    HSplitView {
-                        EditorView(text: $viewModel.editorContent) { newText in
-                            viewModel.contentDidChange(newText)
-                        }
-                        .frame(minWidth: 200)
-
-                        WebPreviewView(html: viewModel.renderedHTML)
+        VStack(spacing: 0) {
+            Group {
+                if viewModel.isLoaded {
+                    if showEditor {
+                        HSplitView {
+                            EditorView(text: $viewModel.editorContent) { newText in
+                                viewModel.contentDidChange(newText)
+                            }
                             .frame(minWidth: 200)
+
+                            WebPreviewView(html: viewModel.renderedHTML)
+                                .frame(minWidth: 200)
+                        }
+                    } else {
+                        WebPreviewView(html: viewModel.renderedHTML)
                     }
                 } else {
-                    WebPreviewView(html: viewModel.renderedHTML)
+                    DropTargetView { url in
+                        viewModel.loadFile(at: url.path)
+                    }
                 }
-            } else {
-                DropTargetView { url in
-                    viewModel.loadFile(at: url.path)
-                }
+            }
+
+            if viewModel.isLoaded {
+                StatusBarView(
+                    content: viewModel.editorContent,
+                    filePath: viewModel.currentFilePath,
+                    isDirty: viewModel.isDirty
+                )
             }
         }
         .toolbar {

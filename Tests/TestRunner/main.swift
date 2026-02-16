@@ -368,6 +368,104 @@ runner.test("FileWatcher stop prevents notifications") {
     try expect(!called, "Received notification after stop")
 }
 
+// MARK: - Word Count / Stats Tests
+
+print("\n=== Tier 1: Word Count / Stats Tests ===")
+
+func wordCount(_ text: String) -> Int {
+    text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+}
+
+func lineCount(_ text: String) -> Int {
+    text.isEmpty ? 0 : text.components(separatedBy: .newlines).count
+}
+
+runner.test("word count basic") {
+    try expect(wordCount("Hello world") == 2, "Expected 2 words")
+    try expect(wordCount("One two three four five") == 5, "Expected 5 words")
+}
+
+runner.test("word count with markdown") {
+    // "# Heading\n\nA paragraph with **bold**." splits to: #, Heading, A, paragraph, with, **bold**.
+    try expect(wordCount("# Heading\n\nA paragraph with **bold**.") == 6, "Expected 6 words")
+}
+
+runner.test("word count empty") {
+    try expect(wordCount("") == 0, "Expected 0 words for empty string")
+}
+
+runner.test("line count") {
+    try expect(lineCount("one\ntwo\nthree") == 3, "Expected 3 lines")
+    try expect(lineCount("single line") == 1, "Expected 1 line")
+    try expect(lineCount("") == 0, "Expected 0 lines for empty")
+}
+
+// MARK: - Renderer Stress Tests
+
+print("\n=== Tier 2: Renderer Stress Tests ===")
+
+runner.test("empty document renders gracefully") {
+    let html = MarkdownRenderer.renderHTML(from: "")
+    try expect(html.isEmpty, "Empty input should produce empty output")
+}
+
+runner.test("whitespace-only document") {
+    let html = MarkdownRenderer.renderHTML(from: "   \n\n   \n\t\t\n   ")
+    // Should not crash, may produce empty or whitespace
+    _ = html // Just checking it doesn't crash
+}
+
+runner.test("very long single line") {
+    let longLine = String(repeating: "word ", count: 10000)
+    let html = MarkdownRenderer.renderHTML(from: longLine)
+    try expect(html.contains("word"), "Long line should render")
+}
+
+runner.test("deeply nested lists") {
+    var md = ""
+    for i in 0..<20 {
+        md += String(repeating: "  ", count: i) + "- Level \(i)\n"
+    }
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("<ul>"), "Nested lists should render")
+}
+
+runner.test("many consecutive headings") {
+    var md = ""
+    for i in 1...100 {
+        md += "## Heading \(i)\n\n"
+    }
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("Heading 1"), "First heading should render")
+    try expect(html.contains("Heading 100"), "Last heading should render")
+}
+
+runner.test("mixed GFM features in one document") {
+    let md = """
+    # Title
+
+    | Col A | Col B |
+    |-------|-------|
+    | ~~old~~ | **new** |
+
+    - [x] Done task with `code`
+    - [ ] Pending task with [link](https://example.com)
+
+    > Blockquote with https://auto.link
+
+    ```swift
+    let x = 42
+    ```
+    """
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("<table>"), "Table should render")
+    try expect(html.contains("<del>"), "Strikethrough should render")
+    try expect(html.contains("checkbox"), "Task list should render")
+    try expect(html.contains("<blockquote>"), "Blockquote should render")
+    try expect(html.contains("language-swift"), "Code block should render")
+    try expect(html.contains("<a href="), "Links should render")
+}
+
 // =============================================================================
 
 print("")
