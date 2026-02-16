@@ -1,27 +1,36 @@
 #!/bin/bash
 set -euo pipefail
 
-# MarkView — Install CLI commands (md, mdpreview)
+# MarkView — Install CLI command (mdpreview)
 # Usage: bash scripts/install-cli.sh
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BINARY="$PROJECT_DIR/.build/release/MarkView"
+APP_PATH="/Applications/MarkView.app"
 BIN_DIR="$HOME/.local/bin"
+CLI_PATH="$BIN_DIR/mdpreview"
 
-if [ ! -f "$BINARY" ]; then
-    echo "Release binary not found. Building first..."
-    cd "$PROJECT_DIR" && swift build -c release 2>&1 | tail -3
+if [ ! -d "$APP_PATH" ]; then
+    echo "ERROR: MarkView.app not found at $APP_PATH"
+    echo "Run 'bash scripts/bundle.sh --install' first."
+    exit 1
 fi
 
 mkdir -p "$BIN_DIR"
 
-# Create symlinks
-ln -sf "$BINARY" "$BIN_DIR/md"
-ln -sf "$BINARY" "$BIN_DIR/mdpreview"
+# Create a wrapper script that uses `open` to launch the app bundle
+cat > "$CLI_PATH" << 'SCRIPT'
+#!/bin/bash
+if [ $# -eq 0 ]; then
+    open /Applications/MarkView.app
+else
+    # Resolve to absolute path
+    FILE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+    open /Applications/MarkView.app --args "$FILE"
+fi
+SCRIPT
+chmod +x "$CLI_PATH"
 
-echo "✓ Installed CLI commands:"
-echo "  $BIN_DIR/md → $BINARY"
-echo "  $BIN_DIR/mdpreview → $BINARY"
+echo "✓ Installed CLI command:"
+echo "  $CLI_PATH → opens /Applications/MarkView.app"
 echo ""
 
 # Check if ~/.local/bin is in PATH
@@ -34,6 +43,5 @@ fi
 
 echo ""
 echo "Usage:"
-echo "  md README.md          # Open file in MarkView"
-echo "  md                    # Open MarkView (empty)"
-echo "  mdpreview README.md   # Same thing"
+echo "  mdpreview README.md   # Open file in MarkView"
+echo "  mdpreview             # Open MarkView (empty)"
