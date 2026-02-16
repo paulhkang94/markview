@@ -51,13 +51,36 @@ echo "$TEST_OUTPUT" | grep -v "^Building\|^Build of\|^\[" | grep -v "^$"
 # Check result from the last line
 RESULT=$(echo "$TEST_OUTPUT" | tail -1)
 if echo "$RESULT" | grep -q "0 failed"; then
-    echo ""
-    echo "=== All checks passed ==="
+    true
 else
     echo ""
     echo "=== Some checks failed ==="
     exit 1
 fi
+
+# Golden baseline drift check — catches the same issue CI catches
+echo ""
+echo "--- Golden Drift Check ---"
+swift run MarkViewTestRunner --generate-goldens 2>&1 | grep -v "^\[" | grep -v "^$" | grep -v "^Building\|^Build of\|^warning:"
+if git diff --quiet Tests/TestRunner/Fixtures/expected/ 2>/dev/null; then
+    echo "✓ Golden baselines are up to date"
+else
+    echo "✗ Golden baselines are stale — commit the updated files:"
+    git diff --stat Tests/TestRunner/Fixtures/expected/
+    exit 1
+fi
+
+# CLI smoke test
+echo ""
+echo "--- CLI Check ---"
+if [ -x "$HOME/.local/bin/mdpreview" ] && file "$HOME/.local/bin/mdpreview" | grep -q "text"; then
+    echo "✓ mdpreview CLI is installed (shell script)"
+else
+    echo "⚠ mdpreview not installed or is not a shell script (run: bash scripts/install-cli.sh)"
+fi
+
+echo ""
+echo "=== All checks passed ==="
 
 # Extended tests (fuzz + differential) — only with --extended flag
 if [ "$PHASE" = "--extended" ]; then

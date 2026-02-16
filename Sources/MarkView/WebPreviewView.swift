@@ -64,18 +64,7 @@ struct WebPreviewView: NSViewRepresentable {
                 css += "body { color: #1f2328; background: #ffffff; }\n"
                 css += ":root { color-scheme: light; }\n"
             case .dark:
-                css += "body { color: #e6edf3; background: #0d1117; }\n"
-                css += ":root { color-scheme: dark; }\n"
-                css += "a { color: #58a6ff; }\n"
-                css += "code:not([class*=\"language-\"]) { background: #343942; }\n"
-                css += "pre { background: #161b22 !important; }\n"
-                css += "th, td { border-color: #3d444d; }\n"
-                css += "tr { background-color: #0d1117; border-top-color: #3d444db3; }\n"
-                css += "tr:nth-child(2n) { background-color: #151b23; }\n"
-                css += "blockquote { border-left-color: #3d444d; color: #8b949e; }\n"
-                css += "hr { border-top-color: #3d444d; }\n"
-                css += "h1, h2 { border-bottom-color: #3d444d; }\n"
-                css += "h6 { color: #8b949e; }\n"
+                css += Self.darkModeCSS + "\n"
             case .system:
                 break // Use CSS media query (default behavior)
             }
@@ -113,15 +102,7 @@ struct WebPreviewView: NSViewRepresentable {
             case .light:
                 css += " body { color: #1f2328; background: #ffffff; } :root { color-scheme: light; }"
             case .dark:
-                css += " body { color: #e6edf3; background: #0d1117; } :root { color-scheme: dark; }"
-                css += " a { color: #58a6ff; } code:not([class*=\"language-\"]) { background: #343942; }"
-                css += " pre { background: #161b22 !important; }"
-                css += " th, td { border-color: #3d444d; }"
-                css += " tr { background-color: #0d1117; border-top-color: #3d444db3; }"
-                css += " tr:nth-child(2n) { background-color: #151b23; }"
-                css += " blockquote { border-left-color: #3d444d; color: #8b949e; }"
-                css += " hr { border-top-color: #3d444d; } h1, h2 { border-bottom-color: #3d444d; }"
-                css += " h6 { color: #8b949e; }"
+                css += " " + Self.darkModeCSS
             case .system:
                 break
             }
@@ -145,6 +126,23 @@ struct WebPreviewView: NSViewRepresentable {
             """
             webView.evaluateJavaScript(js)
         }
+
+        /// Single source of truth for forced-dark theme CSS (GitHub Primer colors).
+        /// Used by both injectSettingsCSS (initial load) and updateContentViaJS (live updates).
+        private static let darkModeCSS = [
+            "body { color: #e6edf3; background: #0d1117; }",
+            ":root { color-scheme: dark; }",
+            "a { color: #58a6ff; }",
+            "code:not([class*=\"language-\"]) { background: #343942; }",
+            "pre { background: #161b22 !important; }",
+            "th, td { border-color: #3d444d; }",
+            "tr { background-color: #0d1117; border-top-color: #3d444db3; }",
+            "tr:nth-child(2n) { background-color: #151b23; }",
+            "blockquote { border-left-color: #3d444d; color: #8b949e; }",
+            "hr { border-top-color: #3d444d; }",
+            "h1, h2 { border-bottom-color: #3d444d; }",
+            "h6 { color: #8b949e; }",
+        ].joined(separator: " ")
 
         private static func jsStringLiteral(_ s: String) -> String {
             guard let data = try? JSONSerialization.data(withJSONObject: s, options: .fragmentsAllowed),
