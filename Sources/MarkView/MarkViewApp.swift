@@ -4,6 +4,18 @@ import SwiftUI
 struct MarkViewApp: App {
     @State private var filePath: String?
 
+    /// Default window size: 80% of screen width, 85% of screen height
+    private var defaultWindowSize: CGSize {
+        if let screen = NSScreen.main {
+            let frame = screen.visibleFrame
+            return CGSize(
+                width: max(frame.width * 0.8, 900),
+                height: max(frame.height * 0.85, 600)
+            )
+        }
+        return CGSize(width: 1200, height: 800)
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(initialFilePath: filePath)
@@ -16,6 +28,17 @@ struct MarkViewApp: App {
                             filePath = path
                         }
                     }
+
+                    // Size window to fit screen on first launch
+                    if let window = NSApplication.shared.mainWindow {
+                        let size = defaultWindowSize
+                        let screen = window.screen ?? NSScreen.main
+                        if let screenFrame = screen?.visibleFrame {
+                            let x = screenFrame.origin.x + (screenFrame.width - size.width) / 2
+                            let y = screenFrame.origin.y + (screenFrame.height - size.height) / 2
+                            window.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+                        }
+                    }
                 }
                 .onOpenURL { url in
                     if url.isFileURL {
@@ -25,7 +48,7 @@ struct MarkViewApp: App {
         }
         .handlesExternalEvents(matching: Set(arrayLiteral: "*"))
         .windowStyle(.titleBar)
-        .defaultSize(width: 1000, height: 700)
+        .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(Strings.openFile) { openFile() }
