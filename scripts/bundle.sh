@@ -33,12 +33,21 @@ mkdir -p "$APP_DIR/Contents/Resources"
 cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 codesign -s - -f "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null && echo "✓ Executable copied and signed (ad-hoc)" || echo "✓ Executable copied (unsigned)"
 
-# Step 4: Copy resources
+# Step 4: Copy SPM resource bundle (required for Bundle.module to work)
+SPM_BUNDLE="$BUILD_DIR/MarkView_MarkView.bundle"
+if [ -d "$SPM_BUNDLE" ]; then
+    # Bundle.module looks for MarkView_MarkView.bundle at Bundle.main.bundleURL,
+    # which is the .app directory itself (not Contents/). Copy it there.
+    cp -R "$SPM_BUNDLE" "$APP_DIR/MarkView_MarkView.bundle"
+    echo "✓ SPM resource bundle copied (Bundle.module will work)"
+else
+    echo "⚠ SPM resource bundle not found at $SPM_BUNDLE — Bundle.module will crash!"
+fi
+
+# Also copy resources to Contents/Resources/ for direct access and AppIcon
 if [ -d "Sources/MarkView/Resources" ]; then
-    cp Sources/MarkView/Resources/template.html "$APP_DIR/Contents/Resources/" 2>/dev/null || true
-    cp Sources/MarkView/Resources/prism-bundle.min.js "$APP_DIR/Contents/Resources/" 2>/dev/null || true
     cp Sources/MarkView/Resources/AppIcon.icns "$APP_DIR/Contents/Resources/" 2>/dev/null || true
-    echo "✓ Resources copied"
+    echo "✓ App icon copied"
 fi
 
 # Step 5: Generate Info.plist
@@ -100,6 +109,14 @@ if grep -q "CFBundleDocumentTypes" "$APP_DIR/Contents/Info.plist"; then
     echo "  ✓ Document types registered"
 else
     echo "  ✗ Missing document types"
+    VALID=false
+fi
+
+# Verify SPM resource bundle (prevents Bundle.module crash at runtime)
+if [ -d "$APP_DIR/MarkView_MarkView.bundle/Resources/template.html" ] || [ -f "$APP_DIR/MarkView_MarkView.bundle/Resources/template.html" ]; then
+    echo "  ✓ SPM resource bundle has template.html"
+else
+    echo "  ✗ SPM resource bundle missing template.html (Bundle.module will crash!)"
     VALID=false
 fi
 

@@ -2896,6 +2896,25 @@ let appexPath = "\(appBundlePath)/Contents/PlugIns/MarkViewQuickLook.appex"
 let appBundleExists = FileManager.default.fileExists(atPath: appBundlePath)
 
 if appBundleExists {
+    // SPM resource bundle prevents Bundle.module crash at runtime
+    runner.test("App bundle contains SPM resource bundle") {
+        let spmBundlePath = "\(appBundlePath)/MarkView_MarkView.bundle"
+        try expect(FileManager.default.fileExists(atPath: spmBundlePath),
+            "MarkView.app must contain MarkView_MarkView.bundle (Bundle.module will fatalError without it)")
+    }
+
+    runner.test("SPM resource bundle contains template.html") {
+        let templatePath = "\(appBundlePath)/MarkView_MarkView.bundle/Resources/template.html"
+        try expect(FileManager.default.fileExists(atPath: templatePath),
+            "SPM resource bundle must contain Resources/template.html")
+    }
+
+    runner.test("SPM resource bundle contains prism-bundle.min.js") {
+        let prismPath = "\(appBundlePath)/MarkView_MarkView.bundle/Resources/prism-bundle.min.js"
+        try expect(FileManager.default.fileExists(atPath: prismPath),
+            "SPM resource bundle must contain Resources/prism-bundle.min.js")
+    }
+
     runner.test("App bundle contains PlugIns directory") {
         let pluginsPath = "\(appBundlePath)/Contents/PlugIns"
         try expect(FileManager.default.fileExists(atPath: pluginsPath),
