@@ -59,6 +59,13 @@ struct MarkViewApp: App {
                     .keyboardShortcut("o", modifiers: .command)
             }
 
+            CommandGroup(replacing: .saveItem) {
+                Button(Strings.saveDocument) {
+                    NotificationCenter.default.post(name: .saveDocument, object: nil)
+                }
+                .keyboardShortcut("s", modifiers: .command)
+            }
+
             CommandGroup(after: .importExport) {
                 Button(Strings.exportHTML) {
                     NotificationCenter.default.post(name: .exportHTML, object: nil)
@@ -97,6 +104,25 @@ struct MarkViewApp: App {
             }
         }
 
+        .commands {
+            // Standard Find menu — SwiftUI doesn't provide this by default,
+            // so Cmd+F/Cmd+G won't work without it. These send the standard
+            // performFindPanelAction: to the responder chain (NSTextView, WKWebView).
+            CommandGroup(after: .textEditing) {
+                Section {
+                    Button(Strings.find) { FindHelper.send(.showFindPanel) }
+                        .keyboardShortcut("f", modifiers: .command)
+                    Button(Strings.findAndReplace) { FindHelper.send(.showFindPanel, replace: true) }
+                        .keyboardShortcut("f", modifiers: [.command, .option])
+                    Button(Strings.findNext) { FindHelper.send(.next) }
+                        .keyboardShortcut("g", modifiers: .command)
+                    Button(Strings.findPrevious) { FindHelper.send(.previous) }
+                        .keyboardShortcut("g", modifiers: [.command, .shift])
+                    Button(Strings.useSelectionForFind) { FindHelper.send(.setFindString) }
+                }
+            }
+        }
+
         Settings {
             SettingsView()
         }
@@ -120,4 +146,15 @@ struct MarkViewApp: App {
 extension Notification.Name {
     static let exportHTML = Notification.Name("exportHTML")
     static let exportPDF = Notification.Name("exportPDF")
+    static let saveDocument = Notification.Name("saveDocument")
+}
+
+/// Sends performFindPanelAction: through the responder chain using a tagged NSMenuItem.
+/// NSTextView's find bar uses the sender's tag to determine which action to perform.
+enum FindHelper {
+    static func send(_ action: NSFindPanelAction, replace: Bool = false) {
+        let item = NSMenuItem()
+        item.tag = Int(action.rawValue)
+        NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item)
+    }
 }

@@ -41,7 +41,9 @@ struct ContentView: View {
                     filePath: viewModel.currentFilePath,
                     isDirty: viewModel.isDirty,
                     lintWarnings: viewModel.lintWarnings,
-                    lintErrors: viewModel.lintErrors
+                    lintErrors: viewModel.lintErrors,
+                    lintDiagnostics: viewModel.lintDiagnostics,
+                    onFixAll: { viewModel.autoFixLint() }
                 )
             }
         }
@@ -77,6 +79,9 @@ struct ContentView: View {
         }
         .onReceive(viewModel.$externalChangeConflict) { conflict in
             if conflict { showExternalChangeAlert = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .saveDocument)) { _ in
+            try? viewModel.save()
         }
     }
 
