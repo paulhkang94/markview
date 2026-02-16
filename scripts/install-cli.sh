@@ -17,14 +17,21 @@ fi
 mkdir -p "$BIN_DIR"
 
 # Create a wrapper script that uses `open -a` to open files with MarkView
-cat > "$CLI_PATH" << 'SCRIPT'
+PLIST="/Applications/MarkView.app/Contents/Info.plist"
+VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST" 2>/dev/null || echo "unknown")
+BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo "?")
+
+cat > "$CLI_PATH" << SCRIPT
 #!/bin/bash
-if [ $# -eq 0 ]; then
+if [ "\$1" = "--version" ] || [ "\$1" = "-v" ]; then
+    echo "MarkView v${VERSION} (build ${BUILD})"
+    exit 0
+elif [ \$# -eq 0 ]; then
     open -a MarkView
 else
     # Resolve to absolute path and open the file with MarkView
-    FILE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-    open -a MarkView "$FILE"
+    FILE="\$(cd "\$(dirname "\$1")" && pwd)/\$(basename "\$1")"
+    open -a MarkView "\$FILE"
 fi
 SCRIPT
 chmod +x "$CLI_PATH"

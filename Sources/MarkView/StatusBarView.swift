@@ -40,13 +40,18 @@ struct StatusBarView: View {
                 Circle()
                     .fill(.orange)
                     .frame(width: 8, height: 8)
-                    .help("Unsaved changes")
+                    .help(Strings.unsavedChanges)
+                    .accessibilityLabel(Strings.unsavedA11yLabel)
             }
 
-            Text("\(wordCount) words")
-            Text("\(charCount) chars")
-            Text("\(lineCount) lines")
+            Text(Strings.words(wordCount))
+                .accessibilityLabel(Strings.wordsA11y(wordCount))
+            Text(Strings.chars(charCount))
+                .accessibilityLabel(Strings.charsA11y(charCount))
+            Text(Strings.lines(lineCount))
+                .accessibilityLabel(Strings.linesA11y(lineCount))
             Text(readingTime)
+                .accessibilityLabel(Strings.readingTimeA11y(readingTime))
 
             if lintErrors > 0 || lintWarnings > 0 {
                 Divider().frame(height: 12)

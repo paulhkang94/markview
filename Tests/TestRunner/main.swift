@@ -746,7 +746,7 @@ runner.test("full HTML document is well-formed") {
     let full = MarkdownRenderer.wrapInTemplate(body)
 
     try expect(full.hasPrefix("<!DOCTYPE html>") || full.contains("<!DOCTYPE html>"), "Missing DOCTYPE")
-    try expect(full.contains("<html>"), "Missing <html>")
+    try expect(full.contains("<html"), "Missing <html>")
     try expect(full.contains("</html>"), "Missing </html>")
     try expect(full.contains("<head>"), "Missing <head>")
     try expect(full.contains("</head>"), "Missing </head>")
@@ -1676,6 +1676,153 @@ runner.test("All enums have non-empty IDs via rawValue") {
     }
     for tab in TestTabBehavior.allCases {
         try expect(!tab.rawValue.isEmpty, "TabBehavior rawValue should not be empty")
+    }
+}
+
+// =============================================================================
+// MARK: - Accessibility (A11Y) Tests
+// =============================================================================
+
+print("\n=== Accessibility Tests ===")
+
+runner.test("inline template has article with role=document") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    try expect(full.contains("role=\"document\""), "Missing role=document on article")
+    try expect(full.contains("aria-label=\"Rendered markdown content\""), "Missing aria-label on article")
+}
+
+runner.test("postProcessForAccessibility adds table role") {
+    let html = "<table><tr><th>Name</th></tr><tr><td>Alice</td></tr></table>"
+    let processed = MarkdownRenderer.postProcessForAccessibility(html)
+    try expect(processed.contains("<table role=\"table\">"), "Missing role=table")
+}
+
+runner.test("postProcessForAccessibility adds scope=col to th") {
+    let html = "<table><tr><th>Name</th><th align=\"center\">Age</th></tr></table>"
+    let processed = MarkdownRenderer.postProcessForAccessibility(html)
+    try expect(processed.contains("<th scope=\"col\">Name</th>"), "Missing scope=col on plain th")
+    try expect(processed.contains("<th scope=\"col\" align=\"center\">Age</th>"), "Missing scope=col on aligned th")
+}
+
+runner.test("postProcessForAccessibility adds aria-label to code blocks") {
+    let html = "<pre><code class=\"language-swift\">let x = 1</code></pre>"
+    let processed = MarkdownRenderer.postProcessForAccessibility(html)
+    try expect(processed.contains("<pre aria-label=\"Code block\">"), "Missing aria-label on pre")
+}
+
+runner.test("postProcessForAccessibility adds aria-label to task checkboxes") {
+    let html = "<input type=\"checkbox\" checked=\"\" disabled=\"\"> Done"
+    let processed = MarkdownRenderer.postProcessForAccessibility(html)
+    try expect(processed.contains("aria-label=\"Task item\""), "Missing aria-label on checkbox")
+}
+
+runner.test("postProcessForAccessibility on GFM table fixture") {
+    let md = "| Name | Age |\n|------|-----|\n| Alice | 30 |"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    let processed = MarkdownRenderer.postProcessForAccessibility(html)
+    try expect(processed.contains("role=\"table\""), "Fixture table missing role")
+    try expect(processed.contains("scope=\"col\""), "Fixture th missing scope")
+}
+
+runner.test("postProcessForAccessibility on task list fixture") {
+    let md = "- [x] Done\n- [ ] Not done"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    let processed = MarkdownRenderer.postProcessForAccessibility(html)
+    try expect(processed.contains("aria-label=\"Task item\""), "Task checkboxes missing aria-label")
+}
+
+// MARK: - Focus CSS Tests
+
+print("\n=== Focus CSS Tests ===")
+
+runner.test("template has :focus-visible styles") {
+    // Read template.html from disk
+    let cwd = FileManager.default.currentDirectoryPath
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let template = try String(contentsOf: templatePath, encoding: .utf8)
+    try expect(template.contains(":focus-visible"), "template.html missing :focus-visible CSS")
+    try expect(template.contains("outline:") || template.contains("outline-color:"), "template.html missing focus outline style")
+}
+
+runner.test("dark mode has focus outline color") {
+    let cwd = FileManager.default.currentDirectoryPath
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let template = try String(contentsOf: templatePath, encoding: .utf8)
+
+    guard let darkStart = template.range(of: "@media (prefers-color-scheme: dark)") else {
+        throw TestError.assertionFailed("No dark mode media query in template.html")
+    }
+    let afterDark = String(template[darkStart.upperBound...])
+    try expect(afterDark.contains(":focus-visible") && afterDark.contains("outline-color"),
+              "Dark mode missing focus outline color override")
+}
+
+// MARK: - Internationalization (I18N) Tests
+
+print("\n=== Internationalization Tests ===")
+
+runner.test("template has lang attribute") {
+    let cwd = FileManager.default.currentDirectoryPath
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let template = try String(contentsOf: templatePath, encoding: .utf8)
+    try expect(template.contains("<html lang=\"en\">"), "template.html missing lang=en attribute")
+}
+
+runner.test("inline template has lang attribute") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    try expect(full.contains("<html lang=\"en\">"), "Inline template missing lang=en attribute")
+}
+
+runner.test("RTL CSS rules exist in template") {
+    let cwd = FileManager.default.currentDirectoryPath
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let template = try String(contentsOf: templatePath, encoding: .utf8)
+    try expect(template.contains("[dir=\"rtl\"]"), "template.html missing RTL CSS rules")
+    try expect(template.contains("[dir=\"rtl\"] blockquote"), "template.html missing RTL blockquote rule")
+    try expect(template.contains("[dir=\"rtl\"] ul"), "template.html missing RTL list rule")
+}
+
+runner.test("all user-facing strings use Strings enum") {
+    // Grep SwiftUI view files for bare string literals that should be in Strings enum.
+    // We check for common patterns that indicate a user-facing string NOT using Strings.X
+    let cwd = FileManager.default.currentDirectoryPath
+    let viewFiles = [
+        "Sources/MarkView/ContentView.swift",
+        "Sources/MarkView/StatusBarView.swift",
+        "Sources/MarkView/EditorView.swift",
+        "Sources/MarkView/MarkViewApp.swift",
+    ]
+
+    var violations: [String] = []
+    for file in viewFiles {
+        let path = URL(fileURLWithPath: cwd).appendingPathComponent(file)
+        guard let content = try? String(contentsOf: path, encoding: .utf8) else { continue }
+        let lines = content.components(separatedBy: "\n")
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Skip comments, imports, struct/class/func declarations
+            if trimmed.hasPrefix("//") || trimmed.hasPrefix("import") || trimmed.isEmpty { continue }
+            // Check for Button("literal"), Text("literal"), .help("literal"), .alert("literal")
+            // These should use Strings.X instead
+            let patterns = [
+                "Button(\"", "Text(\"", ".help(\"", ".alert(\"",
+                ".accessibilityLabel(\"", ".accessibilityHint(\""
+            ]
+            for pattern in patterns {
+                if trimmed.contains(pattern) {
+                    // Allow Text() in format strings like Text("\(value)pt")
+                    // Allow .help() that just wraps a Strings reference
+                    let afterPattern = trimmed.components(separatedBy: pattern).dropFirst().joined()
+                    if afterPattern.hasPrefix("\\(") { continue }
+                    violations.append("\(URL(fileURLWithPath: file).lastPathComponent):\(i+1): \(trimmed.prefix(80))")
+                }
+            }
+        }
+    }
+
+    if !violations.isEmpty {
+        let report = violations.prefix(5).joined(separator: "\n  ")
+        throw TestError.assertionFailed("Found \(violations.count) bare string literals (should use Strings.X):\n  \(report)")
     }
 }
 

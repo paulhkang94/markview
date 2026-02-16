@@ -42,6 +42,7 @@
             .token.atrule, .token.attr-value, .token.keyword { color: #ff7b72; }
             .token.function, .token.class-name { color: #d2a8ff; }
             .token.regex, .token.important, .token.variable { color: #ffa657; }
+            :focus-visible { outline-color: #58a6ff; }
         }
 
         /* Headings */
@@ -118,6 +119,15 @@
         /* Footnotes */
         .footnotes { font-size: 0.875em; border-top: 1px solid #d0d7de; margin-top: 24px; padding-top: 16px; }
 
+        /* Focus indicators */
+        :focus-visible { outline: 2px solid #0969da; outline-offset: 2px; }
+        a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+        /* RTL support */
+        [dir="rtl"] { text-align: right; }
+        [dir="rtl"] blockquote { border-left: none; border-right: 4px solid #d0d7de; padding: 0 16px 0 0; }
+        [dir="rtl"] ul, [dir="rtl"] ol { padding-left: 0; padding-right: 2em; }
+
         /* Print */
         @media print {
             body { max-width: none; padding: 0; }
@@ -126,7 +136,7 @@
     </style>
 </head>
 <body>
-    <article id="content">
+    <article id="content" role="document" aria-label="Rendered markdown content">
         {{CONTENT}}
     </article>
     <script>

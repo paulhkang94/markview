@@ -18,9 +18,11 @@ struct ContentView: View {
                                 viewModel.contentDidChange(newText)
                             }
                             .frame(minWidth: 200)
+                            .accessibilityElement(children: .contain)
 
                             WebPreviewView(html: viewModel.renderedHTML)
                                 .frame(minWidth: 200)
+                                .accessibilityElement(children: .contain)
                         }
                     } else {
                         WebPreviewView(html: viewModel.renderedHTML)
@@ -50,7 +52,8 @@ struct ContentView: View {
                     } label: {
                         Image(systemName: showEditor ? "doc.plaintext" : "rectangle.split.2x1")
                     }
-                    .help(showEditor ? "Hide Editor (⌘E)" : "Show Editor (⌘E)")
+                    .help(showEditor ? Strings.hideEditor : Strings.showEditor)
+                    .accessibilityLabel(showEditor ? Strings.hideEditorPanel : Strings.showEditorPanel)
                     .keyboardShortcut("e", modifiers: .command)
                 }
             }
@@ -65,11 +68,11 @@ struct ContentView: View {
                 viewModel.loadFile(at: path)
             }
         }
-        .alert("File Changed", isPresented: $showExternalChangeAlert) {
-            Button("Reload") { viewModel.reloadFromDisk() }
-            Button("Keep Mine", role: .cancel) { }
+        .alert(Strings.fileChanged, isPresented: $showExternalChangeAlert) {
+            Button(Strings.reload) { viewModel.reloadFromDisk() }
+            Button(Strings.keepMine, role: .cancel) { }
         } message: {
-            Text("This file has been modified externally. Reload to see changes, or keep your edits?")
+            Text(Strings.externalChangeMessage)
         }
         .onReceive(viewModel.$externalChangeConflict) { conflict in
             if conflict { showExternalChangeAlert = true }
@@ -86,15 +89,17 @@ struct DropTargetView: View {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
-            Text("Drop a Markdown file here")
+            Text(Strings.dropPrompt)
                 .font(.title2)
                 .foregroundColor(.secondary)
-            Text("or use File → Open (⌘O)")
+            Text(Strings.dropSubprompt)
                 .font(.body)
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(isTargeted ? Color.accentColor.opacity(0.1) : Color.clear)
+        .accessibilityLabel(Strings.dropA11yLabel)
+        .accessibilityHint(Strings.dropA11yHint)
         .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: URL.self) { url, _ in

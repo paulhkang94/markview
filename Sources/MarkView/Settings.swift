@@ -110,13 +110,13 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             editorTab
-                .tabItem { Label("Editor", systemImage: "square.and.pencil") }
+                .tabItem { Label(Strings.editorTab, systemImage: "square.and.pencil") }
 
             previewTab
-                .tabItem { Label("Preview", systemImage: "doc.richtext") }
+                .tabItem { Label(Strings.previewTab, systemImage: "doc.richtext") }
 
             generalTab
-                .tabItem { Label("General", systemImage: "gear") }
+                .tabItem { Label(Strings.generalTab, systemImage: "gear") }
         }
         .frame(width: 450, height: 350)
         .padding()
@@ -124,8 +124,8 @@ struct SettingsView: View {
 
     private var editorTab: some View {
         Form {
-            Section("Font") {
-                Picker("Family", selection: $settings.editorFontFamily) {
+            Section(Strings.fontSection) {
+                Picker(Strings.fontFamily, selection: $settings.editorFontFamily) {
                     Text("SF Mono").tag("SF Mono")
                     Text("Menlo").tag("Menlo")
                     Text("Courier").tag("Courier")
@@ -133,29 +133,32 @@ struct SettingsView: View {
                 }
 
                 HStack {
-                    Text("Size")
+                    Text(Strings.fontSize)
                     Slider(value: $settings.editorFontSize, in: 10...24, step: 1)
+                        .accessibilityValue(Strings.fontSizeA11y(Int(settings.editorFontSize)))
                     Text("\(Int(settings.editorFontSize))pt")
                         .monospacedDigit()
                         .frame(width: 40)
                 }
 
                 HStack {
-                    Text("Line Spacing")
+                    Text(Strings.lineSpacing)
                     Slider(value: $settings.editorLineSpacing, in: 1.0...2.0, step: 0.1)
+                        .accessibilityValue(String(format: "%.1f", settings.editorLineSpacing))
                     Text(String(format: "%.1f", settings.editorLineSpacing))
                         .monospacedDigit()
                         .frame(width: 30)
                 }
             }
+            .accessibilityElement(children: .contain)
 
-            Section("Behavior") {
-                Toggle("Word Wrap", isOn: $settings.wordWrap)
-                Toggle("Spell Check", isOn: $settings.spellCheck)
-                Toggle("Highlight Current Line", isOn: $settings.lineHighlight)
-                Toggle("Show Minimap", isOn: $settings.minimapEnabled)
+            Section(Strings.behaviorSection) {
+                Toggle(Strings.wordWrap, isOn: $settings.wordWrap)
+                Toggle(Strings.spellCheck, isOn: $settings.spellCheck)
+                Toggle(Strings.highlightCurrentLine, isOn: $settings.lineHighlight)
+                Toggle(Strings.showMinimap, isOn: $settings.minimapEnabled)
 
-                Picker("Tab Behavior", selection: Binding(
+                Picker(Strings.tabBehavior, selection: Binding(
                     get: { settings.tabBehavior },
                     set: { settings.tabBehavior = $0 }
                 )) {
@@ -169,18 +172,20 @@ struct SettingsView: View {
 
     private var previewTab: some View {
         Form {
-            Section("Font") {
+            Section(Strings.fontSection) {
                 HStack {
-                    Text("Size")
+                    Text(Strings.fontSize)
                     Slider(value: $settings.previewFontSize, in: 12...24, step: 1)
+                        .accessibilityValue(Strings.fontSizeA11y(Int(settings.previewFontSize)))
                     Text("\(Int(settings.previewFontSize))pt")
                         .monospacedDigit()
                         .frame(width: 40)
                 }
             }
+            .accessibilityElement(children: .contain)
 
-            Section("Layout") {
-                Picker("Preview Width", selection: Binding(
+            Section(Strings.layoutSection) {
+                Picker(Strings.previewWidth, selection: Binding(
                     get: { settings.previewWidth },
                     set: { settings.previewWidth = $0 }
                 )) {
@@ -190,8 +195,8 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Theme") {
-                Picker("Appearance", selection: Binding(
+            Section(Strings.themeSection) {
+                Picker(Strings.appearance, selection: Binding(
                     get: { settings.theme },
                     set: { settings.theme = $0 }
                 )) {
@@ -205,26 +210,28 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
-            Section("Auto Save") {
-                Toggle("Enable Auto Save", isOn: $settings.autoSave)
+            Section(Strings.autoSaveSection) {
+                Toggle(Strings.enableAutoSave, isOn: $settings.autoSave)
                 if settings.autoSave {
                     HStack {
-                        Text("Interval")
+                        Text(Strings.interval)
                         Slider(value: $settings.autoSaveInterval, in: 1...30, step: 1)
+                            .accessibilityValue(Strings.autoSaveIntervalA11y(Int(settings.autoSaveInterval)))
                         Text("\(Int(settings.autoSaveInterval))s")
                             .monospacedDigit()
                             .frame(width: 30)
                     }
                 }
             }
+            .accessibilityElement(children: .contain)
 
-            Section("Window") {
-                Toggle("Restore last file on launch", isOn: $settings.windowRestore)
+            Section(Strings.windowSection) {
+                Toggle(Strings.restoreLastFile, isOn: $settings.windowRestore)
             }
 
-            Section("Privacy") {
-                Toggle("Opt in to anonymous usage metrics", isOn: $settings.metricsOptIn)
-                Text("Helps improve MarkView. No personal data or file contents are ever collected.")
+            Section(Strings.privacySection) {
+                Toggle(Strings.metricsOptIn, isOn: $settings.metricsOptIn)
+                Text(Strings.metricsDescription)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

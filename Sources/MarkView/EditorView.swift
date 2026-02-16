@@ -11,6 +11,7 @@ struct EditorView: View {
             .font(.custom(settings.editorFontFamily, size: settings.editorFontSize).monospaced())
             .scrollContentBackground(.hidden)
             .padding(8)
+            .accessibilityLabel(Strings.markdownEditor)
             .onChange(of: text) { newValue in
                 onChange(newValue)
             }

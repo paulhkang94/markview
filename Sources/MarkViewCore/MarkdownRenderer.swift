@@ -36,6 +36,27 @@ public final class MarkdownRenderer {
         return String(cString: htmlPtr)
     }
 
+    /// Post-process rendered HTML to add ARIA attributes for accessibility.
+    public static func postProcessForAccessibility(_ html: String) -> String {
+        var result = html
+        // Add role="table" to tables
+        result = result.replacingOccurrences(of: "<table>", with: "<table role=\"table\">")
+        // Add scope="col" to th elements
+        result = result.replacingOccurrences(of: "<th>", with: "<th scope=\"col\">")
+        result = result.replacingOccurrences(
+            of: "<th align=",
+            with: "<th scope=\"col\" align="
+        )
+        // Add aria-label to code blocks
+        result = result.replacingOccurrences(of: "<pre>", with: "<pre aria-label=\"Code block\">")
+        // Add aria-label to task list checkboxes
+        result = result.replacingOccurrences(
+            of: "<input type=\"checkbox\"",
+            with: "<input type=\"checkbox\" aria-label=\"Task item\""
+        )
+        return result
+    }
+
     /// Wrap rendered HTML body in a full HTML document.
     /// If a template is provided, replaces {{CONTENT}}. Otherwise uses built-in template.
     public static func wrapInTemplate(_ bodyHTML: String, template: String? = nil) -> String {
@@ -44,7 +65,7 @@ public final class MarkdownRenderer {
         }
         return """
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
             <meta charset="utf-8">
             <style>
@@ -68,7 +89,7 @@ public final class MarkdownRenderer {
                 a:hover { text-decoration: underline; }
             </style>
         </head>
-        <body><article>\(bodyHTML)</article></body>
+        <body><article role="document" aria-label="Rendered markdown content">\(bodyHTML)</article></body>
         </html>
         """
     }

@@ -10,6 +10,7 @@ struct WebPreviewView: NSViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.setAccessibilityLabel(Strings.markdownPreview)
         context.coordinator.webView = webView
         return webView
     }
@@ -83,7 +84,7 @@ struct WebPreviewView: NSViewRepresentable {
 
         private func updateContentViaJS(_ html: String, in webView: WKWebView) {
             let bodyContent: String
-            if let startRange = html.range(of: "<article id=\"content\">"),
+            if let startRange = html.range(of: "<article id=\"content\"", options: .literal).flatMap({ html.range(of: ">", range: $0.upperBound..<html.endIndex) }),
                let endRange = html.range(of: "</article>") {
                 bodyContent = String(html[startRange.upperBound..<endRange.lowerBound])
             } else if let startRange = html.range(of: "<body>"),

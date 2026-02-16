@@ -28,38 +28,40 @@ struct MarkViewApp: App {
         .defaultSize(width: 1000, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Open...") { openFile() }
+                Button(Strings.openFile) { openFile() }
                     .keyboardShortcut("o", modifiers: .command)
             }
 
             CommandGroup(after: .importExport) {
-                Button("Export HTML...") {
+                Button(Strings.exportHTML) {
                     NotificationCenter.default.post(name: .exportHTML, object: nil)
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+                .accessibilityHint(Strings.exportHTMLA11yHint)
 
-                Button("Export PDF...") {
+                Button(Strings.exportPDF) {
                     NotificationCenter.default.post(name: .exportPDF, object: nil)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+                .accessibilityHint(Strings.exportPDFA11yHint)
             }
 
             CommandGroup(after: .toolbar) {
-                Button("Increase Font Size") {
+                Button(Strings.increaseFontSize) {
                     let s = AppSettings.shared
                     s.editorFontSize = min(s.editorFontSize + 1, 24)
                     s.previewFontSize = min(s.previewFontSize + 1, 24)
                 }
                 .keyboardShortcut("+", modifiers: .command)
 
-                Button("Decrease Font Size") {
+                Button(Strings.decreaseFontSize) {
                     let s = AppSettings.shared
                     s.editorFontSize = max(s.editorFontSize - 1, 10)
                     s.previewFontSize = max(s.previewFontSize - 1, 12)
                 }
                 .keyboardShortcut("-", modifiers: .command)
 
-                Button("Reset Font Size") {
+                Button(Strings.resetFontSize) {
                     let s = AppSettings.shared
                     s.editorFontSize = 14
                     s.previewFontSize = 16

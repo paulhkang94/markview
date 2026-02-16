@@ -13,7 +13,10 @@ BUILD_DIR=".build/release"
 APP_DIR="$PROJECT_DIR/$APP_NAME.app"
 INSTALL_DIR="/Applications/$APP_NAME.app"
 
-echo "=== Building $APP_NAME.app ==="
+PLIST="$PROJECT_DIR/Sources/MarkView/Info.plist"
+VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST" 2>/dev/null || echo "unknown")
+BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo "?")
+echo "=== Building $APP_NAME.app v$VERSION (build $BUILD) ==="
 
 # Step 1: Build release
 echo "--- Building release binary ---"
