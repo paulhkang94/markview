@@ -51,6 +51,7 @@ struct WebPreviewView: NSViewRepresentable {
         private var hasLoadedInitialPage = false
         private var lastHTML: String = ""
         private var lastCSS: String = ""
+        private var lastBaseDirectory: URL?
         private var prismJS: String?
 
         init() {
@@ -64,12 +65,17 @@ struct WebPreviewView: NSViewRepresentable {
             let cssChanged = currentCSS != lastCSS
             lastCSS = currentCSS
 
-            guard html != lastHTML || cssChanged else { return }
+            // Force full page reload when base directory changes (different file opened
+            // from a different folder) so <base href> and relative paths resolve correctly.
+            let baseDirChanged = baseDirectoryURL != lastBaseDirectory
+            lastBaseDirectory = baseDirectoryURL
+
+            guard html != lastHTML || cssChanged || baseDirChanged else { return }
             lastHTML = html
 
             let styledHTML = injectSettingsCSS(into: html)
 
-            if !hasLoadedInitialPage {
+            if !hasLoadedInitialPage || baseDirChanged {
                 let fullHTML = injectPrism(into: styledHTML)
                 loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true
@@ -87,11 +93,16 @@ struct WebPreviewView: NSViewRepresentable {
                 let baseTag = "<base href=\"\(dir.absoluteString)\">"
                 finalHTML = finalHTML.replacingOccurrences(of: "<head>", with: "<head>\(baseTag)")
             }
-            let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview.html")
+            // Use unique filename to prevent WKWebView file:// caching from serving stale content
+            let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview-\(UUID().uuidString).html")
             try? finalHTML.write(to: tempFile, atomically: true, encoding: .utf8)
             // Grant read access to / so WKWebView can load local images.
             // This is a non-sandboxed desktop app — broad file access is expected.
             webView.loadFileURL(tempFile, allowingReadAccessTo: URL(fileURLWithPath: "/"))
+            // Clean up temp file after WKWebView has had time to load it
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                try? FileManager.default.removeItem(at: tempFile)
+            }
         }
 
         private func injectSettingsCSS(into html: String) -> String {

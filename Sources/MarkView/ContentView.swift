@@ -87,12 +87,16 @@ struct ContentView: View {
         }
     }
 
-    /// Register the current file path with the window tracker so AppDelegate
-    /// can find existing windows by file path and avoid duplicates.
+    /// Register the current file path with the window tracker.
+    /// If another window already has this file open, close this window
+    /// and bring the existing one to front.
     private func registerFileInWindow(_ path: String) {
         DispatchQueue.main.async {
             guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow })
                     ?? NSApplication.shared.windows.first(where: { $0.isVisible }) else { return }
+            if WindowFileTracker.shared.closeDuplicateWindow(window, forPath: path) {
+                return // duplicate closed, existing window activated
+            }
             WindowFileTracker.shared.register(window: window, filePath: path)
         }
     }

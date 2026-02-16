@@ -33,10 +33,10 @@ final class PreviewViewModel: ObservableObject {
     func loadFile(at path: String) {
         currentFilePath = path
         fileName = URL(fileURLWithPath: path).lastPathComponent
-        NSApplication.shared.mainWindow?.title = fileName
 
         loadTemplate()
         loadContent(from: path)
+        NSApplication.shared.mainWindow?.title = fileName
         watchFile(at: path)
         startAutoSaveTimer()
     }
@@ -99,7 +99,19 @@ final class PreviewViewModel: ObservableObject {
     }
 
     private func loadContent(from path: String) {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        // Resolve symlinks and normalize path to avoid file:// URL mismatches
+        let resolvedPath = (path as NSString).resolvingSymlinksInPath
+        guard let content = try? String(contentsOfFile: resolvedPath, encoding: .utf8) else {
+            // Fallback: try original path in case resolution changed it incorrectly
+            guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+            editorContent = content
+            originalContent = content
+            isDirty = false
+            renderImmediate(content)
+            runLint(content)
+            isLoaded = true
+            return
+        }
         editorContent = content
         originalContent = content
         isDirty = false
