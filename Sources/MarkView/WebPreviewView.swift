@@ -4,6 +4,11 @@ import WebKit
 struct WebPreviewView: NSViewRepresentable {
     let html: String
     var baseDirectoryURL: URL?
+    // These must be explicit properties (not read from AppSettings inside updateNSView)
+    // so that SwiftUI detects changes and triggers updateNSView.
+    var previewFontSize: Double = 16
+    var previewWidth: String = "900px"
+    var theme: AppTheme = .system
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -18,8 +23,7 @@ struct WebPreviewView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         // Sync WKWebView appearance with system so @media (prefers-color-scheme) works
-        let settings = AppSettings.shared
-        switch settings.theme {
+        switch theme {
         case .light:
             webView.appearance = NSAppearance(named: .aqua)
         case .dark:
@@ -28,6 +32,9 @@ struct WebPreviewView: NSViewRepresentable {
             webView.appearance = nil // inherit from system
         }
         context.coordinator.baseDirectoryURL = baseDirectoryURL
+        context.coordinator.previewFontSize = previewFontSize
+        context.coordinator.previewWidth = previewWidth
+        context.coordinator.theme = theme
         context.coordinator.updateContent(html, in: webView)
     }
 
@@ -38,10 +45,13 @@ struct WebPreviewView: NSViewRepresentable {
     class Coordinator {
         weak var webView: WKWebView?
         var baseDirectoryURL: URL?
+        var previewFontSize: Double = 16
+        var previewWidth: String = "900px"
+        var theme: AppTheme = .system
         private var hasLoadedInitialPage = false
         private var lastHTML: String = ""
+        private var lastCSS: String = ""
         private var prismJS: String?
-        private let settings = AppSettings.shared
 
         init() {
             if let prismURL = Bundle.module.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
@@ -50,7 +60,11 @@ struct WebPreviewView: NSViewRepresentable {
         }
 
         func updateContent(_ html: String, in webView: WKWebView) {
-            guard html != lastHTML else { return }
+            let currentCSS = "\(Int(previewFontSize))|\(previewWidth)|\(theme)"
+            let cssChanged = currentCSS != lastCSS
+            lastCSS = currentCSS
+
+            guard html != lastHTML || cssChanged else { return }
             lastHTML = html
 
             let styledHTML = injectSettingsCSS(into: html)
@@ -84,12 +98,10 @@ struct WebPreviewView: NSViewRepresentable {
             var css = ""
 
             // Preview width and font size
-            let width = settings.previewWidth.cssValue
-            let fontSize = Int(settings.previewFontSize)
-            css += "body { max-width: \(width); font-size: \(fontSize)px; }\n"
+            css += "body { max-width: \(previewWidth); font-size: \(Int(previewFontSize))px; }\n"
 
             // Theme override
-            switch settings.theme {
+            switch theme {
             case .light:
                 css += "body { color: #1f2328; background: #ffffff; }\n"
                 css += ":root { color-scheme: light; }\n"
@@ -131,8 +143,8 @@ struct WebPreviewView: NSViewRepresentable {
                   let escapedContent = String(data: jsonData, encoding: .utf8) else { return }
 
             // Also update settings CSS
-            var css = "body { max-width: \(settings.previewWidth.cssValue); font-size: \(Int(settings.previewFontSize))px; }"
-            switch settings.theme {
+            var css = "body { max-width: \(previewWidth); font-size: \(Int(previewFontSize))px; }"
+            switch theme {
             case .light:
                 css += " body { color: #1f2328; background: #ffffff; } :root { color-scheme: light; }"
             case .dark:

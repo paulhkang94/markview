@@ -5,6 +5,7 @@ struct ContentView: View {
     let initialFilePath: String?
 
     @StateObject private var viewModel = PreviewViewModel()
+    @ObservedObject private var settings = AppSettings.shared
     @State private var showEditor = false
     @State private var showExternalChangeAlert = false
 
@@ -20,12 +21,12 @@ struct ContentView: View {
                             .frame(minWidth: 200)
                             .accessibilityElement(children: .contain)
 
-                            WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL)
+                            WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL, previewFontSize: settings.previewFontSize, previewWidth: settings.previewWidth.cssValue, theme: settings.theme)
                                 .frame(minWidth: 200)
                                 .accessibilityElement(children: .contain)
                         }
                     } else {
-                        WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL)
+                        WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL, previewFontSize: settings.previewFontSize, previewWidth: settings.previewWidth.cssValue, theme: settings.theme)
                     }
                 } else {
                     DropTargetView { url in

@@ -2258,6 +2258,61 @@ runner.test("openFile uses NSOpenPanel with markdown content types") {
 }
 
 // =============================================================================
+// MARK: — Settings Reactivity Tests
+// =============================================================================
+// Validates that changing settings (font size, theme, width) triggers a
+// WebPreviewView re-render. SwiftUI only calls updateNSView when properties
+// change — settings must be passed as explicit properties, not read internally.
+// =============================================================================
+
+let wpvSource = try! String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+
+print("\n--- Settings Reactivity ---")
+
+runner.test("WebPreviewView has previewFontSize as explicit property") {
+    // Must be a struct property, not read from AppSettings inside Coordinator
+    try expect(wpvSource.contains("var previewFontSize: Double"),
+        "previewFontSize must be an explicit property so SwiftUI detects changes")
+}
+
+runner.test("WebPreviewView has theme as explicit property") {
+    try expect(wpvSource.contains("var theme: AppTheme"),
+        "theme must be an explicit property so SwiftUI detects changes")
+}
+
+runner.test("WebPreviewView has previewWidth as explicit property") {
+    try expect(wpvSource.contains("var previewWidth: String"),
+        "previewWidth must be an explicit property so SwiftUI detects changes")
+}
+
+runner.test("ContentView passes settings to WebPreviewView") {
+    try expect(contentSource.contains("previewFontSize: settings.previewFontSize"),
+        "ContentView must pass previewFontSize from observed settings")
+    try expect(contentSource.contains("theme: settings.theme"),
+        "ContentView must pass theme from observed settings")
+}
+
+runner.test("ContentView observes AppSettings for reactivity") {
+    try expect(contentSource.contains("@ObservedObject") && contentSource.contains("AppSettings.shared"),
+        "ContentView must @ObservedObject AppSettings.shared to trigger re-renders on settings change")
+}
+
+runner.test("Coordinator detects settings changes independently of HTML") {
+    // updateContent must re-render when CSS settings change, even if HTML hasn't changed
+    try expect(wpvSource.contains("cssChanged") && wpvSource.contains("html != lastHTML || cssChanged"),
+        "updateContent must check for CSS changes (font size, theme) not just HTML changes")
+}
+
+runner.test("Cmd+/- updates both editor and preview font size") {
+    try expect(appSource.contains("editorFontSize") && appSource.contains("previewFontSize"),
+        "Font size shortcuts must update both editor and preview font sizes")
+    // Verify increase, decrease, and reset all touch both
+    let increaseSection = appSource.components(separatedBy: "increaseFontSize").last?.prefix(200) ?? ""
+    try expect(increaseSection.contains("editorFontSize") && increaseSection.contains("previewFontSize"),
+        "Increase font must update both editor and preview sizes")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
