@@ -1,10 +1,18 @@
 import AppKit
-@preconcurrency import WebKit
+import WebKit
+
+/// Thread-safe mutable box for sharing state across isolation boundaries.
+/// Safety is guaranteed by the caller (background thread spin-waits until main thread writes).
+private final class SharedBox<T>: @unchecked Sendable {
+    var value: T
+    init(_ value: T) { self.value = value }
+}
 
 /// Renders HTML in an offscreen WKWebView and captures a screenshot as PNG data.
-/// @preconcurrency import WebKit prevents WKNavigationDelegate from inferring @MainActor
-/// on the entire class, since this class manages its own thread safety.
-final class OffscreenRenderer: NSObject, WKNavigationDelegate {
+/// All WKWebView work happens on @MainActor. The public `renderToPNG` entry point
+/// is nonisolated (called from background thread) and dispatches to main internally.
+@MainActor
+final class OffscreenRenderer: NSObject, WKNavigationDelegate, @unchecked Sendable {
     private let width: CGFloat
     private let height: CGFloat
     private var webView: WKWebView?
@@ -31,33 +39,34 @@ final class OffscreenRenderer: NSObject, WKNavigationDelegate {
     }
 
     /// Render HTML string and return PNG screenshot data.
-    /// Must be called from a background thread — pumps the main run loop internally.
-    func renderToPNG(html: String) throws -> Data {
+    /// Must be called from a background thread — dispatches to main actor internally
+    /// and spin-waits for the result.
+    nonisolated func renderToPNG(html: String) throws -> Data {
         assert(!Thread.isMainThread, "renderToPNG must be called from a background thread")
 
-        var result: Result<Data, Error>?
-        let done = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
-        done.initialize(to: false)
-        defer { done.deallocate() }
+        let resultBox = SharedBox<Result<Data, Error>?>(nil)
+        let doneBox = SharedBox<Bool>(false)
 
-        DispatchQueue.main.async { [self] in
-            self.renderAsync(html: html) { res in
-                result = res
-                done.pointee = true
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                self.renderAsync(html: html) { res in
+                    resultBox.value = res
+                    doneBox.value = true
+                }
             }
         }
 
         // Spin-wait while pumping the main run loop from outside
         let deadline = Date().addingTimeInterval(30)
-        while !done.pointee && Date() < deadline {
+        while !doneBox.value && Date() < deadline {
             Thread.sleep(forTimeInterval: 0.01)
         }
 
-        guard done.pointee else {
+        guard doneBox.value else {
             throw RenderError.navigationFailed(nil)
         }
 
-        switch result! {
+        switch resultBox.value! {
         case .success(let data): return data
         case .failure(let error): throw error
         }

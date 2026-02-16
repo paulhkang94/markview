@@ -92,13 +92,15 @@ enum VisualTestError: Error, CustomStringConvertible {
 // =============================================================================
 
 // NSApplication is required for WKWebView to work (even headless).
-// Test logic runs on a background thread; main thread pumps the run loop
-// so WKWebView navigation/snapshot callbacks can fire.
+// Renderer must be created on main actor (it uses WKWebView), then passed
+// to the background thread where renderToPNG spin-waits for results.
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
+let renderer = OffscreenRenderer(width: 900, height: 800)
+
 DispatchQueue.global(qos: .userInitiated).async {
-    let exitCode = runAllTests()
+    let exitCode = runAllTests(renderer: renderer)
     exit(exitCode)
 }
 
@@ -108,8 +110,7 @@ RunLoop.main.run()
 // MARK: - Test Logic (runs on background thread)
 // =============================================================================
 
-func runAllTests() -> Int32 {
-    let renderer = OffscreenRenderer(width: 900, height: 800)
+func runAllTests(renderer: OffscreenRenderer) -> Int32 {
     var runner = VisualTestRunner()
 
     // --- Golden generation mode ---
