@@ -47,5 +47,12 @@ let package = Package(
             dependencies: ["MarkViewCore"],
             path: "Tests/DiffTester"
         ),
+        // Visual regression tester — screenshot comparison via offscreen WKWebView
+        .executableTarget(
+            name: "MarkViewVisualTester",
+            dependencies: ["MarkViewCore"],
+            path: "Tests/VisualTester",
+            exclude: ["Goldens"]
+        ),
     ]
 )

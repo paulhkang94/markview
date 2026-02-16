@@ -133,7 +133,7 @@ struct WebPreviewView: NSViewRepresentable {
             "body { color: #e6edf3; background: #0d1117; }",
             ":root { color-scheme: dark; }",
             "a { color: #58a6ff; }",
-            "code:not([class*=\"language-\"]) { background: #343942; }",
+            "code:not([class*=\"language-\"]) { background: #343942; color: #e6edf3; }",
             "pre { background: #161b22 !important; }",
             "th, td { border-color: #3d444d; }",
             "tr { background-color: #0d1117; border-top-color: #3d444db3; }",

@@ -60,6 +60,121 @@ func normalizeHTML(_ html: String) -> String {
 }
 
 // =============================================================================
+// MARK: - CSS Parsing Helpers (for auto-coverage tests)
+// =============================================================================
+
+/// Visual CSS properties that must be overridden in dark mode
+let visualProperties: Set<String> = [
+    "color", "background", "background-color", "border", "border-color",
+    "border-top-color", "border-bottom-color", "border-left-color", "border-right-color"
+]
+
+struct CSSRule {
+    let selector: String
+    let properties: [String: String]
+}
+
+/// Simple regex-based CSS parser. Extracts selector → property pairs from a CSS block.
+/// Does not handle nested @media — call on pre-split light/dark sections.
+func parseCSSRules(_ css: String) -> [CSSRule] {
+    var rules: [CSSRule] = []
+
+    // Match: selector { ... }
+    // Use a simple brace-counting approach for robustness
+    let scanner = css as NSString
+    let length = scanner.length
+    var i = 0
+
+    while i < length {
+        // Skip whitespace
+        while i < length && (scanner.character(at: i) == 0x20 || scanner.character(at: i) == 0x0A || scanner.character(at: i) == 0x0D || scanner.character(at: i) == 0x09) {
+            i += 1
+        }
+        if i >= length { break }
+
+        // Find the next '{'
+        let selectorStart = i
+        while i < length && scanner.character(at: i) != 0x7B /* { */ {
+            i += 1
+        }
+        if i >= length { break }
+
+        let selector = scanner.substring(with: NSRange(location: selectorStart, length: i - selectorStart))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        i += 1 // skip '{'
+
+        // Find matching '}'
+        var braceDepth = 1
+        let bodyStart = i
+        while i < length && braceDepth > 0 {
+            let ch = scanner.character(at: i)
+            if ch == 0x7B { braceDepth += 1 }
+            else if ch == 0x7D { braceDepth -= 1 }
+            i += 1
+        }
+        let bodyEnd = i - 1
+        if bodyEnd <= bodyStart || selector.isEmpty { continue }
+
+        let body = scanner.substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
+
+        // Parse property: value pairs
+        var props: [String: String] = [:]
+        let declarations = body.components(separatedBy: ";")
+        for decl in declarations {
+            let parts = decl.split(separator: ":", maxSplits: 1)
+            if parts.count == 2 {
+                let prop = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                props[prop] = value
+            }
+        }
+
+        if !props.isEmpty {
+            rules.append(CSSRule(selector: selector, properties: props))
+        }
+    }
+
+    return rules
+}
+
+/// Extract the CSS content between <style> and </style> from full HTML
+func extractCSS(from html: String) -> String {
+    guard let styleStart = html.range(of: "<style>")?.upperBound ?? html.range(of: "<style id=\"app-css\">")?.upperBound,
+          let styleEnd = html.range(of: "</style>")?.lowerBound else { return "" }
+    return String(html[styleStart..<styleEnd])
+}
+
+/// Split CSS into light-mode rules (before @media dark) and dark-mode rules (inside @media dark)
+func splitLightDarkCSS(_ css: String) -> (light: String, dark: String) {
+    guard let mediaStart = css.range(of: "@media (prefers-color-scheme: dark)") else {
+        return (light: css, dark: "")
+    }
+
+    let light = String(css[css.startIndex..<mediaStart.lowerBound])
+
+    // Find the opening brace after the media query
+    let afterMedia = css[mediaStart.upperBound...]
+    guard let braceStart = afterMedia.firstIndex(of: "{") else {
+        return (light: light, dark: "")
+    }
+
+    // Find matching closing brace
+    var depth = 1
+    var idx = css.index(after: braceStart)
+    while idx < css.endIndex && depth > 0 {
+        if css[idx] == "{" { depth += 1 }
+        else if css[idx] == "}" { depth -= 1 }
+        idx = css.index(after: idx)
+    }
+    let braceEnd = css.index(before: idx)
+    let dark = String(css[css.index(after: braceStart)..<braceEnd])
+
+    // Also get any CSS after the dark block (it's still light-mode)
+    let afterDark = String(css[idx...])
+    return (light: light + afterDark, dark: dark)
+}
+
+// =============================================================================
 // MARK: - Golden File Support
 // =============================================================================
 
@@ -712,6 +827,7 @@ runner.test("dark mode CSS covers all styled elements") {
         ("hr", "horizontal rule"),
         ("h1, h2", "heading borders"),
         ("a {", "link color"),
+        ("code:not(", "inline code"),
     ]
 
     for (selector, description) in requiredDarkOverrides {
@@ -751,6 +867,126 @@ runner.test("dark mode inherits text color from body") {
     // Body sets light text color — table cells inherit it (GitHub Primer approach)
     try expect(afterDark.contains("body") && afterDark.contains("color: #e6edf3"),
               "Dark mode body must set light text color for inheritance")
+}
+
+runner.test("dark mode inline code has explicit text color") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+
+    guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
+        throw TestError.assertionFailed("No dark mode media query found")
+    }
+    let afterDark = String(full[darkStart.upperBound...])
+
+    // Inline code must set both background AND color — relying on inheritance
+    // can leave dark text (#1f2328) on dark background (#343942)
+    guard let codeRule = afterDark.range(of: "code:not(") else {
+        throw TestError.assertionFailed("Dark mode missing inline code rule")
+    }
+    let ruleEnd = afterDark[codeRule.upperBound...].prefix(200)
+    try expect(ruleEnd.contains("color:"),
+              "Dark mode inline code must set explicit text color (not just background)")
+}
+
+// MARK: - Auto-Parsed CSS Dark Mode Coverage
+
+runner.test("dark mode auto-coverage: every styled element has dark override") {
+    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    let css = extractCSS(from: full)
+    let (lightCSS, darkCSS) = splitLightDarkCSS(css)
+
+    let lightRules = parseCSSRules(lightCSS)
+    let darkRules = parseCSSRules(darkCSS)
+
+    // Build a set of dark-mode selectors → properties for lookup
+    var darkOverrides: [String: Set<String>] = [:]
+    for rule in darkRules {
+        let normalizedSelector = rule.selector
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let props = Set(rule.properties.keys.filter { visualProperties.contains($0) })
+        if !props.isEmpty {
+            darkOverrides[normalizedSelector, default: []].formUnion(props)
+        }
+    }
+
+    // Selectors that intentionally don't need dark overrides
+    let exemptSelectors: Set<String> = [
+        "pre code",          // covered by `pre` dark override
+        "a:hover",           // inherits from `a` dark override
+        ":root",             // color-scheme declaration, not visual
+        "img",               // no color properties
+        "input[type=\"checkbox\"]", // native control
+    ]
+
+    // CSS shorthand → longhand relationships: if dark mode sets any of the longhands,
+    // that counts as covering the shorthand's visual aspects
+    let shorthandCoverage: [String: [String]] = [
+        "border": ["border-color", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color"],
+        "border-top": ["border-top-color"],
+        "border-right": ["border-right-color"],
+        "border-bottom": ["border-bottom-color"],
+        "border-left": ["border-left-color"],
+    ]
+
+    /// Check if a light selector is covered by a more specific dark selector.
+    /// E.g., `code { background }` is covered by `code:not([class*="language-"]) { background }`
+    /// combined with `pre { background }` (since code inside pre uses pre's background).
+    func selectorCoveredBySpecific(_ lightSel: String, prop: String) -> Bool {
+        // `code` is covered for background: code:not(language) handles inline code,
+        // and pre handles code blocks (pre code has background: none in light mode)
+        if lightSel == "code" && prop == "background" {
+            return darkOverrides.keys.contains(where: { $0.hasPrefix("code:not(") })
+                && darkOverrides.keys.contains(where: { $0 == "pre" })
+        }
+        return false
+    }
+
+    var missing: [String] = []
+    for rule in lightRules {
+        let selector = rule.selector.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Skip exempt selectors
+        if exemptSelectors.contains(selector) { continue }
+        if selector.hasPrefix("@") { continue } // skip nested @media (e.g. @media print)
+
+        // Find visual properties in this light rule
+        let lightVisualProps = rule.properties.keys.filter { visualProperties.contains($0) }
+        if lightVisualProps.isEmpty { continue }
+
+        // Collect all dark-mode properties for this selector (exact + combined group match)
+        var foundDarkProps: Set<String> = darkOverrides[selector] ?? []
+        for (darkSel, darkProps) in darkOverrides {
+            let darkParts = darkSel.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            let lightParts = selector.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if lightParts.allSatisfy({ lp in darkParts.contains(lp) }) {
+                foundDarkProps.formUnion(darkProps)
+            }
+        }
+
+        for prop in lightVisualProps {
+            if foundDarkProps.contains(prop) { continue }
+
+            // Check shorthand → longhand coverage (e.g., border covered by border-color)
+            if let longhands = shorthandCoverage[prop], longhands.contains(where: { foundDarkProps.contains($0) }) {
+                continue
+            }
+
+            // Check if inheritable property is covered by body
+            let inheritableProps: Set<String> = ["color"]
+            if inheritableProps.contains(prop) && selector != "body" && darkOverrides["body"]?.contains(prop) == true {
+                continue
+            }
+
+            // Check if a more specific dark selector covers this
+            if selectorCoveredBySpecific(selector, prop: prop) { continue }
+
+            missing.append("\(selector) { \(prop) }")
+        }
+    }
+
+    if !missing.isEmpty {
+        let report = missing.map { "  - \($0)" }.joined(separator: "\n")
+        throw TestError.assertionFailed("Dark mode missing overrides for \(missing.count) light-mode visual properties:\n\(report)")
+    }
 }
 
 runner.test("tables use max-content width not 100%") {

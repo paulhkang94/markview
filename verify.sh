@@ -93,5 +93,11 @@ if [ "$PHASE" = "--extended" ]; then
     swift run MarkViewDiffTester 2>&1 | grep -v "^\[" | grep -v "^$"
 
     echo ""
+    echo "--- Extended: Visual Regression Tests ---"
+    # Generate goldens first (idempotent), then compare
+    swift run MarkViewVisualTester --generate-goldens 2>&1 | grep -v "^\[" | grep -v "^$" | grep -v "^Building\|^Build of\|^warning:"
+    swift run MarkViewVisualTester 2>&1 | grep -v "^\[" | grep -v "^$" | grep -v "^Building\|^Build of\|^warning:"
+
+    echo ""
     echo "=== Extended verification complete ==="
 fi

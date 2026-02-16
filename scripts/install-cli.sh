@@ -16,15 +16,15 @@ fi
 
 mkdir -p "$BIN_DIR"
 
-# Create a wrapper script that uses `open` to launch the app bundle
+# Create a wrapper script that uses `open -a` to open files with MarkView
 cat > "$CLI_PATH" << 'SCRIPT'
 #!/bin/bash
 if [ $# -eq 0 ]; then
-    open /Applications/MarkView.app
+    open -a MarkView
 else
-    # Resolve to absolute path
+    # Resolve to absolute path and open the file with MarkView
     FILE="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-    open /Applications/MarkView.app --args "$FILE"
+    open -a MarkView "$FILE"
 fi
 SCRIPT
 chmod +x "$CLI_PATH"
