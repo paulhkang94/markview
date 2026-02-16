@@ -4,16 +4,18 @@ import SwiftUI
 struct MarkViewApp: App {
     @State private var filePath: String?
 
-    /// Default window size: 80% of screen width, 85% of screen height
+    /// Default window size for preview-only mode: 55% width, 85% height.
+    /// Editor+preview mode uses 80% width (handled by ContentView.toggleEditor).
+    /// Conservative: slightly wide is better than too narrow for readability.
     private var defaultWindowSize: CGSize {
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
             return CGSize(
-                width: max(frame.width * 0.8, 900),
+                width: max(frame.width * 0.55, 800),
                 height: max(frame.height * 0.85, 600)
             )
         }
-        return CGSize(width: 1200, height: 800)
+        return CGSize(width: 900, height: 800)
     }
 
     var body: some Scene {
@@ -29,8 +31,10 @@ struct MarkViewApp: App {
                         }
                     }
 
-                    // Size window to fit screen on first launch
-                    if let window = NSApplication.shared.mainWindow {
+                    // Defer window sizing to next run loop — window may not exist yet during onAppear.
+                    // Always apply to override macOS state restoration which saves the previous frame.
+                    DispatchQueue.main.async {
+                        guard let window = NSApplication.shared.windows.first(where: { $0.isVisible || $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
                         let size = defaultWindowSize
                         let screen = window.screen ?? NSScreen.main
                         if let screenFrame = screen?.visibleFrame {

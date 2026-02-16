@@ -2057,6 +2057,163 @@ runner.test("WebPreviewView .system theme injects dark CSS (not just media query
 }
 
 // =============================================================================
+// MARK: - Window Sizing Tests
+// =============================================================================
+// Validates the window sizing logic used by MarkViewApp and ContentView.
+// Tests the computation (screen percentages, minimums, centering) without requiring
+// a running window — ensures sizing regressions are caught automatically.
+
+print("\n=== Window Sizing Tests ===")
+
+// Simulate the sizing functions extracted from MarkViewApp/ContentView
+struct WindowSizingSpec {
+    /// Preview-only mode: 55% width, 85% height
+    static func previewOnlySize(screenWidth: CGFloat, screenHeight: CGFloat) -> (width: CGFloat, height: CGFloat) {
+        let w = max(screenWidth * 0.55, 800)
+        let h = max(screenHeight * 0.85, 600)
+        return (w, h)
+    }
+
+    /// Editor+preview mode: 80% width
+    static func editorPreviewWidth(screenWidth: CGFloat) -> CGFloat {
+        max(screenWidth * 0.80, 900)
+    }
+
+    /// Toggle sizing: returns target width for mode
+    static func toggleTargetWidth(screenWidth: CGFloat, showEditor: Bool) -> CGFloat {
+        if showEditor {
+            return max(screenWidth * 0.80, 900)
+        } else {
+            return max(screenWidth * 0.55, 800)
+        }
+    }
+
+    /// Center a window of given width on screen
+    static func centeredX(screenOriginX: CGFloat, screenWidth: CGFloat, windowWidth: CGFloat) -> CGFloat {
+        screenOriginX + (screenWidth - windowWidth) / 2
+    }
+}
+
+// Read source files to validate constants match
+let appSource = try! String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+let contentSource = try! String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+
+runner.test("preview-only default: 55% screen width on standard display") {
+    let (w, h) = WindowSizingSpec.previewOnlySize(screenWidth: 1920, screenHeight: 1080)
+    try expect(w == 1056, "expected 1056, got \(w)")
+    try expect(h == 918, "expected 918, got \(h)")
+}
+
+runner.test("preview-only default: min 800 kicks in on laptop display") {
+    let (w, _) = WindowSizingSpec.previewOnlySize(screenWidth: 1440, screenHeight: 900)
+    // 1440*0.55=792 < 800, so min kicks in
+    try expect(w == 800, "expected 800 (min), got \(w)")
+}
+
+runner.test("preview-only minimum width: 800px on small screens") {
+    let (w, _) = WindowSizingSpec.previewOnlySize(screenWidth: 1200, screenHeight: 800)
+    // 1200 * 0.55 = 660, min 800 kicks in
+    try expect(w == 800, "expected 800 minimum, got \(w)")
+}
+
+runner.test("preview-only minimum height: 600px on small screens") {
+    let (_, h) = WindowSizingSpec.previewOnlySize(screenWidth: 1200, screenHeight: 600)
+    // 600 * 0.85 = 510, min 600 kicks in
+    try expect(h == 600, "expected 600 minimum, got \(h)")
+}
+
+runner.test("editor+preview: 80% screen width on standard display") {
+    let w = WindowSizingSpec.editorPreviewWidth(screenWidth: 1920)
+    try expect(w == 1536, "expected 1536, got \(w)")
+}
+
+runner.test("editor+preview minimum width: 900px on small screens") {
+    let w = WindowSizingSpec.editorPreviewWidth(screenWidth: 1000)
+    // 1000 * 0.80 = 800, min 900 kicks in
+    try expect(w == 900, "expected 900 minimum, got \(w)")
+}
+
+runner.test("editor+preview is always wider than preview-only") {
+    for screenWidth: CGFloat in [1000, 1200, 1440, 1920, 2560, 3840] {
+        let previewWidth = WindowSizingSpec.toggleTargetWidth(screenWidth: screenWidth, showEditor: false)
+        let editorWidth = WindowSizingSpec.toggleTargetWidth(screenWidth: screenWidth, showEditor: true)
+        try expect(editorWidth > previewWidth,
+            "editor (\(editorWidth)) must be wider than preview (\(previewWidth)) at screen \(screenWidth)")
+    }
+}
+
+runner.test("toggle to editor widens, toggle back narrows") {
+    let screen: CGFloat = 1920
+    let previewW = WindowSizingSpec.toggleTargetWidth(screenWidth: screen, showEditor: false)
+    let editorW = WindowSizingSpec.toggleTargetWidth(screenWidth: screen, showEditor: true)
+    try expect(editorW > previewW, "editor should be wider")
+    try expect(editorW / previewW > 1.3, "editor should be at least 30% wider than preview-only")
+}
+
+runner.test("window centering calculation") {
+    let x = WindowSizingSpec.centeredX(screenOriginX: 0, screenWidth: 1920, windowWidth: 1056)
+    try expect(x == 432, "expected centered at 432, got \(x)")
+}
+
+runner.test("window centering with screen offset (multi-monitor)") {
+    let x = WindowSizingSpec.centeredX(screenOriginX: -1920, screenWidth: 1920, windowWidth: 1056)
+    try expect(x == -1488, "expected centered at -1488 on secondary monitor, got \(x)")
+}
+
+runner.test("ultra-wide screen: preview-only doesn't stretch too wide") {
+    let (w, _) = WindowSizingSpec.previewOnlySize(screenWidth: 3440, screenHeight: 1440)
+    // 3440 * 0.55 = 1892 — wide but reasonable (use tolerance for floating point)
+    try expect(abs(w - 1892) < 1, "expected ~1892, got \(w)")
+    try expect(w < 2000, "preview-only should stay under 2000px even on ultra-wide")
+}
+
+runner.test("ultra-wide screen: editor+preview uses 80%") {
+    let w = WindowSizingSpec.editorPreviewWidth(screenWidth: 3440)
+    try expect(w == 2752, "expected 2752, got \(w)")
+}
+
+// Source code validation — ensure the percentages in code match our test spec
+runner.test("MarkViewApp.swift uses 0.55 for preview-only width") {
+    try expect(appSource.contains("width * 0.55"), "MarkViewApp must use 0.55 for preview-only width fraction")
+}
+
+runner.test("MarkViewApp.swift uses min width 800 for preview-only") {
+    try expect(appSource.contains("0.55, 800") || appSource.contains("0.55, 800)"),
+        "MarkViewApp must use 800 min width for preview-only")
+}
+
+runner.test("ContentView.swift uses 0.80 for editor+preview width") {
+    try expect(contentSource.contains("0.80") || contentSource.contains("0.8"),
+        "ContentView must use 0.80 for editor+preview width fraction")
+}
+
+runner.test("ContentView.swift uses 0.55 for preview-only width") {
+    try expect(contentSource.contains("0.55"),
+        "ContentView must use 0.55 for preview-only width fraction")
+}
+
+runner.test("ContentView.swift has min 900 for editor mode") {
+    try expect(contentSource.contains("900"),
+        "ContentView must enforce 900px minimum for editor+preview")
+}
+
+runner.test("ContentView.swift has min 800 for preview mode") {
+    // Check toggle function has 800 min
+    try expect(contentSource.contains("800"),
+        "ContentView must enforce 800px minimum for preview-only")
+}
+
+runner.test("MarkViewApp min frame constraint: 600x400") {
+    try expect(appSource.contains("minWidth: 600") && appSource.contains("minHeight: 400"),
+        "MarkViewApp must set frame minimums to 600x400")
+}
+
+runner.test("window sizing uses animate: true for smooth transitions") {
+    try expect(contentSource.contains("animate: true"),
+        "toggleEditor must animate window resize for smooth UX")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()

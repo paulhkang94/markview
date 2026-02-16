@@ -2,6 +2,12 @@
 
 A native macOS markdown preview app built with Swift and SwiftUI. No Electron, no web server — just a fast, lightweight previewer that renders GitHub Flavored Markdown.
 
+## Screenshots
+
+| Preview only | Editor + Preview |
+|:---:|:---:|
+| ![Preview](docs/screenshots/preview-only.png) | ![Editor + Preview](docs/screenshots/editor-preview.png) |
+
 ## Features
 
 - **Live preview** with split-pane editor and WKWebView rendering
@@ -26,7 +32,7 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 ### Build from source
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/markview.git
+git clone https://github.com/paulhkang94/markview.git
 cd markview
 swift build -c release
 ```
@@ -84,7 +90,8 @@ Sources/MarkView/               # SwiftUI app (macOS 13+)
   Settings.swift                # 17 settings with theme/width/font enums
   ExportManager.swift           # HTML/PDF export
 
-Tests/TestRunner/               # 133 standalone tests (no XCTest)
+Tests/TestRunner/               # 158 standalone tests (no XCTest)
+Tests/VisualTester/             # 19 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
 ```
@@ -94,7 +101,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (133 tests)
+# Run all tests (158 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + tests)

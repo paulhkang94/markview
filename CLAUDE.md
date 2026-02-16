@@ -3,7 +3,7 @@
 ## Build & Test
 ```bash
 swift build                        # Build all targets
-swift run MarkViewTestRunner       # Run full test suite (133 tests)
+swift run MarkViewTestRunner       # Run full test suite (158 tests)
 swift run MarkView                 # Launch app
 swift run MarkView /path/to/file.md  # Launch with specific file
 ```

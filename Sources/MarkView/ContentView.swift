@@ -48,7 +48,7 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .automatic) {
                 if viewModel.isLoaded {
                     Button {
-                        showEditor.toggle()
+                        toggleEditor()
                     } label: {
                         Image(systemName: showEditor ? "doc.plaintext" : "rectangle.split.2x1")
                     }
@@ -77,6 +77,27 @@ struct ContentView: View {
         .onReceive(viewModel.$externalChangeConflict) { conflict in
             if conflict { showExternalChangeAlert = true }
         }
+    }
+
+    /// Toggle editor pane and resize window to target screen percentages.
+    /// Preview-only: 55% screen width. Editor+preview: 80% screen width.
+    /// Conservative: slightly wide is better than too narrow for readability.
+    private func toggleEditor() {
+        showEditor.toggle()
+
+        guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
+
+        let screen = window.screen ?? NSScreen.main
+        let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let currentFrame = window.frame
+
+        let targetWidthFraction: CGFloat = showEditor ? 0.80 : 0.55
+        let minWidth: CGFloat = showEditor ? 900 : 800
+        let newWidth = max(screenFrame.width * targetWidthFraction, minWidth)
+
+        // Center horizontally, keep vertical position
+        let newX = screenFrame.origin.x + (screenFrame.width - newWidth) / 2
+        window.setFrame(NSRect(x: newX, y: currentFrame.origin.y, width: newWidth, height: currentFrame.height), display: true, animate: true)
     }
 }
 
