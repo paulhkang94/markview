@@ -466,6 +466,55 @@ runner.test("mixed GFM features in one document") {
     try expect(html.contains("<a href="), "Links should render")
 }
 
+// MARK: - Metrics Tests
+
+print("\n=== Tier 1: Metrics Tests ===")
+
+runner.test("metrics disabled by default") {
+    let metrics = MetricsCollector.shared
+    // Should not crash when disabled
+    metrics.trackFileOpened(sizeBytes: 1000)
+    metrics.trackRender(durationMs: 5.0)
+    metrics.trackExport(format: "html")
+    metrics.trackFeature("editor")
+    metrics.flush()
+    // All good if no crash
+}
+
+runner.test("metrics aggregate loads without file") {
+    let metrics = MetricsCollector.shared
+    metrics.clearAll()
+    let aggregate = metrics.loadAggregate()
+    try expect(aggregate.totalSessions == 0, "Expected 0 sessions for fresh metrics")
+    try expect(aggregate.totalFilesOpened == 0, "Expected 0 files for fresh metrics")
+}
+
+runner.test("metrics enabled tracks and persists") {
+    let metrics = MetricsCollector.shared
+    metrics.clearAll()
+    metrics.setEnabled(true)
+    metrics.trackFileOpened(sizeBytes: 5000)
+    metrics.trackRender(durationMs: 3.5)
+    metrics.trackRender(durationMs: 2.0)
+    metrics.trackFeature("editor")
+    metrics.trackFeature("export")
+    metrics.trackEditorUsed()
+    metrics.flush()
+
+    let aggregate = metrics.loadAggregate()
+    try expect(aggregate.totalSessions == 1, "Expected 1 session, got \(aggregate.totalSessions)")
+    try expect(aggregate.totalFilesOpened == 1, "Expected 1 file opened")
+    try expect(aggregate.totalRenders == 2, "Expected 2 renders")
+    try expect(aggregate.largestFileEverBytes == 5000, "Expected 5000 bytes")
+    try expect(aggregate.editorSessionCount == 1, "Expected 1 editor session")
+    try expect(aggregate.featureUsageCounts["editor"] == 1, "Expected editor feature tracked")
+    try expect(aggregate.featureUsageCounts["export"] == 1, "Expected export feature tracked")
+
+    // Clean up
+    metrics.clearAll()
+    metrics.setEnabled(false)
+}
+
 // =============================================================================
 
 print("")
