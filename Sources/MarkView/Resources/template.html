@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
+    <style id="app-css">
         :root {
             color-scheme: light dark;
         }
@@ -18,40 +18,40 @@
             padding: 32px;
             color: #1f2328;
             background: #ffffff;
+            transition: color 0.15s, background 0.15s;
         }
 
+        /* Dark mode */
         @media (prefers-color-scheme: dark) {
-            body {
-                color: #e6edf3;
-                background: #0d1117;
-            }
+            body { color: #e6edf3; background: #0d1117; }
             a { color: #58a6ff; }
-            code, pre { background: #161b22; }
+            code:not([class*="language-"]) { background: #343942; }
+            pre { background: #161b22 !important; }
             th { background: #161b22; }
             th, td { border-color: #30363d; }
             blockquote { border-left-color: #30363d; color: #8b949e; }
             hr { border-top-color: #30363d; }
             tr:nth-child(2n) { background: #161b22; }
+            h1, h2 { border-bottom-color: #30363d; }
+            h6 { color: #8b949e; }
+            .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8b949e; }
+            .token.punctuation { color: #e6edf3; }
+            .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted { color: #79c0ff; }
+            .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #a5d6ff; }
+            .token.operator, .token.entity, .token.url { color: #e6edf3; }
+            .token.atrule, .token.attr-value, .token.keyword { color: #ff7b72; }
+            .token.function, .token.class-name { color: #d2a8ff; }
+            .token.regex, .token.important, .token.variable { color: #ffa657; }
         }
 
         /* Headings */
-        h1, h2, h3, h4, h5, h6 {
-            margin-top: 24px;
-            margin-bottom: 16px;
-            font-weight: 600;
-            line-height: 1.25;
-        }
+        h1, h2, h3, h4, h5, h6 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; }
         h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid #d0d7de; }
         h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid #d0d7de; }
         h3 { font-size: 1.25em; }
         h4 { font-size: 1em; }
         h5 { font-size: 0.875em; }
         h6 { font-size: 0.85em; color: #656d76; }
-
-        @media (prefers-color-scheme: dark) {
-            h1, h2 { border-bottom-color: #30363d; }
-            h6 { color: #8b949e; }
-        }
 
         /* Paragraphs and inline */
         p { margin-top: 0; margin-bottom: 16px; }
@@ -60,11 +60,13 @@
         strong { font-weight: 600; }
 
         /* Code */
-        code {
+        code:not([class*="language-"]) {
             background: #eff1f3;
             padding: 0.2em 0.4em;
             border-radius: 6px;
             font-size: 85%;
+        }
+        code {
             font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
         }
         pre {
@@ -77,96 +79,57 @@
             margin-bottom: 16px;
         }
         pre code {
-            background: none;
+            background: none !important;
             padding: 0;
             border-radius: 0;
             font-size: 100%;
         }
 
-        @media (prefers-color-scheme: dark) {
-            code { background: #343942; }
-            pre { background: #161b22; }
-        }
-
         /* Tables */
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-bottom: 16px;
-            overflow: auto;
-            display: block;
-        }
-        th, td {
-            border: 1px solid #d0d7de;
-            padding: 6px 13px;
-        }
-        th {
-            font-weight: 600;
-            background: #f6f8fa;
-        }
-        tr:nth-child(2n) {
-            background: #f6f8fa;
-        }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 16px; overflow: auto; display: block; }
+        th, td { border: 1px solid #d0d7de; padding: 6px 13px; }
+        th { font-weight: 600; background: #f6f8fa; }
+        tr:nth-child(2n) { background: #f6f8fa; }
 
         /* Blockquotes */
-        blockquote {
-            border-left: 4px solid #d0d7de;
-            margin: 0 0 16px 0;
-            padding: 0 16px;
-            color: #656d76;
-        }
+        blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
 
         /* Lists */
-        ul, ol {
-            padding-left: 2em;
-            margin-top: 0;
-            margin-bottom: 16px;
-        }
+        ul, ol { padding-left: 2em; margin-top: 0; margin-bottom: 16px; }
         li + li { margin-top: 0.25em; }
         li > p { margin-top: 16px; }
 
         /* Task lists */
-        ul.contains-task-list {
-            list-style: none;
-            padding-left: 0;
-        }
-        .task-list-item {
-            list-style: none;
-            padding-left: 0;
-        }
-        input[type="checkbox"] {
-            margin-right: 0.5em;
-            vertical-align: middle;
-        }
+        ul.contains-task-list { list-style: none; padding-left: 0; }
+        .task-list-item { list-style: none; }
+        input[type="checkbox"] { margin-right: 0.5em; vertical-align: middle; }
 
         /* Horizontal rules */
-        hr {
-            border: none;
-            border-top: 1px solid #d0d7de;
-            margin: 24px 0;
-            height: 0;
-        }
+        hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
 
         /* Images */
-        img {
-            max-width: 100%;
-            height: auto;
-            border-style: none;
-        }
+        img { max-width: 100%; height: auto; }
 
-        /* Definition lists / details */
-        details {
-            margin-bottom: 16px;
-        }
-        details summary {
-            cursor: pointer;
-            font-weight: 600;
+        /* Details */
+        details { margin-bottom: 16px; }
+        details summary { cursor: pointer; font-weight: 600; }
+
+        /* Footnotes */
+        .footnotes { font-size: 0.875em; border-top: 1px solid #d0d7de; margin-top: 24px; padding-top: 16px; }
+
+        /* Print */
+        @media print {
+            body { max-width: none; padding: 0; }
+            pre { white-space: pre-wrap; }
         }
     </style>
 </head>
 <body>
-    <article>
+    <article id="content">
         {{CONTENT}}
     </article>
+    <script>
+        // Inline Prism.js will be loaded here by the app
+    </script>
 </body>
 </html>
