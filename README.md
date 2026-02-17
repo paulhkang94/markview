@@ -2,6 +2,10 @@
 
 A native macOS markdown preview app built with Swift and SwiftUI. No Electron, no web server — just a fast, lightweight previewer that renders GitHub Flavored Markdown.
 
+## Demo
+
+![MarkView demo](docs/markview_demo.gif)
+
 ## Screenshots
 
 | Preview only | Editor + Preview |
@@ -162,6 +166,13 @@ swift run MarkView                   # Launch app
 swift run MarkView /path/to/file.md  # Launch with file
 swift run MarkViewTestRunner         # Run tests
 ```
+
+## Support
+
+If MarkView is useful to you, consider supporting development:
+
+- [GitHub Sponsors](https://github.com/sponsors/paulhkang94)
+- Star this repo to help others find it
 
 ## License
 
