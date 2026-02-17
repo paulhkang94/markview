@@ -337,7 +337,6 @@ public final class MarkdownLinter {
         var diagnostics: [LintDiagnostic] = []
         var inFence = false
         var tableHeaderCols: Int? = nil
-        var tableStartLine: Int = 0
 
         for (i, line) in lines.enumerated() {
             if line.hasPrefix("```") { inFence.toggle(); tableHeaderCols = nil; continue }
@@ -349,7 +348,6 @@ public final class MarkdownLinter {
                 let cols = pipeCount(trimmed)
                 if tableHeaderCols == nil {
                     tableHeaderCols = cols
-                    tableStartLine = i + 1
                 } else if cols != tableHeaderCols! {
                     // Check if this is the separator line (|---|---|)
                     let isSeparator = trimmed.replacingOccurrences(of: "[|\\-: ]", with: "", options: .regularExpression).isEmpty

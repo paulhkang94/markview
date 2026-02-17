@@ -5,7 +5,7 @@ import WebKit
 final class ExportManager {
 
     /// Export the current HTML to a standalone HTML file (with inline CSS).
-    static func exportHTML(html: String, suggestedName: String) {
+    @MainActor static func exportHTML(html: String, suggestedName: String) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.html]
         panel.nameFieldStringValue = suggestedName.replacingOccurrences(of: ".md", with: ".html")
@@ -17,7 +17,7 @@ final class ExportManager {
     }
 
     /// Export via WKWebView's createPDF — produces high-quality output.
-    static func exportPDF(from webView: WKWebView, suggestedName: String) {
+    @MainActor static func exportPDF(from webView: WKWebView, suggestedName: String) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = suggestedName.replacingOccurrences(of: ".md", with: ".pdf")

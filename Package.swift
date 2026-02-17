@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "MarkView",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/apple/swift-cmark", from: "0.4.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.10.0"),
