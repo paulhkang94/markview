@@ -21,9 +21,17 @@ final class Document: ObservableObject {
 
     init(filePath: String? = nil) {
         self.filePath = filePath
-        if let path = filePath, let text = try? String(contentsOfFile: path, encoding: .utf8) {
-            self.content = text
-            self.originalContent = text
+        if let path = filePath {
+            do {
+                let text = try String(contentsOfFile: path, encoding: .utf8)
+                self.content = text
+                self.originalContent = text
+            } catch {
+                AppLogger.file.error("Failed to load document at \(path): \(error.localizedDescription)")
+                AppLogger.captureError(error, category: "file", message: "Document init load failed")
+                self.content = ""
+                self.originalContent = ""
+            }
         } else {
             self.content = ""
             self.originalContent = ""
@@ -31,11 +39,16 @@ final class Document: ObservableObject {
     }
 
     func loadFromDisk() {
-        guard let path = filePath,
-              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return }
-        content = text
-        originalContent = text
-        isDirty = false
+        guard let path = filePath else { return }
+        do {
+            let text = try String(contentsOfFile: path, encoding: .utf8)
+            content = text
+            originalContent = text
+            isDirty = false
+        } catch {
+            AppLogger.file.error("Failed to reload document: \(error.localizedDescription)")
+            AppLogger.captureError(error, category: "file", message: "Document reload failed")
+        }
     }
 
     func save() throws {

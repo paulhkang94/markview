@@ -72,7 +72,15 @@ struct WebPreviewView: NSViewRepresentable {
 
         override init() {
             if let prismURL = ResourceBundle.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
-                prismJS = try? String(contentsOf: prismURL, encoding: .utf8)
+                do {
+                    prismJS = try String(contentsOf: prismURL, encoding: .utf8)
+                } catch {
+                    AppLogger.render.warning("Failed to load Prism.js bundle: \(error.localizedDescription)")
+                    AppLogger.breadcrumb("Prism.js load failed", category: "render", level: .warning)
+                }
+            } else {
+                AppLogger.render.warning("Prism.js bundle resource not found")
+                AppLogger.breadcrumb("Prism.js resource missing", category: "render", level: .warning)
             }
         }
 
@@ -229,12 +237,22 @@ struct WebPreviewView: NSViewRepresentable {
                 finalHTML = finalHTML.replacingOccurrences(of: "<head>", with: "<head>\(baseTag)")
             }
             let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview-\(UUID().uuidString).html")
-            try? finalHTML.write(to: tempFile, atomically: true, encoding: .utf8)
+            do {
+                try finalHTML.write(to: tempFile, atomically: true, encoding: .utf8)
+            } catch {
+                AppLogger.render.error("Failed to write temp preview file: \(error.localizedDescription)")
+                AppLogger.captureError(error, category: "render", message: "Temp file write failed")
+            }
             webView.loadFileURL(tempFile, allowingReadAccessTo: URL(fileURLWithPath: "/"))
             // Install scroll listener after page loads
             installScrollListenerAfterLoad(in: webView)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                try? FileManager.default.removeItem(at: tempFile)
+                do {
+                    try FileManager.default.removeItem(at: tempFile)
+                } catch {
+                    AppLogger.render.error("Failed to clean up temp file: \(error.localizedDescription)")
+                    AppLogger.captureError(error, category: "render", message: "Temp file cleanup failed")
+                }
             }
         }
 

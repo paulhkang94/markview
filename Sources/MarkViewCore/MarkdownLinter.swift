@@ -186,24 +186,28 @@ public final class MarkdownLinter {
 
     // MARK: - Rule: Broken Links
 
+    // MARK: - Regex Patterns (static, compiled once)
+
+    private static let refDefinitionPattern = try! NSRegularExpression(pattern: "^\\[([^\\]]+)\\]:\\s", options: .anchorsMatchLines)
+    private static let refLinkPattern = try! NSRegularExpression(pattern: "\\[([^\\]]+)\\]\\[([^\\]]+)\\]")
+    private static let mismatchedLinkPattern = try! NSRegularExpression(pattern: "\\[([^\\]]*?)\\]\\(([^)]*?)$")
+
     func checkBrokenLinks(_ markdown: String, lines: [String]) -> [LintDiagnostic] {
         var diagnostics: [LintDiagnostic] = []
 
         // Collect reference definitions: [label]: url
         var definitions: Set<String> = []
-        let defPattern = try! NSRegularExpression(pattern: "^\\[([^\\]]+)\\]:\\s", options: .anchorsMatchLines)
         let nsMarkdown = markdown as NSString
-        let defMatches = defPattern.matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length))
+        let defMatches = Self.refDefinitionPattern.matches(in: markdown, range: NSRange(location: 0, length: nsMarkdown.length))
         for match in defMatches {
             let label = nsMarkdown.substring(with: match.range(at: 1)).lowercased()
             definitions.insert(label)
         }
 
         // Find reference-style links: [text][ref]
-        let refPattern = try! NSRegularExpression(pattern: "\\[([^\\]]+)\\]\\[([^\\]]+)\\]")
         for (i, line) in lines.enumerated() {
             let nsLine = line as NSString
-            let matches = refPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
+            let matches = Self.refLinkPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
             for match in matches {
                 let ref = nsLine.substring(with: match.range(at: 2)).lowercased()
                 if !definitions.contains(ref) {
@@ -309,14 +313,12 @@ public final class MarkdownLinter {
         var diagnostics: [LintDiagnostic] = []
         var inFence = false
 
-        let linkPattern = try! NSRegularExpression(pattern: "\\[([^\\]]*?)\\]\\(([^)]*?)$")
-
         for (i, line) in lines.enumerated() {
             if line.hasPrefix("```") { inFence.toggle(); continue }
             if inFence { continue }
 
             let nsLine = line as NSString
-            let matches = linkPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
+            let matches = Self.mismatchedLinkPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
             for match in matches {
                 diagnostics.append(LintDiagnostic(
                     severity: .error,

@@ -2,22 +2,29 @@ import AppKit
 import WebKit
 
 /// Handles exporting markdown preview to HTML and PDF formats.
+/// Returns errors to caller for toast display.
 final class ExportManager {
 
     /// Export the current HTML to a standalone HTML file (with inline CSS).
-    @MainActor static func exportHTML(html: String, suggestedName: String) {
+    @MainActor static func exportHTML(html: String, suggestedName: String, errorPresenter: ErrorPresenter) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.html]
         panel.nameFieldStringValue = suggestedName.replacingOccurrences(of: ".md", with: ".html")
         panel.canCreateDirectories = true
 
         if panel.runModal() == .OK, let url = panel.url {
-            try? html.write(to: url, atomically: true, encoding: .utf8)
+            do {
+                try html.write(to: url, atomically: true, encoding: .utf8)
+                AppLogger.export.info("HTML exported to \(url.path)")
+            } catch {
+                errorPresenter.show("HTML export failed", detail: error.localizedDescription)
+                AppLogger.captureError(error, category: "export", message: "HTML export write failed")
+            }
         }
     }
 
     /// Export via WKWebView's createPDF — produces high-quality output.
-    @MainActor static func exportPDF(from webView: WKWebView, suggestedName: String) {
+    @MainActor static func exportPDF(from webView: WKWebView, suggestedName: String, errorPresenter: ErrorPresenter) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = suggestedName.replacingOccurrences(of: ".md", with: ".pdf")
@@ -32,9 +39,20 @@ final class ExportManager {
         webView.createPDF(configuration: config) { result in
             switch result {
             case .success(let data):
-                try? data.write(to: url)
+                do {
+                    try data.write(to: url)
+                    AppLogger.export.info("PDF exported to \(url.path)")
+                } catch {
+                    Task { @MainActor in
+                        errorPresenter.show("PDF export failed", detail: error.localizedDescription)
+                    }
+                    AppLogger.captureError(error, category: "export", message: "PDF export write failed")
+                }
             case .failure(let error):
-                print("PDF export failed: \(error)")
+                Task { @MainActor in
+                    errorPresenter.show("PDF export failed", detail: error.localizedDescription)
+                }
+                AppLogger.captureError(error, category: "export", message: "PDF createPDF failed")
             }
         }
     }

@@ -124,11 +124,12 @@ public final class MarkdownSuggestions {
 
     /// Returns reference-style link suggestions from the document.
     /// Call after user types [ to suggest reference link labels.
+    private static let refLinkPattern = try! NSRegularExpression(pattern: "^\\[([^\\]]+)\\]:\\s+(.+)$", options: .anchorsMatchLines)
+
     public func suggestLinks(document: String) -> [Suggestion] {
         var refs: [(label: String, url: String)] = []
-        let pattern = try! NSRegularExpression(pattern: "^\\[([^\\]]+)\\]:\\s+(.+)$", options: .anchorsMatchLines)
         let nsDoc = document as NSString
-        let matches = pattern.matches(in: document, range: NSRange(location: 0, length: nsDoc.length))
+        let matches = Self.refLinkPattern.matches(in: document, range: NSRange(location: 0, length: nsDoc.length))
 
         for match in matches {
             let label = nsDoc.substring(with: match.range(at: 1))

@@ -252,6 +252,17 @@ if [ "$PHASE" = "--extended" ]; then
         echo "  ⊘ Quick Look extension not installed — skipping (run: bash scripts/bundle.sh --install)"
     fi
 
+    # E2E UI automation tests (require .app bundle + AX permissions)
+    if [ -d "$PROJECT_DIR/MarkView.app" ] || [ -d "/Applications/MarkView.app" ]; then
+        echo ""
+        echo "--- Extended: E2E Tests ---"
+        swift run MarkViewE2ETester 2>&1 | grep -v "^\[" | grep -v "^$" | grep -v "^Building\|^Build of\|^warning:"
+    else
+        echo ""
+        echo "--- Extended: E2E Tests ---"
+        echo "  ⊘ Skipped — no .app bundle found (run: bash scripts/bundle.sh)"
+    fi
+
     echo ""
     echo "=== Extended verification complete ==="
 fi

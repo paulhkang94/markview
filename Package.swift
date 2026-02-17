@@ -7,6 +7,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-cmark", from: "0.4.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.10.0"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.4.0"),
     ],
     targets: [
         // Core library with renderer and file watcher (no UI dependencies for testability)
@@ -21,7 +22,10 @@ let package = Package(
         // Main app executable
         .executableTarget(
             name: "MarkView",
-            dependencies: ["MarkViewCore"],
+            dependencies: [
+                "MarkViewCore",
+                .product(name: "Sentry", package: "sentry-cocoa"),
+            ],
             path: "Sources/MarkView",
             exclude: ["Info.plist"],
             resources: [
@@ -57,6 +61,11 @@ let package = Package(
             name: "MarkViewDiffTester",
             dependencies: ["MarkViewCore"],
             path: "Tests/DiffTester"
+        ),
+        // E2E tester — launches real .app, interacts via Accessibility APIs
+        .executableTarget(
+            name: "MarkViewE2ETester",
+            path: "Tests/E2ETester"
         ),
         // Visual regression tester — screenshot comparison via offscreen WKWebView
         .executableTarget(

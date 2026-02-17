@@ -12,6 +12,7 @@ final class PreviewViewModel: ObservableObject {
     @Published var lintWarnings: Int = 0
     @Published var lintErrors: Int = 0
     @Published var lintDiagnostics: [LintDiagnostic] = []
+    @Published var lastError: Error?
 
     @Published var currentFilePath: String?
     @Published var fileName: String = "MarkView"
@@ -79,7 +80,12 @@ final class PreviewViewModel: ObservableObject {
         autoSaveTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self, self.isDirty else { return }
-                try? self.save()
+                do {
+                    try self.save()
+                } catch {
+                    self.lastError = error
+                    AppLogger.captureError(error, category: "file", message: "Auto-save failed")
+                }
             }
         }
     }
@@ -92,24 +98,35 @@ final class PreviewViewModel: ObservableObject {
     // MARK: - Private
 
     private func loadTemplate() {
-        if let url = ResourceBundle.url(forResource: "template", withExtension: "html", subdirectory: "Resources") {
-            template = try? String(contentsOf: url, encoding: .utf8)
+        guard let url = ResourceBundle.url(forResource: "template", withExtension: "html", subdirectory: "Resources") else {
+            AppLogger.render.warning("Template resource not found in bundle")
+            AppLogger.breadcrumb("Template resource missing", category: "render", level: .warning)
+            return
+        }
+        do {
+            template = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            AppLogger.render.error("Failed to load template: \(error.localizedDescription)")
+            AppLogger.captureError(error, category: "render", message: "Template load failed")
         }
     }
 
     private func loadContent(from path: String) {
         // Resolve symlinks and normalize path to avoid file:// URL mismatches
         let resolvedPath = (path as NSString).resolvingSymlinksInPath
-        guard let content = try? String(contentsOfFile: resolvedPath, encoding: .utf8) else {
+        let content: String
+        do {
+            content = try String(contentsOfFile: resolvedPath, encoding: .utf8)
+        } catch {
             // Fallback: try original path in case resolution changed it incorrectly
-            guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return }
-            editorContent = content
-            originalContent = content
-            isDirty = false
-            renderImmediate(content)
-            runLint(content)
-            isLoaded = true
-            return
+            do {
+                content = try String(contentsOfFile: path, encoding: .utf8)
+            } catch {
+                AppLogger.file.error("Failed to load file at \(path): \(error.localizedDescription)")
+                AppLogger.captureError(error, category: "file", message: "File load failed: \(path)")
+                lastError = error
+                return
+            }
         }
         editorContent = content
         originalContent = content

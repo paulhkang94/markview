@@ -3,6 +3,7 @@ import MarkViewCore
 
 struct ContentView: View {
     let initialFilePath: String?
+    var errorPresenter: ErrorPresenter
 
     @StateObject private var viewModel = PreviewViewModel()
     @ObservedObject private var settings = AppSettings.shared
@@ -12,100 +13,122 @@ struct ContentView: View {
     @State private var showExternalChangeAlert = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Group {
-                if viewModel.isLoaded {
-                    if showEditor {
-                        HSplitView {
-                            EditorView(
-                                text: $viewModel.editorContent,
-                                onChange: { newText in
-                                    viewModel.contentDidChange(newText)
-                                },
-                                syncController: syncController
-                            )
-                            .frame(minWidth: 200)
-                            .accessibilityElement(children: .contain)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                Group {
+                    if viewModel.isLoaded {
+                        if showEditor {
+                            HSplitView {
+                                EditorView(
+                                    text: $viewModel.editorContent,
+                                    onChange: { newText in
+                                        viewModel.contentDidChange(newText)
+                                    },
+                                    syncController: syncController
+                                )
+                                .frame(minWidth: 200)
+                                .accessibilityElement(children: .contain)
 
+                                WebPreviewView(
+                                    html: viewModel.renderedHTML,
+                                    baseDirectoryURL: viewModel.currentFileDirectoryURL,
+                                    previewFontSize: settings.previewFontSize,
+                                    previewWidth: settings.previewWidth.cssValue,
+                                    theme: settings.theme,
+                                    syncController: syncController
+                                )
+                                .frame(minWidth: 200)
+                                .accessibilityElement(children: .contain)
+                            }
+                        } else {
                             WebPreviewView(
                                 html: viewModel.renderedHTML,
                                 baseDirectoryURL: viewModel.currentFileDirectoryURL,
                                 previewFontSize: settings.previewFontSize,
                                 previewWidth: settings.previewWidth.cssValue,
-                                theme: settings.theme,
-                                syncController: syncController
+                                theme: settings.theme
                             )
-                            .frame(minWidth: 200)
-                            .accessibilityElement(children: .contain)
                         }
                     } else {
-                        WebPreviewView(
-                            html: viewModel.renderedHTML,
-                            baseDirectoryURL: viewModel.currentFileDirectoryURL,
-                            previewFontSize: settings.previewFontSize,
-                            previewWidth: settings.previewWidth.cssValue,
-                            theme: settings.theme
-                        )
+                        DropTargetView { url in
+                            viewModel.loadFile(at: url.path)
+                        }
                     }
-                } else {
-                    DropTargetView { url in
-                        viewModel.loadFile(at: url.path)
+                }
+
+                if viewModel.isLoaded {
+                    StatusBarView(
+                        content: viewModel.editorContent,
+                        filePath: viewModel.currentFilePath,
+                        isDirty: viewModel.isDirty,
+                        lintWarnings: viewModel.lintWarnings,
+                        lintErrors: viewModel.lintErrors,
+                        lintDiagnostics: viewModel.lintDiagnostics,
+                        onFixAll: { viewModel.autoFixLint() }
+                    )
+                }
+            }
+            .navigationTitle(viewModel.fileName)
+            .toolbar {
+                ToolbarItemGroup(placement: .automatic) {
+                    if viewModel.isLoaded {
+                        Button {
+                            toggleEditor()
+                        } label: {
+                            Image(systemName: showEditor ? "doc.plaintext" : "rectangle.split.2x1")
+                        }
+                        .help(showEditor ? Strings.hideEditor : Strings.showEditor)
+                        .accessibilityLabel(showEditor ? Strings.hideEditorPanel : Strings.showEditorPanel)
+                        .keyboardShortcut("e", modifiers: .command)
                     }
+                }
+            }
+            .onChange(of: initialFilePath) {
+                if let path = initialFilePath {
+                    viewModel.loadFile(at: path)
+                    syncController.reset()
+                    registerFileInWindow(path)
+                }
+            }
+            .onAppear {
+                if let path = initialFilePath {
+                    viewModel.loadFile(at: path)
+                    registerFileInWindow(path)
+                }
+            }
+            .alert(Strings.fileChanged, isPresented: $showExternalChangeAlert) {
+                Button(Strings.reload) { viewModel.reloadFromDisk() }
+                Button(Strings.keepMine, role: .cancel) { }
+            } message: {
+                Text(Strings.externalChangeMessage)
+            }
+            .onReceive(viewModel.$externalChangeConflict) { conflict in
+                if conflict { showExternalChangeAlert = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .saveDocument)) { _ in
+                do {
+                    try viewModel.save()
+                } catch {
+                    errorPresenter.show("Save failed", detail: error.localizedDescription)
+                    AppLogger.captureError(error, category: "file", message: "Manual save failed")
                 }
             }
 
-            if viewModel.isLoaded {
-                StatusBarView(
-                    content: viewModel.editorContent,
-                    filePath: viewModel.currentFilePath,
-                    isDirty: viewModel.isDirty,
-                    lintWarnings: viewModel.lintWarnings,
-                    lintErrors: viewModel.lintErrors,
-                    lintDiagnostics: viewModel.lintDiagnostics,
-                    onFixAll: { viewModel.autoFixLint() }
+            .onReceive(viewModel.$lastError) { error in
+                if let error = error {
+                    errorPresenter.show("Auto-save failed", detail: error.localizedDescription)
+                }
+            }
+
+            if let notification = errorPresenter.currentNotification {
+                ErrorBanner(
+                    notification: notification,
+                    onDismiss: { errorPresenter.dismiss() },
+                    onReport: { url in NSWorkspace.shared.open(url) }
                 )
             }
         }
-        .navigationTitle(viewModel.fileName)
-        .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
-                if viewModel.isLoaded {
-                    Button {
-                        toggleEditor()
-                    } label: {
-                        Image(systemName: showEditor ? "doc.plaintext" : "rectangle.split.2x1")
-                    }
-                    .help(showEditor ? Strings.hideEditor : Strings.showEditor)
-                    .accessibilityLabel(showEditor ? Strings.hideEditorPanel : Strings.showEditorPanel)
-                    .keyboardShortcut("e", modifiers: .command)
-                }
-            }
-        }
-        .onChange(of: initialFilePath) {
-            if let path = initialFilePath {
-                viewModel.loadFile(at: path)
-                syncController.reset()
-                registerFileInWindow(path)
-            }
-        }
-        .onAppear {
-            if let path = initialFilePath {
-                viewModel.loadFile(at: path)
-                registerFileInWindow(path)
-            }
-        }
-        .alert(Strings.fileChanged, isPresented: $showExternalChangeAlert) {
-            Button(Strings.reload) { viewModel.reloadFromDisk() }
-            Button(Strings.keepMine, role: .cancel) { }
-        } message: {
-            Text(Strings.externalChangeMessage)
-        }
-        .onReceive(viewModel.$externalChangeConflict) { conflict in
-            if conflict { showExternalChangeAlert = true }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .saveDocument)) { _ in
-            try? viewModel.save()
-        }
+        .animation(.easeInOut(duration: 0.3), value: errorPresenter.currentNotification?.id)
     }
 
     /// Register the current file path with the window tracker.

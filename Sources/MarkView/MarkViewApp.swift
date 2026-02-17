@@ -1,4 +1,5 @@
 import SwiftUI
+import Sentry
 
 /// Tracks which file path is displayed in each window.
 /// Used to detect and close duplicate windows when Finder opens a file
@@ -57,6 +58,23 @@ final class WindowFileTracker {
 @main
 struct MarkViewApp: App {
     @State private var filePath: String?
+    @State private var errorPresenter = ErrorPresenter()
+
+    init() {
+        SentrySDK.start { options in
+            options.dsn = "https://examplePublicKey@o0.ingest.sentry.io/0"
+            options.enableUncaughtNSExceptionReporting = true
+            options.environment = {
+                #if DEBUG
+                return "development"
+                #else
+                return "production"
+                #endif
+            }()
+            options.releaseName = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+            options.tracesSampleRate = 0.1
+        }
+    }
 
     /// Default window size for preview-only mode: 55% width, 85% height.
     /// Editor+preview mode uses 80% width (handled by ContentView.toggleEditor).
@@ -74,7 +92,7 @@ struct MarkViewApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(initialFilePath: filePath)
+            ContentView(initialFilePath: filePath, errorPresenter: errorPresenter)
                 .frame(minWidth: 600, minHeight: 400)
                 .onAppear {
                     let args = CommandLine.arguments
