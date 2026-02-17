@@ -3015,6 +3015,53 @@ if appBundleExists {
 }
 
 // =============================================================================
+// MARK: - WindowFileTracker safety (source-level verification)
+// =============================================================================
+
+print("")
+print("--- WindowFileTracker Safety ---")
+
+runner.test("WindowFileTracker has no closeDuplicateWindow method") {
+    let source = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(!source.contains("func closeDuplicateWindow"),
+        "closeDuplicateWindow must be removed — it causes the window-closing race condition")
+}
+
+runner.test("WindowFileTracker has no closeOtherWindows method") {
+    let source = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(!source.contains("func closeOtherWindows"),
+        "closeOtherWindows must be removed — it causes the window-closing race condition")
+}
+
+runner.test("ContentView.registerFileInWindow does not call closeDuplicateWindow") {
+    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(!source.contains("closeDuplicateWindow"),
+        "registerFileInWindow must not call closeDuplicateWindow")
+}
+
+runner.test("ContentView.registerFileInWindow does not call closeOtherWindows") {
+    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(!source.contains("closeOtherWindows"),
+        "registerFileInWindow must not call closeOtherWindows")
+}
+
+runner.test("AppDelegate intercepts file opens") {
+    let source = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(source.contains("class AppDelegate"),
+        "AppDelegate must exist to intercept file-open events")
+    try expect(source.contains("func application(_ application: NSApplication, open urls: [URL])"),
+        "AppDelegate must implement application(_:open:)")
+    try expect(source.contains("@NSApplicationDelegateAdaptor"),
+        "MarkViewApp must register AppDelegate via @NSApplicationDelegateAdaptor")
+}
+
+runner.test("MarkViewApp observes AppDelegate.pendingFilePath") {
+    let source = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(source.contains("pendingFilePath"),
+        "MarkViewApp must observe appDelegate.pendingFilePath for Finder file opens")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()

@@ -1,9 +1,27 @@
+import Combine
 import SwiftUI
 import Sentry
 
+/// Intercepts file-open events at the AppKit layer before SwiftUI creates
+/// duplicate windows. Prevents the race condition where `NSApplication.shared.windows`
+/// picks the wrong window during `DispatchQueue.main.async`.
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    /// File path requested by Finder — observed by MarkViewApp via @Published.
+    @Published var pendingFilePath: String?
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first, url.isFileURL else { return }
+        pendingFilePath = url.path
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}
+
 /// Tracks which file path is displayed in each window.
-/// Used to detect and close duplicate windows when Finder opens a file
-/// that's already displayed.
+/// Simplified: only register/query — no window closing logic.
+/// Window dedup is handled at the AppDelegate layer instead.
 @MainActor
 final class WindowFileTracker {
     static let shared = WindowFileTracker()
@@ -16,47 +34,11 @@ final class WindowFileTracker {
     func filePath(for window: NSWindow) -> String? {
         windowToPath[ObjectIdentifier(window)]
     }
-
-    /// If another window already shows this file, bring it to front and close the given window.
-    /// Returns true if a duplicate was found (caller should stop loading).
-    func closeDuplicateWindow(_ window: NSWindow, forPath path: String) -> Bool {
-        let canonical = (path as NSString).standardizingPath
-        for (id, existingPath) in windowToPath {
-            if (existingPath as NSString).standardizingPath == canonical,
-               id != ObjectIdentifier(window) {
-                // Found an existing window with this file — activate it, close new one
-                if let existing = NSApplication.shared.windows.first(where: { ObjectIdentifier($0) == id }) {
-                    existing.makeKeyAndOrderFront(nil)
-                }
-                window.close()
-                windowToPath.removeValue(forKey: ObjectIdentifier(window))
-                return true
-            }
-        }
-        return false
-    }
-
-    /// Single-window enforcement: close all other content windows.
-    /// Iterates NSApplication.shared.windows directly (not just tracked IDs)
-    /// to catch windows that were created by SwiftUI but never tracked.
-    func closeOtherWindows(keeping window: NSWindow) {
-        let keepID = ObjectIdentifier(window)
-        // Clean up tracker entries for other windows
-        for (id, _) in windowToPath where id != keepID {
-            windowToPath.removeValue(forKey: id)
-        }
-        // Close all other visible content windows (skip settings, panels, etc.)
-        for w in NSApplication.shared.windows where w !== window {
-            // Only close standard titled windows (not settings sheets, panels, etc.)
-            if w.styleMask.contains(.titled) && !w.styleMask.contains(.utilityWindow) && w.level == .normal {
-                w.close()
-            }
-        }
-    }
 }
 
 @main
 struct MarkViewApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var filePath: String?
     @State private var errorPresenter = ErrorPresenter()
 
@@ -119,6 +101,11 @@ struct MarkViewApp: App {
                 .onOpenURL { url in
                     if url.isFileURL {
                         filePath = url.path
+                    }
+                }
+                .onReceive(appDelegate.$pendingFilePath) { path in
+                    if let path = path {
+                        filePath = path
                     }
                 }
         }

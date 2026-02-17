@@ -252,6 +252,11 @@ if [ "$PHASE" = "--extended" ]; then
         echo "  ⊘ Quick Look extension not installed — skipping (run: bash scripts/bundle.sh --install)"
     fi
 
+    # Window lifecycle smoke test (no AX permissions needed)
+    echo ""
+    echo "--- Extended: Window Lifecycle Smoke Test ---"
+    bash "$PROJECT_DIR/scripts/test-window-lifecycle.sh"
+
     # E2E UI automation tests (require .app bundle + AX permissions)
     if [ -d "$PROJECT_DIR/MarkView.app" ] || [ -d "/Applications/MarkView.app" ]; then
         echo ""

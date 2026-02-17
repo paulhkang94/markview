@@ -821,6 +821,106 @@ runner.test("App terminates cleanly → no crash") {
 
 print("")
 
+// ========== Tier 6: Window Lifecycle (bug fix verification) ==========
+
+print("--- Tier 6: Window Lifecycle ---")
+
+runner.test("Finder file open → window stays open for 3s") {
+    let content = "# Lifecycle Test"
+    let path = helpers.createTempMarkdown(content, name: "lifecycle")
+
+    // Launch via open command (simulates Finder double-click)
+    let openProcess = Process()
+    openProcess.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    openProcess.arguments = ["-a", app.bundlePath, path]
+    openProcess.standardOutput = FileHandle.nullDevice
+    openProcess.standardError = FileHandle.nullDevice
+    try openProcess.run()
+    openProcess.waitUntilExit()
+
+    Thread.sleep(forTimeInterval: 3.0)
+
+    // Verify process is still running
+    let pgrep = Process()
+    pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    pgrep.arguments = ["-f", "MarkView.app/Contents/MacOS/MarkView"]
+    pgrep.standardOutput = FileHandle.nullDevice
+    pgrep.standardError = FileHandle.nullDevice
+    try pgrep.run()
+    pgrep.waitUntilExit()
+    let stillRunning = pgrep.terminationStatus == 0
+
+    try expect(stillRunning || app.isRunning(),
+               "Window must stay open after Finder file open (was closing immediately due to race condition)")
+
+    app.terminate()
+    Thread.sleep(forTimeInterval: Timing.afterTerminate)
+}
+
+runner.test("Open same file twice → single window (no duplicates)") {
+    let content = "# Dedup Test"
+    let path = helpers.createTempMarkdown(content, name: "dedup")
+
+    try app.launch(args: [path])
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+    _ = try app.waitForWindow(timeout: Timing.windowAppear)
+
+    guard let axApp = app.axApp else { throw E2EError.preconditionFailed("No AX app") }
+    let windowsBefore = AXHelper.windows(of: axApp).count
+
+    // Open the same file again via AppleScript
+    let script = """
+    tell application "MarkView" to open POSIX file "\(path)"
+    """
+    let appleScript = NSAppleScript(source: script)
+    var error: NSDictionary?
+    appleScript?.executeAndReturnError(&error)
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+
+    let windowsAfter = AXHelper.windows(of: axApp).count
+    try expect(windowsAfter <= windowsBefore,
+               "Opening same file twice should not create duplicate windows (before: \(windowsBefore), after: \(windowsAfter))")
+
+    app.terminate()
+    Thread.sleep(forTimeInterval: Timing.afterTerminate)
+}
+
+runner.test("Open different file → window reuses (title changes)") {
+    let content1 = "# File Alpha"
+    let content2 = "# File Beta"
+    let path1 = helpers.createTempMarkdown(content1, name: "alpha")
+    let path2 = helpers.createTempMarkdown(content2, name: "beta")
+
+    try app.launch(args: [path1])
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+    let window = try app.waitForWindow(timeout: Timing.windowAppear)
+    Thread.sleep(forTimeInterval: Timing.fileLoadRender)
+
+    let title1 = helpers.windowTitle(window) ?? ""
+    try expect(title1.contains("alpha"), "Initial title should contain 'alpha', got '\(title1)'")
+
+    // Open different file
+    let script = """
+    tell application "MarkView" to open POSIX file "\(path2)"
+    """
+    let appleScript = NSAppleScript(source: script)
+    var error: NSDictionary?
+    appleScript?.executeAndReturnError(&error)
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+
+    // Wait for title to update
+    try AXHelper.waitFor(timeout: 3.0, description: "title change to beta") {
+        helpers.windowTitle(window)?.contains("beta") ?? false
+    }
+    let title2 = helpers.windowTitle(window) ?? ""
+    try expect(title2.contains("beta"), "Title should change to 'beta' after opening new file, got '\(title2)'")
+
+    app.terminate()
+    Thread.sleep(forTimeInterval: Timing.afterTerminate)
+}
+
+print("")
+
 // ========== Summary ==========
 
 helpers.cleanupTempFiles()
