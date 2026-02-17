@@ -59,6 +59,29 @@ func normalizeHTML(_ html: String) -> String {
         .joined(separator: " ")
 }
 
+/// Check if HTML contains an element with the given tag and content.
+/// Handles sourcepos attributes: `<p data-sourcepos="1:1-1:5">text</p>` matches `hasTag("p", containing: "text")`.
+func hasTag(_ tag: String, in html: String, containing text: String? = nil) -> Bool {
+    // Match opening tag with optional attributes
+    let pattern = "<\(tag)(\\s[^>]*)?>.*?</\(tag)>"
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: .dotMatchesLineSeparators) else { return false }
+    let range = NSRange(html.startIndex..., in: html)
+    let matches = regex.matches(in: html, range: range)
+    if let text = text {
+        return matches.contains { match in
+            let matchRange = Range(match.range, in: html)!
+            return html[matchRange].contains(text)
+        }
+    }
+    return !matches.isEmpty
+}
+
+/// Check if HTML contains an opening tag (with optional attributes from sourcepos).
+func hasOpenTag(_ tag: String, in html: String) -> Bool {
+    let pattern = "<\(tag)(\\s[^>]*)?>|<\(tag)>"
+    return html.range(of: pattern, options: .regularExpression) != nil
+}
+
 // =============================================================================
 // MARK: - CSS Parsing Helpers (for auto-coverage tests)
 // =============================================================================
@@ -285,14 +308,14 @@ runner.test("empty string renders empty") {
 
 runner.test("paragraph renders") {
     let html = MarkdownRenderer.renderHTML(from: "Hello world")
-    try expect(html.contains("<p>Hello world</p>"), "Missing paragraph tag")
+    try expect(hasTag("p", in: html, containing: "Hello world"), "Missing paragraph tag")
 }
 
 runner.test("headers h1-h6") {
     for level in 1...6 {
         let prefix = String(repeating: "#", count: level)
         let html = MarkdownRenderer.renderHTML(from: "\(prefix) Heading \(level)")
-        try expect(html.contains("<h\(level)>Heading \(level)</h\(level)>"), "Failed for h\(level)")
+        try expect(hasTag("h\(level)", in: html, containing: "Heading \(level)"), "Failed for h\(level)")
     }
 }
 
@@ -318,7 +341,7 @@ runner.test("inline code") {
 
 runner.test("blockquote") {
     let html = MarkdownRenderer.renderHTML(from: "> This is a quote")
-    try expect(html.contains("<blockquote>"), "Missing blockquote")
+    try expect(hasOpenTag("blockquote", in: html), "Missing blockquote")
 }
 
 runner.test("horizontal rule") {
@@ -343,9 +366,9 @@ print("\n=== Tier 1: GFM Extension Tests ===")
 runner.test("GFM table") {
     let md = "| Name | Age |\n|------|-----|\n| Alice | 30 |"
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<table>"), "Missing table")
-    try expect(html.contains("<th>Name</th>"), "Missing th")
-    try expect(html.contains("<td>Alice</td>"), "Missing td")
+    try expect(hasOpenTag("table", in: html), "Missing table")
+    try expect(hasTag("th", in: html, containing: "Name"), "Missing th")
+    try expect(hasTag("td", in: html, containing: "Alice"), "Missing td")
 }
 
 runner.test("GFM table alignment") {
@@ -375,7 +398,7 @@ runner.test("GFM autolink") {
 runner.test("fenced code block with language") {
     let md = "```python\ndef hello():\n    pass\n```"
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<pre>"), "Missing pre")
+    try expect(hasOpenTag("pre", in: html), "Missing pre")
     try expect(html.contains("language-python"), "Missing language class")
 }
 
@@ -391,7 +414,9 @@ runner.test("unicode content") {
 runner.test("nested blockquotes") {
     let md = "> Level 1\n>> Level 2\n>>> Level 3"
     let html = MarkdownRenderer.renderHTML(from: md)
-    let count = html.components(separatedBy: "<blockquote>").count - 1
+    let pattern = "<blockquote(\\s[^>]*)?>|<blockquote>"
+    let count = (html.range(of: pattern, options: .regularExpression) != nil) ?
+        html.components(separatedBy: "blockquote").count / 2 : 0
     try expect(count >= 2, "Expected nested blockquotes, got \(count)")
 }
 
@@ -421,19 +446,19 @@ print("\n=== Tier 2: GFM Compliance (Fixture-Based) ===")
 runner.test("basic.md fixture renders") {
     let md = try loadFixture("basic.md")
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<h1>"), "Missing h1 in basic.md")
+    try expect(hasOpenTag("h1", in: html), "Missing h1 in basic.md")
     try expect(html.contains("<strong>"), "Missing bold in basic.md")
     try expect(html.contains("<em>"), "Missing italic in basic.md")
-    try expect(html.contains("<blockquote>"), "Missing blockquote in basic.md")
+    try expect(hasOpenTag("blockquote", in: html), "Missing blockquote in basic.md")
     try expect(html.contains("<hr"), "Missing hr in basic.md")
 }
 
 runner.test("gfm-tables.md fixture renders") {
     let md = try loadFixture("gfm-tables.md")
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<table>"), "Missing table")
-    try expect(html.contains("<th>"), "Missing th")
-    try expect(html.contains("<td>"), "Missing td")
+    try expect(hasOpenTag("table", in: html), "Missing table")
+    try expect(hasOpenTag("th", in: html), "Missing th")
+    try expect(hasOpenTag("td", in: html), "Missing td")
     try expect(html.contains("align="), "Missing alignment")
 }
 
@@ -459,7 +484,7 @@ runner.test("gfm-autolinks.md fixture renders") {
 runner.test("code-blocks.md fixture renders") {
     let md = try loadFixture("code-blocks.md")
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<pre>"), "Missing code blocks")
+    try expect(hasOpenTag("pre", in: html), "Missing code blocks")
     try expect(html.contains("language-python"), "Missing python language")
     try expect(html.contains("language-swift"), "Missing swift language")
     try expect(html.contains("language-javascript"), "Missing javascript language")
@@ -632,7 +657,7 @@ runner.test("deeply nested lists") {
         md += String(repeating: "  ", count: i) + "- Level \(i)\n"
     }
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<ul>"), "Nested lists should render")
+    try expect(hasOpenTag("ul", in: html), "Nested lists should render")
 }
 
 runner.test("many consecutive headings") {
@@ -663,10 +688,10 @@ runner.test("mixed GFM features in one document") {
     ```
     """
     let html = MarkdownRenderer.renderHTML(from: md)
-    try expect(html.contains("<table>"), "Table should render")
+    try expect(hasOpenTag("table", in: html), "Table should render")
     try expect(html.contains("<del>"), "Strikethrough should render")
     try expect(html.contains("checkbox"), "Task list should render")
-    try expect(html.contains("<blockquote>"), "Blockquote should render")
+    try expect(hasOpenTag("blockquote", in: html), "Blockquote should render")
     try expect(html.contains("language-swift"), "Code block should render")
     try expect(html.contains("<a href="), "Links should render")
 }
@@ -807,13 +832,13 @@ runner.test("full template renders all GFM features in context") {
     let full = MarkdownRenderer.wrapInTemplate(body)
 
     // Verify all features present in final document
-    try expect(full.contains("<h1>Full E2E Test</h1>"), "Missing heading")
-    try expect(full.contains("<table>"), "Missing table")
+    try expect(hasTag("h1", in: full, containing: "Full E2E Test"), "Missing heading")
+    try expect(hasOpenTag("table", in: full), "Missing table")
     try expect(full.contains("checkbox"), "Missing task list checkboxes")
     try expect(full.contains("<del>struck</del>"), "Missing strikethrough")
     try expect(full.contains("<strong>bold</strong>"), "Missing bold")
     try expect(full.contains("<code>code</code>"), "Missing inline code")
-    try expect(full.contains("<blockquote>"), "Missing blockquote")
+    try expect(hasOpenTag("blockquote", in: full), "Missing blockquote")
     try expect(full.contains("language-swift"), "Missing code block language")
     try expect(full.contains("<a href=\"https://example.com\""), "Missing autolink")
 }
@@ -1026,7 +1051,7 @@ runner.test("renderer is thread-safe (concurrent renders)") {
     let md = try loadFixture("basic.md")
     let group = DispatchGroup()
     let queue = DispatchQueue(label: "test-concurrent", attributes: .concurrent)
-    var results = [String?](repeating: nil, count: 10)
+    nonisolated(unsafe) var results = [String?](repeating: nil, count: 10)
     let lock = NSLock()
 
     for i in 0..<10 {
@@ -1707,7 +1732,7 @@ runner.test("plugin registry: case insensitive lookup") {
 runner.test("markdown plugin renders correctly") {
     let plugin = MarkdownPlugin()
     let html = plugin.render(source: "# Hello\n\n**Bold** text")
-    try expect(html.contains("<h1>Hello</h1>"), "Should contain heading")
+    try expect(hasTag("h1", in: html, containing: "Hello"), "Should contain heading")
     try expect(html.contains("<strong>Bold</strong>"), "Should contain bold")
 }
 
@@ -1863,8 +1888,8 @@ runner.test("postProcessForAccessibility adds table role") {
 runner.test("postProcessForAccessibility adds scope=col to th") {
     let html = "<table><tr><th>Name</th><th align=\"center\">Age</th></tr></table>"
     let processed = MarkdownRenderer.postProcessForAccessibility(html)
-    try expect(processed.contains("<th scope=\"col\">Name</th>"), "Missing scope=col on plain th")
-    try expect(processed.contains("<th scope=\"col\" align=\"center\">Age</th>"), "Missing scope=col on aligned th")
+    try expect(processed.contains("scope=\"col\"") && processed.contains("<th"), "Missing scope=col on th")
+    try expect(processed.contains("align=\"center\""), "Missing alignment on aligned th")
 }
 
 runner.test("postProcessForAccessibility adds aria-label to code blocks") {

@@ -9,7 +9,7 @@ public final class MarkdownRenderer {
         // Register all GFM extensions — MUST call before using extensions
         cmark_gfm_core_extensions_ensure_registered()
 
-        let options: Int32 = CMARK_OPT_UNSAFE | CMARK_OPT_SMART | CMARK_OPT_FOOTNOTES
+        let options: Int32 = CMARK_OPT_UNSAFE | CMARK_OPT_SMART | CMARK_OPT_FOOTNOTES | CMARK_OPT_SOURCEPOS
         guard let parser = cmark_parser_new(options) else { return "" }
         defer { cmark_parser_free(parser) }
 
@@ -39,16 +39,24 @@ public final class MarkdownRenderer {
     /// Post-process rendered HTML to add ARIA attributes for accessibility.
     public static func postProcessForAccessibility(_ html: String) -> String {
         var result = html
-        // Add role="table" to tables
-        result = result.replacingOccurrences(of: "<table>", with: "<table role=\"table\">")
-        // Add scope="col" to th elements
-        result = result.replacingOccurrences(of: "<th>", with: "<th scope=\"col\">")
+        // Add role="table" to tables (handles optional sourcepos attributes)
         result = result.replacingOccurrences(
-            of: "<th align=",
-            with: "<th scope=\"col\" align="
+            of: "<table(\\s[^>]*)?>",
+            with: "<table$1 role=\"table\">",
+            options: .regularExpression
         )
-        // Add aria-label to code blocks
-        result = result.replacingOccurrences(of: "<pre>", with: "<pre aria-label=\"Code block\">")
+        // Add scope="col" to th elements (handles optional sourcepos/align attributes)
+        result = result.replacingOccurrences(
+            of: "<th(\\s[^>]*)?>",
+            with: "<th$1 scope=\"col\">",
+            options: .regularExpression
+        )
+        // Add aria-label to code blocks (handles optional sourcepos attributes)
+        result = result.replacingOccurrences(
+            of: "<pre(\\s[^>]*)?>",
+            with: "<pre$1 aria-label=\"Code block\">",
+            options: .regularExpression
+        )
         // Add aria-label to task list checkboxes
         result = result.replacingOccurrences(
             of: "<input type=\"checkbox\"",
