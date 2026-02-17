@@ -2,12 +2,17 @@ import Combine
 import SwiftUI
 import Sentry
 
-/// Intercepts file-open events at the AppKit layer before SwiftUI creates
-/// duplicate windows. Prevents the race condition where `NSApplication.shared.windows`
-/// picks the wrong window during `DispatchQueue.main.async`.
+/// Intercepts file-open events at the AppKit layer before SwiftUI processes them.
+/// With `Window` (not `WindowGroup`), SwiftUI never creates duplicate windows.
+/// The AppDelegate routes file opens to the existing single window via @Published.
 final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// File path requested by Finder — observed by MarkViewApp via @Published.
     @Published var pendingFilePath: String?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prevent automatic window tabbing (Cmd+T creating tabs)
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first, url.isFileURL else { return }
@@ -20,8 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 }
 
 /// Tracks which file path is displayed in each window.
-/// Simplified: only register/query — no window closing logic.
-/// Window dedup is handled at the AppDelegate layer instead.
+/// Simplified: only register/query — no window closing logic needed
+/// because `Window` scene guarantees a single window.
 @MainActor
 final class WindowFileTracker {
     static let shared = WindowFileTracker()
@@ -73,7 +78,10 @@ struct MarkViewApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // `Window` (not `WindowGroup`) — guarantees exactly one window.
+        // File opens are routed via AppDelegate.pendingFilePath, not by
+        // SwiftUI creating new windows.
+        Window("MarkView", id: "main") {
             ContentView(initialFilePath: filePath, errorPresenter: errorPresenter)
                 .frame(minWidth: 600, minHeight: 400)
                 .onAppear {
@@ -109,7 +117,6 @@ struct MarkViewApp: App {
                     }
                 }
         }
-        .handlesExternalEvents(matching: Set(arrayLiteral: "*"))
         .windowStyle(.titleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {

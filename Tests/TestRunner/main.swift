@@ -3061,6 +3061,15 @@ runner.test("MarkViewApp observes AppDelegate.pendingFilePath") {
         "MarkViewApp must observe appDelegate.pendingFilePath for Finder file opens")
 }
 
+runner.test("MarkViewApp uses Window (not WindowGroup) for single-window enforcement") {
+    let source = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(source.contains("Window(\"MarkView\", id: \"main\")"),
+        "Must use Window scene (not WindowGroup) to guarantee exactly one window")
+    // Check for actual WindowGroup { usage (not just mentions in comments)
+    try expect(!source.contains("WindowGroup {"),
+        "WindowGroup must not be used — it allows SwiftUI to create duplicate windows")
+}
+
 // =============================================================================
 
 print("")
