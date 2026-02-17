@@ -92,7 +92,7 @@ final class PreviewViewModel: ObservableObject {
     // MARK: - Private
 
     private func loadTemplate() {
-        if let url = Bundle.module.url(forResource: "template", withExtension: "html", subdirectory: "Resources") {
+        if let url = ResourceBundle.url(forResource: "template", withExtension: "html", subdirectory: "Resources") {
             template = try? String(contentsOf: url, encoding: .utf8)
         }
     }

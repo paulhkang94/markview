@@ -33,15 +33,16 @@ mkdir -p "$APP_DIR/Contents/Resources"
 cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 codesign -s - -f "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null && echo "✓ Executable copied and signed (ad-hoc)" || echo "✓ Executable copied (unsigned)"
 
-# Step 4: Copy SPM resource bundle (required for Bundle.module to work)
+# Step 4: Copy SPM resource bundle into Contents/Resources/ (standard macOS location)
+# SPM's generated Bundle.module places the bundle at the .app root, but macOS app
+# translocation (Gatekeeper) only copies Contents/ — so root-level bundles get lost.
+# ResourceBundle.swift searches Contents/Resources/ first, then falls back to .app root.
 SPM_BUNDLE="$BUILD_DIR/MarkView_MarkView.bundle"
 if [ -d "$SPM_BUNDLE" ]; then
-    # Bundle.module looks for MarkView_MarkView.bundle at Bundle.main.bundleURL,
-    # which is the .app directory itself (not Contents/). Copy it there.
-    cp -R "$SPM_BUNDLE" "$APP_DIR/MarkView_MarkView.bundle"
-    echo "✓ SPM resource bundle copied (Bundle.module will work)"
+    cp -R "$SPM_BUNDLE" "$APP_DIR/Contents/Resources/MarkView_MarkView.bundle"
+    echo "✓ SPM resource bundle copied to Contents/Resources/"
 else
-    echo "⚠ SPM resource bundle not found at $SPM_BUNDLE — Bundle.module will crash!"
+    echo "⚠ SPM resource bundle not found at $SPM_BUNDLE — app will crash at launch!"
 fi
 
 # Also copy resources to Contents/Resources/ for direct access and AppIcon
@@ -112,11 +113,11 @@ else
     VALID=false
 fi
 
-# Verify SPM resource bundle (prevents Bundle.module crash at runtime)
-if [ -d "$APP_DIR/MarkView_MarkView.bundle/Resources/template.html" ] || [ -f "$APP_DIR/MarkView_MarkView.bundle/Resources/template.html" ]; then
+# Verify SPM resource bundle in Contents/Resources/ (prevents crash at runtime)
+if [ -f "$APP_DIR/Contents/Resources/MarkView_MarkView.bundle/Resources/template.html" ]; then
     echo "  ✓ SPM resource bundle has template.html"
 else
-    echo "  ✗ SPM resource bundle missing template.html (Bundle.module will crash!)"
+    echo "  ✗ SPM resource bundle missing template.html (app will crash at launch!)"
     VALID=false
 fi
 

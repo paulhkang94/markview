@@ -55,7 +55,7 @@ struct WebPreviewView: NSViewRepresentable {
         private var prismJS: String?
 
         init() {
-            if let prismURL = Bundle.module.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
+            if let prismURL = ResourceBundle.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
                 prismJS = try? String(contentsOf: prismURL, encoding: .utf8)
             }
         }
