@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # MarkView — Release script: bump version, test, build, install
-# Usage: bash scripts/release.sh [--bump major|minor|patch] [--skip-tests]
+# Usage: bash scripts/release.sh [--bump major|minor|patch] [--skip-tests] [--notarize]
 # Default: patch bump
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,6 +11,7 @@ cd "$PROJECT_DIR"
 PLIST="$PROJECT_DIR/Sources/MarkView/Info.plist"
 BUMP="patch"
 SKIP_TESTS=false
+DO_NOTARIZE=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -23,9 +24,13 @@ while [[ $# -gt 0 ]]; do
             SKIP_TESTS=true
             shift
             ;;
+        --notarize)
+            DO_NOTARIZE=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash scripts/release.sh [--bump major|minor|patch] [--skip-tests]"
+            echo "Usage: bash scripts/release.sh [--bump major|minor|patch] [--skip-tests] [--notarize]"
             exit 1
             ;;
     esac
@@ -90,7 +95,11 @@ fi
 
 # Step 6: Build + install app bundle
 echo "--- Building and installing app bundle ---"
-bash "$PROJECT_DIR/scripts/bundle.sh" --install
+BUNDLE_FLAGS="--install"
+if [ "$DO_NOTARIZE" = true ]; then
+    BUNDLE_FLAGS="$BUNDLE_FLAGS --notarize"
+fi
+bash "$PROJECT_DIR/scripts/bundle.sh" $BUNDLE_FLAGS
 
 # Step 7: Install CLI
 echo ""
@@ -139,3 +148,10 @@ echo "  git add Sources/MarkView/Info.plist"
 echo "  git commit -m 'Release v$NEW_VERSION'"
 echo "  git tag v$NEW_VERSION"
 echo "  git push origin main --tags"
+if [ "$DO_NOTARIZE" = true ]; then
+    echo ""
+    echo "Notarization: completed (ticket stapled to app bundle)"
+else
+    echo ""
+    echo "Notarization: skipped (use --notarize to sign + notarize for distribution)"
+fi

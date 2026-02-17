@@ -84,13 +84,14 @@ for file in fixtureFiles.sorted(by: { $0.lastPathComponent < $1.lastPathComponen
 
     do {
         try process.run()
-        process.waitUntilExit()
     } catch {
         print("  ⊘ \(name) (cmark-gfm failed: \(error))")
         continue
     }
 
+    // Read pipe data BEFORE waitUntilExit to avoid deadlock when output exceeds pipe buffer
     let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
 
     let cmarkHTML = String(data: outputData, encoding: .utf8)?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -128,7 +129,12 @@ if !diffs.isEmpty {
 exit(0)
 
 func normalize(_ html: String) -> String {
-    html.components(separatedBy: .whitespacesAndNewlines)
+    // Strip data-sourcepos attributes (swift-cmark includes them, CLI cmark-gfm does not)
+    var result = html
+    while let range = result.range(of: #" data-sourcepos="[^"]*""#, options: .regularExpression) {
+        result.removeSubrange(range)
+    }
+    return result.components(separatedBy: .whitespacesAndNewlines)
         .filter { !$0.isEmpty }
         .joined(separator: " ")
         .lowercased()

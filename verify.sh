@@ -64,6 +64,43 @@ if [ -d "$PROJECT_DIR/MarkView.app" ]; then
         echo "⚠ Quick Look extension not in bundle (run: bash scripts/bundle.sh)"
     fi
 
+    # Code signing verification
+    echo ""
+    echo "  --- Signing Verification ---"
+    BUNDLE_APP="$PROJECT_DIR/MarkView.app"
+    if codesign --verify --deep --strict "$BUNDLE_APP" 2>/dev/null; then
+        echo "  ✓ Code signature valid (deep + strict)"
+    else
+        echo "  ⚠ Strict signature verification failed (expected for ad-hoc)"
+    fi
+
+    # Display signing identity
+    SIGN_INFO=$(codesign -d --verbose=2 "$BUNDLE_APP" 2>&1 || true)
+    AUTHORITY=$(echo "$SIGN_INFO" | grep "Authority=" | head -1 || true)
+    if echo "$SIGN_INFO" | grep -q "Signature=adhoc"; then
+        echo "  Signing: ad-hoc"
+    elif echo "$AUTHORITY" | grep -q "Developer ID"; then
+        echo "  Signing: $AUTHORITY"
+    else
+        echo "  Signing: unknown"
+    fi
+
+    # Gatekeeper assessment (only meaningful for Developer ID signed apps)
+    if echo "$AUTHORITY" | grep -q "Developer ID"; then
+        if spctl --assess --type execute "$BUNDLE_APP" 2>/dev/null; then
+            echo "  ✓ Gatekeeper: accepted"
+        else
+            echo "  ⚠ Gatekeeper: rejected (may need notarization)"
+        fi
+    fi
+
+    # Notarization ticket check
+    if xcrun stapler validate "$BUNDLE_APP" 2>/dev/null; then
+        echo "  ✓ Notarization ticket: stapled"
+    else
+        echo "  Notarization ticket: not stapled (use --notarize with bundle.sh)"
+    fi
+
     [ "$BUNDLE_OK" = true ] || exit 1
 fi
 

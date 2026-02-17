@@ -37,3 +37,7 @@ docs/MARKET-ANALYSIS.md
 
 # Personal/private docs
 docs/personal/
+
+# Apple signing credentials
+*.p8
+*.provisionprofile

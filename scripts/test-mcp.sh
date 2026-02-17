@@ -117,7 +117,9 @@ test('initialize returns response', resp is not None)
 if resp:
     result = resp.get('result', {})
     test('server name is markview', result.get('serverInfo', {}).get('name') == 'markview')
-    test('server version is 1.0.0', result.get('serverInfo', {}).get('version') == '1.0.0')
+    expected_ver = subprocess.run(['plutil', '-extract', 'CFBundleShortVersionString', 'raw', '$PROJECT_DIR/Sources/MarkView/Info.plist'], capture_output=True, text=True).stdout.strip()
+    actual_ver = result.get('serverInfo', {}).get('version', '')
+    test(f'server version is {expected_ver}', actual_ver == expected_ver)
     test('declares tools capability', 'tools' in result.get('capabilities', {}))
 
     # Send initialized notification
