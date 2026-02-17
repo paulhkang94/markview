@@ -6,6 +6,8 @@ struct ContentView: View {
 
     @StateObject private var viewModel = PreviewViewModel()
     @ObservedObject private var settings = AppSettings.shared
+    /// Direct coordinator-to-coordinator scroll sync — bypasses SwiftUI entirely.
+    @State private var syncController = ScrollSyncController()
     @State private var showEditor = false
     @State private var showExternalChangeAlert = false
 
@@ -15,18 +17,35 @@ struct ContentView: View {
                 if viewModel.isLoaded {
                     if showEditor {
                         HSplitView {
-                            EditorView(text: $viewModel.editorContent) { newText in
-                                viewModel.contentDidChange(newText)
-                            }
+                            EditorView(
+                                text: $viewModel.editorContent,
+                                onChange: { newText in
+                                    viewModel.contentDidChange(newText)
+                                },
+                                syncController: syncController
+                            )
                             .frame(minWidth: 200)
                             .accessibilityElement(children: .contain)
 
-                            WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL, previewFontSize: settings.previewFontSize, previewWidth: settings.previewWidth.cssValue, theme: settings.theme)
-                                .frame(minWidth: 200)
-                                .accessibilityElement(children: .contain)
+                            WebPreviewView(
+                                html: viewModel.renderedHTML,
+                                baseDirectoryURL: viewModel.currentFileDirectoryURL,
+                                previewFontSize: settings.previewFontSize,
+                                previewWidth: settings.previewWidth.cssValue,
+                                theme: settings.theme,
+                                syncController: syncController
+                            )
+                            .frame(minWidth: 200)
+                            .accessibilityElement(children: .contain)
                         }
                     } else {
-                        WebPreviewView(html: viewModel.renderedHTML, baseDirectoryURL: viewModel.currentFileDirectoryURL, previewFontSize: settings.previewFontSize, previewWidth: settings.previewWidth.cssValue, theme: settings.theme)
+                        WebPreviewView(
+                            html: viewModel.renderedHTML,
+                            baseDirectoryURL: viewModel.currentFileDirectoryURL,
+                            previewFontSize: settings.previewFontSize,
+                            previewWidth: settings.previewWidth.cssValue,
+                            theme: settings.theme
+                        )
                     }
                 } else {
                     DropTargetView { url in
@@ -62,9 +81,10 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: initialFilePath) { newPath in
-            if let path = newPath {
+        .onChange(of: initialFilePath) {
+            if let path = initialFilePath {
                 viewModel.loadFile(at: path)
+                syncController.reset()
                 registerFileInWindow(path)
             }
         }

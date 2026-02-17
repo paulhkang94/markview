@@ -9,15 +9,26 @@ struct WebPreviewView: NSViewRepresentable {
     var previewFontSize: Double = 16
     var previewWidth: String = "900px"
     var theme: AppTheme = .system
+    /// Direct reference to the scroll sync controller (not a SwiftUI binding).
+    var syncController: ScrollSyncController?
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
 
+        // Register message handler for scroll sync: JS posts source line to Swift.
+        let contentController = config.userContentController
+        contentController.add(context.coordinator, name: "scrollSync")
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.setAccessibilityLabel(Strings.markdownPreview)
         context.coordinator.webView = webView
+        context.coordinator.syncController = syncController
+
+        // Register coordinator with the sync controller for direct calls
+        syncController?.previewCoordinator = context.coordinator
+
         return webView
     }
 
@@ -35,6 +46,8 @@ struct WebPreviewView: NSViewRepresentable {
         context.coordinator.previewFontSize = previewFontSize
         context.coordinator.previewWidth = previewWidth
         context.coordinator.theme = theme
+        context.coordinator.syncController = syncController
+        syncController?.previewCoordinator = context.coordinator
         context.coordinator.updateContent(html, in: webView)
     }
 
@@ -42,23 +55,146 @@ struct WebPreviewView: NSViewRepresentable {
         Coordinator()
     }
 
-    class Coordinator {
+    class Coordinator: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var baseDirectoryURL: URL?
         var previewFontSize: Double = 16
         var previewWidth: String = "900px"
         var theme: AppTheme = .system
+        weak var syncController: ScrollSyncController?
         private var hasLoadedInitialPage = false
         private var lastHTML: String = ""
         private var lastCSS: String = ""
         private var lastBaseDirectory: URL?
         private var prismJS: String?
+        /// When true, ignore the next scroll event from JS (it's from a programmatic scroll).
+        var suppressNextScroll = false
 
-        init() {
+        override init() {
             if let prismURL = ResourceBundle.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
                 prismJS = try? String(contentsOf: prismURL, encoding: .utf8)
             }
         }
+
+        // MARK: - WKScriptMessageHandler
+
+        /// Receives source line messages from the JS scroll listener.
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "scrollSync" else { return }
+
+            if suppressNextScroll {
+                suppressNextScroll = false
+                return
+            }
+
+            // JS sends the source line of the topmost visible element with data-sourcepos
+            if let line = message.body as? Int, line > 0 {
+                syncController?.previewDidScrollToLine(line)
+            }
+        }
+
+        // MARK: - Scroll Sync JS
+
+        /// JavaScript scroll sync system. Builds a cached sorted array of {line, offsetTop}
+        /// on content load/mutation, then binary-searches on scroll — O(log n) per frame,
+        /// no DOM queries in the scroll path.
+        private static let scrollListenerJS = """
+        (function() {
+            if (window._markviewScrollListenerInstalled) return;
+            window._markviewScrollListenerInstalled = true;
+            var _rafPending = false;
+            var _lastLine = 0;
+
+            // Cached sourcepos map: sorted array of {line, top}
+            // Rebuilt on content change via _markviewRebuildCache()
+            window._markviewSourceCache = [];
+
+            window._markviewRebuildCache = function() {
+                var elements = document.querySelectorAll('[data-sourcepos]');
+                var cache = [];
+                for (var i = 0; i < elements.length; i++) {
+                    var sp = elements[i].getAttribute('data-sourcepos');
+                    if (!sp) continue;
+                    var line = parseInt(sp.split(':')[0], 10);
+                    if (isNaN(line)) continue;
+                    var rect = elements[i].getBoundingClientRect();
+                    cache.push({ line: line, top: rect.top + window.scrollY });
+                }
+                // Already sorted by DOM order (top position)
+                window._markviewSourceCache = cache;
+            };
+
+            function getTopVisibleSourceLine() {
+                var cache = window._markviewSourceCache;
+                if (!cache.length) return 0;
+                var scrollY = window.scrollY;
+                // Binary search for the last element with top <= scrollY
+                var lo = 0, hi = cache.length - 1, best = 0;
+                while (lo <= hi) {
+                    var mid = (lo + hi) >> 1;
+                    if (cache[mid].top <= scrollY + 2) {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                return cache[best].line;
+            }
+
+            window.addEventListener('scroll', function() {
+                if (window._markviewSuppressScroll) {
+                    window._markviewSuppressScroll = false;
+                    return;
+                }
+                if (_rafPending) return;
+                _rafPending = true;
+                requestAnimationFrame(function() {
+                    _rafPending = false;
+                    var line = getTopVisibleSourceLine();
+                    if (line > 0 && line !== _lastLine) {
+                        _lastLine = line;
+                        try {
+                            window.webkit.messageHandlers.scrollSync.postMessage(line);
+                        } catch(e) {}
+                    }
+                });
+            }, { passive: true });
+
+            // Build initial cache
+            window._markviewRebuildCache();
+        })();
+        """
+
+        /// Scroll the preview to the element corresponding to the given source line.
+        /// Uses the cached offset map for O(log n) binary search + direct window.scrollTo
+        /// (no DOM query, no scrollIntoView reflow).
+        func scrollToSourceLine(_ line: Int) {
+            guard let webView = webView else { return }
+            suppressNextScroll = true
+            let js = """
+            (function() {
+                window._markviewSuppressScroll = true;
+                var cache = window._markviewSourceCache || [];
+                if (!cache.length) return;
+                // Binary search for largest line <= target
+                var lo = 0, hi = cache.length - 1, best = 0;
+                while (lo <= hi) {
+                    var mid = (lo + hi) >> 1;
+                    if (cache[mid].line <= \(line)) {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                window.scrollTo(0, cache[best].top);
+            })();
+            """
+            webView.evaluateJavaScript(js)
+        }
+
+        // MARK: - Content Updates
 
         func updateContent(_ html: String, in webView: WKWebView) {
             let currentCSS = "\(Int(previewFontSize))|\(previewWidth)|\(theme)"
@@ -85,7 +221,6 @@ struct WebPreviewView: NSViewRepresentable {
         }
 
         /// Write HTML to a temp file and load via loadFileURL so WKWebView can access local images.
-        /// loadHTMLString(baseURL:) does NOT grant file system access even with allowFileAccessFromFileURLs.
         private func loadViaFileURL(_ html: String, in webView: WKWebView) {
             var finalHTML = html
             // Inject <base> tag so relative paths (images, links) resolve from the markdown file's directory
@@ -93,25 +228,27 @@ struct WebPreviewView: NSViewRepresentable {
                 let baseTag = "<base href=\"\(dir.absoluteString)\">"
                 finalHTML = finalHTML.replacingOccurrences(of: "<head>", with: "<head>\(baseTag)")
             }
-            // Use unique filename to prevent WKWebView file:// caching from serving stale content
             let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview-\(UUID().uuidString).html")
             try? finalHTML.write(to: tempFile, atomically: true, encoding: .utf8)
-            // Grant read access to / so WKWebView can load local images.
-            // This is a non-sandboxed desktop app — broad file access is expected.
             webView.loadFileURL(tempFile, allowingReadAccessTo: URL(fileURLWithPath: "/"))
-            // Clean up temp file after WKWebView has had time to load it
+            // Install scroll listener after page loads
+            installScrollListenerAfterLoad(in: webView)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 try? FileManager.default.removeItem(at: tempFile)
             }
         }
 
+        private func installScrollListenerAfterLoad(in webView: WKWebView) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard self != nil else { return }
+                webView.evaluateJavaScript(Self.scrollListenerJS)
+            }
+        }
+
         private func injectSettingsCSS(into html: String) -> String {
             var css = ""
-
-            // Preview width and font size
             css += "body { max-width: \(previewWidth); font-size: \(Int(previewFontSize))px; }\n"
 
-            // Theme override
             switch theme {
             case .light:
                 css += "body { color: #1f2328; background: #ffffff; }\n"
@@ -119,8 +256,6 @@ struct WebPreviewView: NSViewRepresentable {
             case .dark:
                 css += Self.darkModeCSS + "\n"
             case .system:
-                // Detect current system appearance and inject dark CSS explicitly,
-                // because WKWebView's @media (prefers-color-scheme) is unreliable
                 if Self.systemIsDarkMode {
                     css += Self.darkModeCSS + "\n"
                 }
@@ -153,7 +288,6 @@ struct WebPreviewView: NSViewRepresentable {
             guard let jsonData = try? JSONSerialization.data(withJSONObject: bodyContent, options: .fragmentsAllowed),
                   let escapedContent = String(data: jsonData, encoding: .utf8) else { return }
 
-            // Also update settings CSS
             var css = "body { max-width: \(previewWidth); font-size: \(Int(previewFontSize))px; }"
             switch theme {
             case .light:
@@ -180,21 +314,20 @@ struct WebPreviewView: NSViewRepresentable {
                 }
                 requestAnimationFrame(function() {
                     window.scrollTo(0, scrollPos);
+                    if (typeof window._markviewRebuildCache === 'function') {
+                        window._markviewRebuildCache();
+                    }
                 });
             })();
             """
             webView.evaluateJavaScript(js)
+            webView.evaluateJavaScript(Self.scrollListenerJS)
         }
 
-        /// Detect if the system is currently in dark mode.
         private static var systemIsDarkMode: Bool {
             NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         }
 
-        /// Single source of truth for forced-dark theme CSS (GitHub Primer colors).
-        /// Used by both injectSettingsCSS (initial load) and updateContentViaJS (live updates).
-        /// IMPORTANT: Every element with a visual property MUST have an explicit color set here —
-        /// do NOT rely on CSS inheritance from body, as WKWebView dark mode is unreliable.
         private static let darkModeCSS = [
             "body { color: #e6edf3; background: #0d1117; }",
             ":root { color-scheme: dark; }",
