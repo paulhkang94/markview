@@ -212,6 +212,11 @@ struct WebPreviewView: NSViewRepresentable {
 
         // MARK: - Content Updates
 
+        /// Tracks whether a file change is pending — ensures full page reload
+        /// even if SwiftUI splits the update across multiple updateNSView calls
+        /// (fileIdentifier may update before renderedHTML in separate @Published cycles).
+        private var pendingFileReload = false
+
         func updateContent(_ html: String, in webView: WKWebView) {
             let currentCSS = "\(Int(previewFontSize))|\(previewWidth)|\(theme)"
             let cssChanged = currentCSS != lastCSS
@@ -221,17 +226,23 @@ struct WebPreviewView: NSViewRepresentable {
             // directory) so the entire document is replaced. The JS fast-path (innerHTML
             // swap) fails silently on loadFileURL-loaded pages after the temp file is deleted.
             let fileChanged = fileIdentifier != lastFileIdentifier
+            if fileChanged {
+                pendingFileReload = true
+            }
             lastFileIdentifier = fileIdentifier
 
             let baseDirChanged = baseDirectoryURL != lastBaseDirectory
             lastBaseDirectory = baseDirectoryURL
 
-            guard html != lastHTML || cssChanged || baseDirChanged || fileChanged else { return }
+            let needsFullReload = !hasLoadedInitialPage || baseDirChanged || pendingFileReload
+
+            guard html != lastHTML || cssChanged || needsFullReload else { return }
             lastHTML = html
 
             let styledHTML = injectSettingsCSS(into: html)
 
-            if !hasLoadedInitialPage || baseDirChanged || fileChanged {
+            if needsFullReload {
+                pendingFileReload = false
                 let fullHTML = injectPrism(into: styledHTML)
                 loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true

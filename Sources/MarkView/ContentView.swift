@@ -38,6 +38,7 @@ struct ContentView: View {
                                     theme: settings.theme,
                                     syncController: syncController
                                 )
+                                .id(viewModel.currentFilePath ?? "")
                                 .frame(minWidth: 200)
                                 .accessibilityElement(children: .contain)
                             }
@@ -50,6 +51,7 @@ struct ContentView: View {
                                 previewWidth: settings.previewWidth.cssValue,
                                 theme: settings.theme
                             )
+                            .id(viewModel.currentFilePath ?? "")
                         }
                     } else {
                         DropTargetView { url in
