@@ -11,28 +11,25 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  SWIFT_VERSION: "6.2"
-
 jobs:
   build:
     name: Build & Test
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ env.SWIFT_VERSION }}
+      # Use runner's default Swift (matches system SDK — avoids binary framework incompatibility)
+      - name: Swift version
+        run: swift --version
 
       # Cache SPM dependencies for faster builds
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build (debug)
         run: swift build
@@ -56,88 +53,72 @@ jobs:
 
   verify:
     name: Verify
-    runs-on: macos-14
+    runs-on: macos-15
     needs: build
     steps:
       - uses: actions/checkout@v4
-
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run verify.sh
         run: bash verify.sh
 
   bundle:
     name: Bundle
-    runs-on: macos-14
+    runs-on: macos-15
     needs: build
     steps:
       - uses: actions/checkout@v4
-
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build .app bundle
         run: bash scripts/bundle.sh
 
   mcp:
     name: MCP Tests
-    runs-on: macos-14
+    runs-on: macos-15
     needs: build
     steps:
       - uses: actions/checkout@v4
-
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run MCP protocol tests
         run: bash scripts/test-mcp.sh --skip-e2e
 
   golden-check:
     name: Golden Drift Check
-    runs-on: macos-14
+    runs-on: macos-15
     needs: build
     steps:
       - uses: actions/checkout@v4
-
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ env.SWIFT_VERSION }}
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Regenerate goldens
         run: swift run MarkViewTestRunner --generate-goldens
