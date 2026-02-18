@@ -16,19 +16,31 @@
 	<string>1.1.1</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.quicklook.preview</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>PreviewProvider</string>
+		<string>MarkViewQuickLook.PreviewProvider</string>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>QLIsDataBasedPreview</key>
+			<true/>
+			<key>QLSupportedContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+				<string>dyn.ah62d4rv4ge8043a</string>
+				<string>dyn.ah62d4rv4ge8042pwrrwg875s</string>
+			</array>
+			<key>QLSupportsSearchableItems</key>
+			<true/>
+		</dict>
 	</dict>
-	<key>QLSupportedContentTypes</key>
-	<array>
-		<string>net.daringfireball.markdown</string>
-		<string>public.plain-text</string>
-	</array>
-	<key>QLSupportsSearchableItems</key>
-	<true/>
 </dict>
 </plist>

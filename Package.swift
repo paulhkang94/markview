@@ -79,7 +79,10 @@ let package = Package(
             name: "MarkViewQuickLook",
             dependencies: ["MarkViewCore"],
             path: "Sources/MarkViewQuickLook",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist"],
+            swiftSettings: [
+                .unsafeFlags(["-application-extension"]),
+            ]
         ),
     ]
 )

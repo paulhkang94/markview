@@ -14,7 +14,9 @@ struct WebPreviewView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        // Security: Do NOT enable allowFileAccessFromFileURLs — it allows JS to fetch
+        // arbitrary file:// URLs, which combined with XSS could leak local files.
+        // Local images are loaded via <base href> + allowingReadAccessTo scope instead.
 
         // Register message handler for scroll sync: JS posts source line to Swift.
         let contentController = config.userContentController
@@ -243,7 +245,11 @@ struct WebPreviewView: NSViewRepresentable {
                 AppLogger.render.error("Failed to write temp preview file: \(error.localizedDescription)")
                 AppLogger.captureError(error, category: "render", message: "Temp file write failed")
             }
-            webView.loadFileURL(tempFile, allowingReadAccessTo: URL(fileURLWithPath: "/"))
+            // Security: Restrict WKWebView file access to the narrowest directory that
+            // covers both the temp HTML file and the markdown file's directory (for images).
+            // Never grant access to "/" — that would expose the entire filesystem to XSS.
+            let accessURL = Self.restrictedAccessURL(tempFile: tempFile, baseDirectory: baseDirectoryURL)
+            webView.loadFileURL(tempFile, allowingReadAccessTo: accessURL)
             // Install scroll listener after page loads
             installScrollListenerAfterLoad(in: webView)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
@@ -366,6 +372,45 @@ struct WebPreviewView: NSViewRepresentable {
             guard let data = try? JSONSerialization.data(withJSONObject: s, options: .fragmentsAllowed),
                   let str = String(data: data, encoding: .utf8) else { return "\"\"" }
             return str
+        }
+
+        /// Compute the narrowest directory that covers both the temp HTML file and the
+        /// markdown file's base directory. Falls back to the temp directory when no base
+        /// directory is provided (inline content). Never returns "/".
+        static func restrictedAccessURL(tempFile: URL, baseDirectory: URL?) -> URL {
+            let tempDir = tempFile.deletingLastPathComponent()
+            guard let baseDir = baseDirectory else {
+                return tempDir
+            }
+
+            // Find the deepest common ancestor of tempDir and baseDir
+            let tempComponents = tempDir.standardizedFileURL.pathComponents
+            let baseComponents = baseDir.standardizedFileURL.pathComponents
+            let minCount = min(tempComponents.count, baseComponents.count)
+
+            var commonComponents: [String] = []
+            for i in 0..<minCount {
+                if tempComponents[i] == baseComponents[i] {
+                    commonComponents.append(tempComponents[i])
+                } else {
+                    break
+                }
+            }
+
+            // Safety: never return root "/" — require at least /Users or /private or similar
+            if commonComponents.count <= 1 {
+                // Paths diverge at root; fall back to just the temp directory.
+                // Images from the base directory won't load, but the preview is still safe.
+                AppLogger.render.warning("Base directory and temp directory share no common ancestor beyond /; restricting to temp directory only")
+                return tempDir
+            }
+
+            var ancestorPath = commonComponents.joined(separator: "/")
+            // pathComponents splits "/" into ["/"], so joining gives "//Users/..." — fix this
+            if ancestorPath.hasPrefix("//") {
+                ancestorPath = String(ancestorPath.dropFirst())
+            }
+            return URL(fileURLWithPath: ancestorPath, isDirectory: true)
         }
     }
 }

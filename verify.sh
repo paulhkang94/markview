@@ -263,7 +263,13 @@ if [ "$PHASE" = "--extended" ]; then
         if pluginkit -m -p com.apple.quicklook.preview 2>/dev/null | grep -q "com.markview"; then
             echo "  ✓ Extension registered with pluginkit"; QL_PASS=$((QL_PASS + 1))
         else
-            echo "  ⚠ Extension NOT registered with pluginkit (expected for ad-hoc signed apps)"; QL_SKIP=$((QL_SKIP + 1))
+            # Developer ID signed apps MUST register — ad-hoc gets a pass
+            APPEX_SIGN_INFO=$(codesign -dvv "$QL_APPEX" 2>&1 || true)
+            if echo "$APPEX_SIGN_INFO" | grep -q "Developer ID"; then
+                echo "  ✗ Extension NOT registered with pluginkit (Developer ID signed — this is a bug)"; QL_FAIL=$((QL_FAIL + 1))
+            else
+                echo "  ⚠ Extension NOT registered with pluginkit (expected for ad-hoc signed apps)"; QL_SKIP=$((QL_SKIP + 1))
+            fi
         fi
 
         # 13. UTType recognition for .md files
@@ -287,6 +293,27 @@ if [ "$PHASE" = "--extended" ]; then
         fi
     else
         echo "  ⊘ Quick Look extension not installed — skipping (run: bash scripts/bundle.sh --install)"
+    fi
+
+    # qlmanage smoke test — verify Quick Look can preview a markdown file without crashing
+    echo ""
+    echo "--- Extended: qlmanage Smoke Test ---"
+    QL_FIXTURE="$PROJECT_DIR/Tests/TestRunner/Fixtures/basic.md"
+    if [ -f "$QL_FIXTURE" ]; then
+        # Run qlmanage with a 10-second timeout; -p triggers preview generation
+        if timeout 10 qlmanage -p "$QL_FIXTURE" > /dev/null 2>&1; then
+            echo "  ✓ qlmanage -p returned success for basic.md"
+        else
+            QL_EXIT=$?
+            if [ "$QL_EXIT" -eq 124 ]; then
+                echo "  ⚠ qlmanage -p timed out (10s) — may need manual investigation"
+            else
+                echo "  ✗ qlmanage -p failed with exit code $QL_EXIT"
+                exit 1
+            fi
+        fi
+    else
+        echo "  ⊘ Fixture not found: $QL_FIXTURE — skipping"
     fi
 
     # Window lifecycle smoke test (no AX permissions needed)

