@@ -161,12 +161,12 @@ if resp:
         result = call_resp.get('result', {})
         content_items = result.get('content', [])
         text = content_items[0].get('text', '') if content_items else ''
-        test('preview_markdown mentions temp path', 'markview-mcp' in text)
         has_error = result.get('isError', False)
         # Note: may fail if MarkView.app not installed, that's OK
         if has_error:
             test('preview_markdown error is informative', 'MarkView' in text)
         else:
+            test('preview_markdown mentions temp path', 'markview-mcp' in text)
             test('preview_markdown success', 'Previewing' in text or 'markview-mcp' in text)
 
     # Test: preview_markdown missing content

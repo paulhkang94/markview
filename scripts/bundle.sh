@@ -106,7 +106,7 @@ if [ -f "$BUILD_DIR/$QL_NAME" ]; then
     if [ -f "$ENTITLEMENTS_QL" ]; then
         ENTITLEMENTS_QL_FLAGS=(--entitlements "$ENTITLEMENTS_QL")
     fi
-    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]}" "${ENTITLEMENTS_QL_FLAGS[@]}" "$QL_APPEX_DIR" 2>/dev/null && echo "✓ Quick Look extension embedded and signed" || echo "✓ Quick Look extension embedded (unsigned)"
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_QL_FLAGS[@]+"${ENTITLEMENTS_QL_FLAGS[@]}"}" "$QL_APPEX_DIR" 2>/dev/null && echo "✓ Quick Look extension embedded and signed" || echo "✓ Quick Look extension embedded (unsigned)"
 else
     echo "⚠ Quick Look extension binary not found — skipping"
 fi
@@ -117,7 +117,7 @@ MCP_BIN_NAME="markview-mcp-server"
 echo "--- Embedding MCP server ---"
 if [ -f "$BUILD_DIR/$MCP_NAME" ]; then
     cp "$BUILD_DIR/$MCP_NAME" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME"
-    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]}" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME" 2>/dev/null && echo "✓ MCP server embedded and signed" || echo "✓ MCP server embedded (unsigned)"
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME" 2>/dev/null && echo "✓ MCP server embedded and signed" || echo "✓ MCP server embedded (unsigned)"
 else
     echo "⚠ MCP server binary not found — skipping (build with: swift build -c release --product MarkViewMCPServer)"
 fi
@@ -127,10 +127,10 @@ ENTITLEMENTS_APP_FLAGS=()
 if [ -f "$ENTITLEMENTS_APP" ]; then
     ENTITLEMENTS_APP_FLAGS=(--entitlements "$ENTITLEMENTS_APP")
 fi
-codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]}" "${ENTITLEMENTS_APP_FLAGS[@]}" "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null && echo "✓ Main executable signed" || echo "✓ Main executable (unsigned)"
+codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_APP_FLAGS[@]+"${ENTITLEMENTS_APP_FLAGS[@]}"}" "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null && echo "✓ Main executable signed" || echo "✓ Main executable (unsigned)"
 
 # Sign the outer .app bundle
-codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]}" "${ENTITLEMENTS_APP_FLAGS[@]}" "$APP_DIR" 2>/dev/null && echo "✓ App bundle signed" || echo "✓ App bundle (unsigned)"
+codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_APP_FLAGS[@]+"${ENTITLEMENTS_APP_FLAGS[@]}"}" "$APP_DIR" 2>/dev/null && echo "✓ App bundle signed" || echo "✓ App bundle (unsigned)"
 
 echo ""
 echo "✓ Bundle created at: $APP_DIR"
