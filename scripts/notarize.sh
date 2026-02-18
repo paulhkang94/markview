@@ -16,9 +16,16 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
-# Validate env vars
-: "${NOTARIZE_KEY_ID:?Set NOTARIZE_KEY_ID to your App Store Connect API Key ID}"
-: "${NOTARIZE_ISSUER_ID:?Set NOTARIZE_ISSUER_ID to your App Store Connect Issuer ID}"
+# Resolve credentials: env vars → Apple Keychain → error
+if [ -z "${NOTARIZE_KEY_ID:-}" ]; then
+    NOTARIZE_KEY_ID=$(security find-generic-password -a "$USER" -s "NOTARIZE_KEY_ID" -w 2>/dev/null || true)
+fi
+if [ -z "${NOTARIZE_ISSUER_ID:-}" ]; then
+    NOTARIZE_ISSUER_ID=$(security find-generic-password -a "$USER" -s "NOTARIZE_ISSUER_ID" -w 2>/dev/null || true)
+fi
+
+: "${NOTARIZE_KEY_ID:?Set NOTARIZE_KEY_ID env var or store in Keychain: security add-generic-password -a \$USER -s NOTARIZE_KEY_ID -w YOUR_KEY_ID -U}"
+: "${NOTARIZE_ISSUER_ID:?Set NOTARIZE_ISSUER_ID env var or store in Keychain: security add-generic-password -a \$USER -s NOTARIZE_ISSUER_ID -w YOUR_ISSUER_ID -U}"
 NOTARIZE_KEY_PATH="${NOTARIZE_KEY_PATH:-$HOME/.private_keys/AuthKey_${NOTARIZE_KEY_ID}.p8}"
 
 if [ ! -f "$NOTARIZE_KEY_PATH" ]; then

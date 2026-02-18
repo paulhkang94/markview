@@ -98,10 +98,16 @@ fi
 echo "--- Building and installing app bundle ---"
 BUNDLE_FLAGS="--install"
 
-# Auto-enable notarization if credentials exist and not explicitly disabled
-if [ "$DO_NOTARIZE" = false ] && [ -n "${NOTARIZE_KEY_ID:-}" ] && [ -n "${NOTARIZE_ISSUER_ID:-}" ]; then
-    echo "Notarization credentials detected — auto-enabling --notarize"
-    DO_NOTARIZE=true
+# Auto-enable notarization if credentials exist (env vars or Keychain)
+if [ "$DO_NOTARIZE" = false ]; then
+    _key_id="${NOTARIZE_KEY_ID:-$(security find-generic-password -a "$USER" -s "NOTARIZE_KEY_ID" -w 2>/dev/null || true)}"
+    _issuer_id="${NOTARIZE_ISSUER_ID:-$(security find-generic-password -a "$USER" -s "NOTARIZE_ISSUER_ID" -w 2>/dev/null || true)}"
+    if [ -n "$_key_id" ] && [ -n "$_issuer_id" ]; then
+        export NOTARIZE_KEY_ID="$_key_id"
+        export NOTARIZE_ISSUER_ID="$_issuer_id"
+        echo "Notarization credentials detected (Keychain/env) — auto-enabling --notarize"
+        DO_NOTARIZE=true
+    fi
 fi
 if [ "$DO_NOTARIZE" = true ]; then
     BUNDLE_FLAGS="$BUNDLE_FLAGS --notarize"

@@ -98,7 +98,32 @@ else
     echo "⚠ MCP server binary not found — skipping (build with: swift build -c release --product MarkViewMCPServer)"
 fi
 
-# Step 5: Re-sign the outer .app bundle (after embedding MCP server)
+# Step 5: Re-sign ALL nested code (frameworks, extensions) with timestamp for notarization
+# Apple rejects notarization if any nested binary lacks a secure timestamp.
+# xcodebuild signs the QL extension but may not use --timestamp.
+# SPM frameworks (Sentry) come pre-signed without our timestamp.
+echo "--- Re-signing nested code for notarization ---"
+
+# Re-sign frameworks (Sentry.framework, etc.)
+find "$APP_DIR/Contents/Frameworks" -type f -perm +111 -name "*.dylib" -o -name "Sentry" 2>/dev/null | while read -r binary; do
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$binary" 2>/dev/null && echo "  ✓ Re-signed: $(basename "$binary")" || true
+done
+# Re-sign framework bundles
+find "$APP_DIR/Contents/Frameworks" -name "*.framework" -maxdepth 1 2>/dev/null | while read -r fw; do
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$fw" 2>/dev/null && echo "  ✓ Re-signed: $(basename "$fw")" || true
+done
+
+# Re-sign Quick Look extension with entitlements + timestamp
+QL_APPEX="$APP_DIR/Contents/PlugIns/MarkViewQuickLook.appex"
+if [ -d "$QL_APPEX" ]; then
+    ENTITLEMENTS_QL_FLAGS=()
+    if [ -f "$ENTITLEMENTS_QL" ]; then
+        ENTITLEMENTS_QL_FLAGS=(--entitlements "$ENTITLEMENTS_QL")
+    fi
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_QL_FLAGS[@]+"${ENTITLEMENTS_QL_FLAGS[@]}"}" "$QL_APPEX" 2>/dev/null && echo "  ✓ Re-signed: MarkViewQuickLook.appex" || true
+fi
+
+# Step 6: Re-sign the outer .app bundle (after all nested re-signing)
 ENTITLEMENTS_APP_FLAGS=()
 if [ -f "$ENTITLEMENTS_APP" ]; then
     ENTITLEMENTS_APP_FLAGS=(--entitlements "$ENTITLEMENTS_APP")
