@@ -71,3 +71,19 @@ Sentry personal tokens (created via Developer Settings → Personal Tokens) retu
 ### `info:` key overwrites your Info.plist
 
 XcodeGen's `info:` key on a target tells it to **generate** a plist at that path, replacing your custom one with a template. If you have a hand-crafted Info.plist (e.g., with NSExtension keys for Quick Look), use only `INFOPLIST_FILE` in `settings.base` and omit the `info:` key entirely. Set `GENERATE_INFOPLIST_FILE: false` to prevent Xcode from also generating one.
+
+## WKWebView in Quick Look Extensions
+
+### WebContent process needs sandbox entitlements to launch
+
+WKWebView spawns a separate WebContent subprocess via XPC. In an app extension sandbox, this subprocess crashes silently (`reason=Crash, PID=0`) without these entitlements:
+
+- `com.apple.security.network.client` — WebKit IPC even for local content
+- `com.apple.security.cs.disable-library-validation` — load WebKit framework bundles
+- `com.apple.security.temporary-exception.files.absolute-path.read-only` with `/` — file access for WebContent process
+
+Symptoms: infinite loading spinner in Quick Look, `log show` shows "Invalid connection identifier (web process failed to launch)". Reference: sbarex/QLMarkdown uses all three.
+
+### Disable competing QL extensions before removing their apps
+
+`pluginkit -e ignore -i <bundle-id>` BEFORE deleting an app that provides a QL extension. macOS caches the extension as the preferred handler; deleting the app causes "Extension not found" errors. `qlmanage -r` + `killall quicklookd` + `killall Finder` to clear caches after.
