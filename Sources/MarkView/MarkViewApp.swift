@@ -128,6 +128,12 @@ struct MarkViewApp: App {
                     NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("w", modifiers: .command)
+
+                Button(Strings.closeWindow) {
+                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+                .hidden()
             }
 
             CommandGroup(replacing: .saveItem) {
