@@ -28,15 +28,18 @@ class PreviewProvider: QLPreviewProvider {
 
     private static let logger = Logger(subsystem: "dev.paulkang.MarkView.QuickLook", category: "preview")
 
-    /// Compute preview size matching MarkView's window sizing logic:
-    /// ~50% screen width, full screen height.
-    private static var preferredContentSize: CGSize {
-        let screen = NSScreen.main
-        let frame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
-        let width = max(frame.width * 0.50, 800)
-        let height = frame.height
-        return CGSize(width: width, height: height)
-    }
+    /// Large content size hint so Quick Look opens a generously-sized window.
+    /// NSScreen.main is nil in the sandboxed extension process, so we use a
+    /// fixed size that signals "this content wants a big window."
+    private static let preferredContentSize = CGSize(width: 1200, height: 900)
+
+    /// CSS override that removes the main app's max-width constraint so the
+    /// rendered markdown fills the entire Quick Look panel.
+    private static let quickLookCSS = """
+        <style>
+            body { max-width: 100% !important; padding: 24px 48px !important; }
+        </style>
+    """
 
     func providePreview(
         for request: QLFilePreviewRequest,
@@ -56,7 +59,12 @@ class PreviewProvider: QLPreviewProvider {
             }
             let html = MarkdownRenderer.renderHTML(from: markdown)
             let accessible = MarkdownRenderer.postProcessForAccessibility(html)
-            let document = MarkdownRenderer.wrapInTemplate(accessible)
+            var document = MarkdownRenderer.wrapInTemplate(accessible)
+            // Inject QL-specific CSS before </head> to override max-width
+            document = document.replacingOccurrences(
+                of: "</head>",
+                with: "\(Self.quickLookCSS)</head>"
+            )
             return Data(document.utf8)
         }
         reply.title = request.fileURL.deletingPathExtension().lastPathComponent
