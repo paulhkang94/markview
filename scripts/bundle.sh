@@ -63,7 +63,7 @@ fi
 
 # Step 2: Build with xcodebuild (handles app + extension + signing order)
 echo "--- Building with xcodebuild ---"
-XCODE_BUILD_DIR="$PROJECT_DIR/build/Release"
+XCODE_BUILD_DIR="$PROJECT_DIR/build/Build/Products/Release"
 xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
     -scheme "$APP_NAME" \
     -configuration Release \

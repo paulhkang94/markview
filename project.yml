@@ -44,6 +44,9 @@ targets:
         PRODUCT_NAME: MarkView
         SWIFT_VERSION: "6.0"
         ENABLE_HARDENED_RUNTIME: true
+        DEVELOPMENT_TEAM: B4M2AX4B6X
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Developer ID Application"
 
   MarkViewQuickLook:
     type: app-extension
@@ -65,5 +68,8 @@ targets:
         PRODUCT_NAME: MarkViewQuickLook
         SWIFT_VERSION: "6.0"
         ENABLE_HARDENED_RUNTIME: true
+        DEVELOPMENT_TEAM: B4M2AX4B6X
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Developer ID Application"
         # QL extensions need this for WKWebView JS execution
         OTHER_SWIFT_FLAGS: -application-extension
