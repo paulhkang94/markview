@@ -65,6 +65,18 @@ If another app handles the same UTI, your broken extension looks like it works i
 - If you must test app behavior, run in background with `open -g -a MarkView` (no activation) or defer to the user
 - Never launch GUI apps in automated bash commands without warning the user first
 
+## SwiftUI + NSViewRepresentable
+
+### @Published updates may split across multiple updateNSView calls
+
+When an `ObservableObject` updates multiple `@Published` properties in `loadFile()` (e.g., `currentFilePath` then `renderedHTML`), SwiftUI may call `updateNSView` separately for each change. A per-call flag like `let fileChanged = X != lastX; lastX = X` gets consumed by the first (stale) call, so the second call (with actual new content) misses it.
+
+**Fix:** Use a persistent flag (`pendingFileReload`) that's set when the identity changes and only cleared when a full reload actually fires. Combined with `.id()` on the `NSViewRepresentable` for belt-and-suspenders.
+
+### Optimization fast-paths need mode-transition tests
+
+The JS innerHTML swap (`updateContentViaJS`) was added for live editing performance but broke file switching — it fails silently on `loadFileURL`-loaded pages. Any fast-path that optimizes a common case (editing) must have tests for mode transitions (file switching, pane toggling).
+
 ## Sentry Integration
 <!-- local-only -->
 

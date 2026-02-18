@@ -49,7 +49,8 @@ struct ContentView: View {
                                 fileIdentifier: viewModel.currentFilePath,
                                 previewFontSize: settings.previewFontSize,
                                 previewWidth: settings.previewWidth.cssValue,
-                                theme: settings.theme
+                                theme: settings.theme,
+                                syncController: syncController
                             )
                             .id(viewModel.currentFilePath ?? "")
                         }

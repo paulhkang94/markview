@@ -28,6 +28,7 @@ struct WebPreviewView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.setAccessibilityLabel(Strings.markdownPreview)
+        webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.syncController = syncController
 
@@ -61,7 +62,7 @@ struct WebPreviewView: NSViewRepresentable {
         Coordinator()
     }
 
-    class Coordinator: NSObject, WKScriptMessageHandler {
+    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var webView: WKWebView?
         var baseDirectoryURL: URL?
         var fileIdentifier: String?
@@ -107,6 +108,32 @@ struct WebPreviewView: NSViewRepresentable {
             if let line = message.body as? Int, line > 0 {
                 syncController?.previewDidScrollToLine(line)
             }
+        }
+
+        // MARK: - WKNavigationDelegate
+
+        /// Intercept link clicks: open external URLs in the system browser,
+        /// allow local file:// loads (preview content) to proceed in-place.
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            guard let url = navigationAction.request.url else { return .allow }
+
+            // Allow initial page loads (our preview HTML) and file:// URLs
+            if navigationAction.navigationType == .other || url.isFileURL {
+                return .allow
+            }
+
+            // External links (http/https/mailto) → open in system browser
+            if url.scheme == "https" || url.scheme == "http" || url.scheme == "mailto" {
+                NSWorkspace.shared.open(url)
+                return .cancel
+            }
+
+            // Anchor links within the page
+            if url.fragment != nil && url.path == webView.url?.path {
+                return .allow
+            }
+
+            return .cancel
         }
 
         // MARK: - Scroll Sync JS
@@ -285,8 +312,17 @@ struct WebPreviewView: NSViewRepresentable {
 
         private func installScrollListenerAfterLoad(in webView: WKWebView) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard self != nil else { return }
+                guard let self = self else { return }
                 webView.evaluateJavaScript(Self.scrollListenerJS)
+
+                // Restore scroll position after pane toggle (view recreation).
+                // The syncController persists via @State in ContentView, so lastPreviewLine
+                // survives the destroy/recreate cycle.
+                if let line = self.syncController?.lastPreviewLine, line > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                        self?.scrollToSourceLine(line)
+                    }
+                }
             }
         }
 

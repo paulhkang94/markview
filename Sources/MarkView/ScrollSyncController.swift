@@ -24,6 +24,10 @@ final class ScrollSyncController {
     private var suppressUntil: Date = .distantPast
     private static let suppressDuration: TimeInterval = 0.05
 
+    /// Last known preview scroll position (source line). Persists across view recreation
+    /// so scroll position survives pane toggle (Cmd+E).
+    var lastPreviewLine: Int = 0
+
     /// Pending scroll targets — set by scroll events, consumed by display link.
     private var pendingEditorLine: Int?
     private var pendingPreviewLine: Int?
@@ -43,6 +47,7 @@ final class ScrollSyncController {
     /// Called by EditorView.Coordinator when the user scrolls the editor.
     func editorDidScrollToLine(_ line: Int) {
         guard line > 0 else { return }
+        lastPreviewLine = line
 
         // Suppress echo from preview-initiated sync
         if activeSource == .preview, Date() < suppressUntil { return }
@@ -58,6 +63,7 @@ final class ScrollSyncController {
     /// Called by WebPreviewView.Coordinator when the user scrolls the preview.
     func previewDidScrollToLine(_ line: Int) {
         guard line > 0 else { return }
+        lastPreviewLine = line
 
         // Suppress echo from editor-initiated sync
         if activeSource == .editor, Date() < suppressUntil { return }
