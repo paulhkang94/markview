@@ -24,8 +24,8 @@ enum ExtensionMain {
 
 /// Quick Look preview extension for Markdown files.
 /// Uses QLPreviewingController (view-controller path) with WKWebView for reliable
-/// window sizing via preferredContentSize. Signals completion only after the
-/// WKWebView finishes loading, preventing Quick Look from showing a blank/tiny preview.
+/// window sizing via preferredContentSize. Writes HTML to a temp file and loads via
+/// file URL for sandbox compatibility. Signals completion after WKWebView finishes.
 class PreviewViewController: NSViewController, @preconcurrency QLPreviewingController, WKNavigationDelegate {
 
     private static let logger = Logger(subsystem: "dev.paulkang.MarkView.QuickLook", category: "preview")
@@ -40,6 +40,7 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
 
     private var webView: WKWebView!
     private var completionHandler: ((Error?) -> Void)?
+    private var tempFileURL: URL?
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
@@ -76,35 +77,58 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
         let html = MarkdownRenderer.renderHTML(from: markdown)
         let accessible = MarkdownRenderer.postProcessForAccessibility(html)
         var document = MarkdownRenderer.wrapInTemplate(accessible)
-        // Inject QL-specific CSS before </head> to override max-width
         document = document.replacingOccurrences(
             of: "</head>",
             with: "\(Self.quickLookCSS)</head>"
         )
 
-        webView.isHidden = true // prevent flicker before content loads
-        webView.loadHTMLString(document, baseURL: nil)
+        // Write to temp file and load via file URL — more reliable in sandboxed extensions
+        // than loadHTMLString which can fail silently when WebContent process can't initialize.
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("ql-preview-\(UUID().uuidString).html")
+        do {
+            try document.write(to: tempFile, atomically: true, encoding: .utf8)
+            tempFileURL = tempFile
+            webView.loadFileURL(tempFile, allowingReadAccessTo: tempDir)
+        } catch {
+            Self.logger.error("Failed to write temp HTML: \(error.localizedDescription)")
+            // Fallback to loadHTMLString
+            webView.loadHTMLString(document, baseURL: nil)
+        }
     }
 
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Signal completion only after WKWebView finishes rendering
         if let handler = completionHandler {
             handler(nil)
             completionHandler = nil
         }
-        // Brief delay to prevent resize flicker (same technique as QLMarkdown)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.webView.isHidden = false
-        }
+        cleanupTempFile()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Self.logger.error("WKWebView didFail: \(error.localizedDescription)")
         if let handler = completionHandler {
             handler(error)
             completionHandler = nil
-            webView.isHidden = false
+        }
+        cleanupTempFile()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        Self.logger.error("WKWebView didFailProvisionalNavigation: \(error.localizedDescription)")
+        if let handler = completionHandler {
+            handler(error)
+            completionHandler = nil
+        }
+        cleanupTempFile()
+    }
+
+    private func cleanupTempFile() {
+        if let url = tempFileURL {
+            try? FileManager.default.removeItem(at: url)
+            tempFileURL = nil
         }
     }
 }
