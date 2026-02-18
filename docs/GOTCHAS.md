@@ -54,3 +54,14 @@ pluginkit -m | grep your.bundle.id   # ground truth for registration
 ```
 
 If another app handles the same UTI, your broken extension looks like it works in the UI. Always check the registry, not the UI output.
+
+## Sentry Integration
+<!-- local-only -->
+
+### Sentry project slug is platform-based, not project-name-based
+
+When creating a Sentry project, the slug is derived from the platform selection (e.g., "Apple — macOS" → `apple-macos`), not from the project name you enter. This affects all API calls, CI config (`SENTRY_PROJECT`), and GitHub Action inputs. Always verify the actual slug in Settings → Projects or via `GET /api/0/projects/{org}/`.
+
+### Personal API tokens cannot access integrations endpoints
+
+Sentry personal tokens (created via Developer Settings → Personal Tokens) return 403 on `/organizations/{org}/integrations/`. The `org:integrations` scope is only available to internal/public Sentry integrations (OAuth apps), not personal tokens. This means alert actions referencing GitHub integration (like "Create GitHub Issue on error") must be configured in the browser UI, not via API.

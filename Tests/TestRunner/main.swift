@@ -2980,8 +2980,8 @@ runner.test("Quick Look Info.plist declares principal class") {
 
 runner.test("Quick Look Info.plist uses module-qualified principal class") {
     // Swift requires module.ClassName format for macOS to find the class
-    try expect(qlPlist.contains("MarkViewQuickLook.PreviewProvider"),
-        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewProvider")
+    try expect(qlPlist.contains("MarkViewQuickLook.PreviewViewController"),
+        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewViewController")
 }
 
 runner.test("Quick Look Info.plist has QLSupportedContentTypes inside NSExtensionAttributes") {
@@ -3002,10 +3002,10 @@ runner.test("Quick Look Info.plist has LSMinimumSystemVersion") {
         "Info.plist must declare LSMinimumSystemVersion for extension registration")
 }
 
-runner.test("Quick Look Info.plist has QLIsDataBasedPreview") {
-    // Required for data-based QLPreviewProvider extensions to register with pluginkit
-    try expect(qlPlist.contains("QLIsDataBasedPreview"),
-        "Info.plist must declare QLIsDataBasedPreview = true in NSExtensionAttributes")
+runner.test("Quick Look Info.plist does NOT have QLIsDataBasedPreview") {
+    // View-controller path (QLPreviewingController) must NOT declare QLIsDataBasedPreview
+    try expect(!qlPlist.contains("QLIsDataBasedPreview"),
+        "Info.plist must NOT declare QLIsDataBasedPreview (view-controller path, not data-based)")
 }
 
 runner.test("Quick Look Info.plist does not claim public.plain-text") {
@@ -3027,8 +3027,46 @@ runner.test("Quick Look entitlements enable app sandbox") {
         "Quick Look extension entitlements must enable app sandbox (required by pluginkit)")
 }
 
-runner.test("Quick Look extension returns HTML content type") {
-    try expect(qlSource.contains("UTType.html"), "Extension must return HTML content type for QLPreviewReply")
+runner.test("Quick Look entitlements allow JIT for WKWebView") {
+    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
+    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
+    try expect(entitlements.contains("com.apple.security.cs.allow-unsigned-executable-memory"),
+        "Quick Look extension needs JIT entitlement for WKWebView JavaScript execution")
+}
+
+runner.test("Quick Look extension imports WebKit") {
+    // WKWebView is used for rendering in the view-controller path
+    try expect(qlSource.contains("import WebKit"), "Extension must import WebKit for WKWebView rendering")
+}
+
+runner.test("Quick Look extension uses QLPreviewingController") {
+    // View-controller path provides reliable preferredContentSize
+    try expect(qlSource.contains("QLPreviewingController"),
+        "Extension must conform to QLPreviewingController (view-controller path for reliable sizing)")
+}
+
+runner.test("Quick Look extension uses preparePreviewOfFile") {
+    // QLPreviewingController entry point (replaces providePreview from data-based path)
+    try expect(qlSource.contains("preparePreviewOfFile"),
+        "Extension must implement preparePreviewOfFile(at:) for QLPreviewingController")
+}
+
+runner.test("Quick Look extension uses fixed content size (not NSScreen.main)") {
+    // NSScreen.main is nil in sandboxed QL extension — must use fixed size hint
+    try expect(!qlSource.contains("NSScreen.main"),
+        "Extension must NOT use NSScreen.main (nil in sandbox). Use a fixed CGSize instead.")
+}
+
+runner.test("Quick Look extension content size is at least 1000px wide") {
+    // Small content size hints cause Quick Look to open a tiny window
+    try expect(qlSource.contains("width: 1200") || qlSource.contains("width:1200"),
+        "Content size hint width should be >= 1200 for a properly-sized QL window")
+}
+
+runner.test("Quick Look extension overrides max-width for full-width content") {
+    // The shared template has max-width:900px — QL must override this
+    try expect(qlSource.contains("max-width: 100%") || qlSource.contains("max-width:100%"),
+        "Extension must override max-width to fill the QL panel (shared template constrains to 900px)")
 }
 
 // Verify bundle.sh includes PlugIns directory creation

@@ -1,9 +1,8 @@
-# Xcode
+# Xcode (XcodeGen regenerates .xcodeproj from project.yml)
+*.xcodeproj
 build/
 DerivedData/
-*.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
-*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 xcuserdata/
 
 # Swift Package Manager

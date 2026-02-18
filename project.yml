@@ -1,0 +1,64 @@
+name: MarkView
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  bundleIdPrefix: com.markview
+  createIntermediateGroups: true
+
+packages:
+  MarkViewCore:
+    path: .
+
+targets:
+  MarkView:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/MarkView
+        excludes:
+          - Info.plist
+          - "*.entitlements"
+    resources:
+      - path: Sources/MarkView/Resources
+        buildPhase: resources
+    dependencies:
+      - package: MarkViewCore
+        product: MarkViewCore
+      - target: MarkViewQuickLook
+        embed: true
+        codeSign: true
+        buildPhase:
+          copyFiles:
+            destination: plugins
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.markview.app
+        INFOPLIST_FILE: Sources/MarkView/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/MarkView/MarkView.entitlements
+        GENERATE_INFOPLIST_FILE: false
+        PRODUCT_NAME: MarkView
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: true
+
+  MarkViewQuickLook:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/MarkViewQuickLook
+        excludes:
+          - Info.plist
+          - "*.entitlements"
+    dependencies:
+      - package: MarkViewCore
+        product: MarkViewCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.markview.app.quicklook
+        INFOPLIST_FILE: Sources/MarkViewQuickLook/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements
+        GENERATE_INFOPLIST_FILE: false
+        PRODUCT_NAME: MarkViewQuickLook
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: true
+        # QL extensions need this for WKWebView JS execution
+        OTHER_SWIFT_FLAGS: -application-extension

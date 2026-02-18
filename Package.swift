@@ -4,10 +4,13 @@ import PackageDescription
 let package = Package(
     name: "MarkView",
     platforms: [.macOS(.v14)],
+    products: [
+        // Expose MarkViewCore as a library so XcodeGen targets can depend on it
+        .library(name: "MarkViewCore", targets: ["MarkViewCore"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-cmark", from: "0.4.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.10.0"),
-        .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.4.0"),
     ],
     targets: [
         // Core library with renderer and file watcher (no UI dependencies for testability)
@@ -18,19 +21,6 @@ let package = Package(
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
             ],
             path: "Sources/MarkViewCore"
-        ),
-        // Main app executable
-        .executableTarget(
-            name: "MarkView",
-            dependencies: [
-                "MarkViewCore",
-                .product(name: "Sentry", package: "sentry-cocoa"),
-            ],
-            path: "Sources/MarkView",
-            exclude: ["Info.plist"],
-            resources: [
-                .copy("Resources"),
-            ]
         ),
         // MCP server — stdio JSON-RPC server for AI tool integration
         .executableTarget(
@@ -73,16 +63,6 @@ let package = Package(
             dependencies: ["MarkViewCore"],
             path: "Tests/VisualTester",
             exclude: ["Goldens"]
-        ),
-        // Quick Look extension — renders .md files in Finder preview
-        .executableTarget(
-            name: "MarkViewQuickLook",
-            dependencies: ["MarkViewCore"],
-            path: "Sources/MarkViewQuickLook",
-            exclude: ["Info.plist"],
-            swiftSettings: [
-                .unsafeFlags(["-application-extension"]),
-            ]
         ),
     ]
 )

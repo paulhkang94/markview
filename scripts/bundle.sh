@@ -1,15 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-# MarkView — Build .app bundle from SPM executable
+# MarkView — Build .app bundle using xcodebuild (XcodeGen project)
 # Usage: bash scripts/bundle.sh [--install] [--notarize]
+#
+# Prerequisites: brew install xcodegen && xcodegen generate
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 APP_NAME="MarkView"
 BUNDLE_ID="com.markview.app"
-BUILD_DIR=".build/release"
 APP_DIR="$PROJECT_DIR/$APP_NAME.app"
 INSTALL_DIR="/Applications/$APP_NAME.app"
 
@@ -48,94 +49,66 @@ VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST" 2>/dev/null ||
 BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo "?")
 echo "=== Building $APP_NAME.app v$VERSION (build $BUILD) ==="
 
-# Step 1: Build release
-echo "--- Building release binary ---"
-swift build -c release 2>&1 | tail -3
-echo "✓ Release build complete"
+# Step 1: Ensure .xcodeproj exists (XcodeGen)
+if [ ! -d "$PROJECT_DIR/$APP_NAME.xcodeproj" ]; then
+    echo "--- Generating Xcode project ---"
+    if command -v xcodegen &> /dev/null; then
+        xcodegen generate --spec "$PROJECT_DIR/project.yml" --project "$PROJECT_DIR"
+        echo "✓ Xcode project generated"
+    else
+        echo "ERROR: xcodegen not found. Install with: brew install xcodegen"
+        exit 1
+    fi
+fi
 
-# Step 2: Create .app bundle structure
-echo "--- Creating app bundle ---"
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS"
-mkdir -p "$APP_DIR/Contents/Resources"
+# Step 2: Build with xcodebuild (handles app + extension + signing order)
+echo "--- Building with xcodebuild ---"
+XCODE_BUILD_DIR="$PROJECT_DIR/build/Release"
+xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
+    -scheme "$APP_NAME" \
+    -configuration Release \
+    -derivedDataPath "$PROJECT_DIR/build" \
+    CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+    ONLY_ACTIVE_ARCH=NO \
+    2>&1 | tail -5
+echo "✓ xcodebuild complete"
 
-# Step 3: Copy executable (signed later with the full bundle)
-cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
-echo "✓ Executable copied"
-
-# Step 4: Copy SPM resource bundle into Contents/Resources/ (standard macOS location)
-# SPM's generated Bundle.module places the bundle at the .app root, but macOS app
-# translocation (Gatekeeper) only copies Contents/ — so root-level bundles get lost.
-# ResourceBundle.swift searches Contents/Resources/ first, then falls back to .app root.
-SPM_BUNDLE="$BUILD_DIR/MarkView_MarkView.bundle"
-if [ -d "$SPM_BUNDLE" ]; then
-    cp -R "$SPM_BUNDLE" "$APP_DIR/Contents/Resources/MarkView_MarkView.bundle"
-    echo "✓ SPM resource bundle copied to Contents/Resources/"
-else
-    echo "⚠ SPM resource bundle not found at $SPM_BUNDLE — app will crash at launch!"
+# Step 3: Copy built .app to project root
+BUILT_APP="$XCODE_BUILD_DIR/$APP_NAME.app"
+if [ ! -d "$BUILT_APP" ]; then
+    echo "ERROR: Built app not found at $BUILT_APP"
+    echo "Checking build directory..."
+    find "$PROJECT_DIR/build" -name "*.app" -maxdepth 5 2>/dev/null || true
     exit 1
 fi
+rm -rf "$APP_DIR"
+cp -R "$BUILT_APP" "$APP_DIR"
+echo "✓ App bundle copied to $APP_DIR"
 
-# Also copy resources to Contents/Resources/ for direct access and AppIcon
-if [ -d "Sources/MarkView/Resources" ]; then
-    cp Sources/MarkView/Resources/AppIcon.icns "$APP_DIR/Contents/Resources/" 2>/dev/null || true
-    echo "✓ App icon copied"
-fi
-
-# Step 5: Generate Info.plist
-cp "$PROJECT_DIR/Sources/MarkView/Info.plist" "$APP_DIR/Contents/Info.plist"
-echo "✓ Info.plist copied"
-
-# Step 6: Create PkgInfo
-echo -n "APPL????" > "$APP_DIR/Contents/PkgInfo"
-
-# Step 6b: Embed Quick Look extension (.appex)
-QL_NAME="MarkViewQuickLook"
-QL_APPEX_DIR="$APP_DIR/Contents/PlugIns/$QL_NAME.appex"
-QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
-
-echo "--- Embedding Quick Look extension ---"
-mkdir -p "$QL_APPEX_DIR/Contents/MacOS"
-
-if [ -f "$BUILD_DIR/$QL_NAME" ]; then
-    cp "$BUILD_DIR/$QL_NAME" "$QL_APPEX_DIR/Contents/MacOS/$QL_NAME"
-    cp "$QL_PLIST" "$QL_APPEX_DIR/Contents/Info.plist"
-    echo -n "XPC!????" > "$QL_APPEX_DIR/Contents/PkgInfo"
-    # Sign extension before parent app (signing order: inner → outer)
-    ENTITLEMENTS_QL_FLAGS=()
-    if [ -f "$ENTITLEMENTS_QL" ]; then
-        ENTITLEMENTS_QL_FLAGS=(--entitlements "$ENTITLEMENTS_QL")
-    fi
-    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_QL_FLAGS[@]+"${ENTITLEMENTS_QL_FLAGS[@]}"}" "$QL_APPEX_DIR" 2>/dev/null && echo "✓ Quick Look extension embedded and signed" || echo "✓ Quick Look extension embedded (unsigned)"
-else
-    echo "⚠ Quick Look extension binary not found — skipping"
-fi
-
-# Step 6c: Embed MCP server binary
+# Step 4: Build and embed MCP server (still an SPM target)
 MCP_NAME="MarkViewMCPServer"
 MCP_BIN_NAME="markview-mcp-server"
-echo "--- Embedding MCP server ---"
-if [ -f "$BUILD_DIR/$MCP_NAME" ]; then
-    cp "$BUILD_DIR/$MCP_NAME" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME"
+echo "--- Building MCP server (SPM) ---"
+swift build -c release --product "$MCP_NAME" 2>&1 | tail -3
+SPM_BUILD_DIR=".build/release"
+if [ -f "$SPM_BUILD_DIR/$MCP_NAME" ]; then
+    cp "$SPM_BUILD_DIR/$MCP_NAME" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME"
     codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME" 2>/dev/null && echo "✓ MCP server embedded and signed" || echo "✓ MCP server embedded (unsigned)"
 else
     echo "⚠ MCP server binary not found — skipping (build with: swift build -c release --product MarkViewMCPServer)"
 fi
 
-# Sign the main executable
+# Step 5: Re-sign the outer .app bundle (after embedding MCP server)
 ENTITLEMENTS_APP_FLAGS=()
 if [ -f "$ENTITLEMENTS_APP" ]; then
     ENTITLEMENTS_APP_FLAGS=(--entitlements "$ENTITLEMENTS_APP")
 fi
-codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_APP_FLAGS[@]+"${ENTITLEMENTS_APP_FLAGS[@]}"}" "$APP_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null && echo "✓ Main executable signed" || echo "✓ Main executable (unsigned)"
-
-# Sign the outer .app bundle
-codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_APP_FLAGS[@]+"${ENTITLEMENTS_APP_FLAGS[@]}"}" "$APP_DIR" 2>/dev/null && echo "✓ App bundle signed" || echo "✓ App bundle (unsigned)"
+codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "${ENTITLEMENTS_APP_FLAGS[@]+"${ENTITLEMENTS_APP_FLAGS[@]}"}" "$APP_DIR" 2>/dev/null && echo "✓ App bundle re-signed" || echo "✓ App bundle (unsigned)"
 
 echo ""
 echo "✓ Bundle created at: $APP_DIR"
 
-# Step 7: Verify bundle structure
+# Step 6: Verify bundle structure
 echo ""
 echo "--- Verifying bundle structure ---"
 VALID=true
@@ -158,14 +131,8 @@ else
     VALID=false
 fi
 
-# Verify SPM resource bundle in Contents/Resources/ (prevents crash at runtime)
-if [ -f "$APP_DIR/Contents/Resources/MarkView_MarkView.bundle/Resources/template.html" ]; then
-    echo "  ✓ SPM resource bundle has template.html"
-else
-    echo "  ✗ SPM resource bundle missing template.html (app will crash at launch!)"
-    VALID=false
-fi
-
+QL_NAME="MarkViewQuickLook"
+QL_APPEX_DIR="$APP_DIR/Contents/PlugIns/$QL_NAME.appex"
 if [ -f "$QL_APPEX_DIR/Contents/MacOS/$QL_NAME" ]; then
     echo "  ✓ Quick Look extension exists"
 else
@@ -188,7 +155,7 @@ else
     exit 1
 fi
 
-# Step 8: Install if requested
+# Step 7: Install if requested
 if [ "$DO_INSTALL" = true ]; then
     echo ""
     echo "--- Installing to /Applications ---"
@@ -219,7 +186,7 @@ if [ "$DO_INSTALL" = true ]; then
     echo "Test Quick Look: qlmanage -p /path/to/file.md"
 fi
 
-# Step 9: Notarize if requested
+# Step 8: Notarize if requested
 if [ "$DO_NOTARIZE" = true ]; then
     TARGET_APP="$APP_DIR"
     if [ "$DO_INSTALL" = true ]; then
