@@ -181,8 +181,7 @@ final class PreviewViewModel: ObservableObject {
         fileWatcher?.start()
     }
 
-    nonisolated deinit {
-        // FileWatcher and Timer cleanup — both are safe to call from any context
+    deinit {
         MainActor.assumeIsolated {
             fileWatcher?.stop()
             autoSaveTimer?.invalidate()
