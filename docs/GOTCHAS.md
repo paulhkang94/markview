@@ -65,3 +65,9 @@ When creating a Sentry project, the slug is derived from the platform selection 
 ### Personal API tokens cannot access integrations endpoints
 
 Sentry personal tokens (created via Developer Settings → Personal Tokens) return 403 on `/organizations/{org}/integrations/`. The `org:integrations` scope is only available to internal/public Sentry integrations (OAuth apps), not personal tokens. This means alert actions referencing GitHub integration (like "Create GitHub Issue on error") must be configured in the browser UI, not via API.
+
+## XcodeGen
+
+### `info:` key overwrites your Info.plist
+
+XcodeGen's `info:` key on a target tells it to **generate** a plist at that path, replacing your custom one with a template. If you have a hand-crafted Info.plist (e.g., with NSExtension keys for Quick Look), use only `INFOPLIST_FILE` in `settings.base` and omit the `info:` key entirely. Set `GENERATE_INFOPLIST_FILE: false` to prevent Xcode from also generating one.
