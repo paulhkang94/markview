@@ -138,6 +138,16 @@ brew uninstall markview; brew install --cask paulhkang94/markview/markview
 open -a MarkView  # This is what users see
 ```
 
+### New build dependencies must be added to CI in the same commit
+
+When adding a tool dependency (e.g., `xcodegen`) to a build script, you MUST also add `brew install <tool>` to the CI workflow in the same commit. The bundle job was broken for 24+ hours because `project.yml` (XcodeGen) was added to `bundle.sh` without updating `ci.yml`.
+
+**Prevention:** Run `bash scripts/check-ci-deps.sh` before committing changes to build scripts.
+
+### CI distribution tests must match the actual install path
+
+If a test checks `/Applications/MarkView.app`, CI must run `bundle.sh --install` (not just `bundle.sh`). The app only exists at `/Applications/` after `--install`. Without it, the test fails because the app is at `./MarkView.app`.
+
 ### Release scripts must default to distribution-safe, not opt-in
 
 `release.sh --notarize` was opt-in — which meant it was never used. Auto-detect credentials and enable by default. Dangerous operations should be opt-in; safety gates should be opt-out.
