@@ -71,6 +71,7 @@ echo "Updated Info.plist"
 QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
 if [ -f "$QL_PLIST" ]; then
     plutil -replace CFBundleShortVersionString -string "$NEW_VERSION" "$QL_PLIST"
+    plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$QL_PLIST"
     echo "Updated QuickLook Info.plist"
 fi
 

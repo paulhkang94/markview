@@ -14,7 +14,9 @@ if [ -z "$CANONICAL" ]; then
     exit 1
 fi
 
-echo "Canonical version: $CANONICAL"
+CANONICAL_BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || true)
+
+echo "Canonical version: $CANONICAL (build $CANONICAL_BUILD)"
 
 ERRORS=0
 
@@ -23,9 +25,16 @@ QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
 if [ -f "$QL_PLIST" ]; then
     QL_VER=$(plutil -extract CFBundleShortVersionString raw "$QL_PLIST" 2>/dev/null || true)
     if [ "$QL_VER" = "$CANONICAL" ]; then
-        echo "  ✓ QuickLook Info.plist: $QL_VER"
+        echo "  ✓ QuickLook CFBundleShortVersionString: $QL_VER"
     else
-        echo "  ✗ QuickLook Info.plist: $QL_VER (expected $CANONICAL)"
+        echo "  ✗ QuickLook CFBundleShortVersionString: $QL_VER (expected $CANONICAL)"
+        ERRORS=$((ERRORS + 1))
+    fi
+    QL_BUILD=$(plutil -extract CFBundleVersion raw "$QL_PLIST" 2>/dev/null || true)
+    if [ "$QL_BUILD" = "$CANONICAL_BUILD" ]; then
+        echo "  ✓ QuickLook CFBundleVersion: $QL_BUILD"
+    else
+        echo "  ✗ QuickLook CFBundleVersion: $QL_BUILD (expected $CANONICAL_BUILD)"
         ERRORS=$((ERRORS + 1))
     fi
 fi
