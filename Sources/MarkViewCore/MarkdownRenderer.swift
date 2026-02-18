@@ -83,7 +83,7 @@ public final class MarkdownRenderer {
                 h1, h2 { border-bottom: 1px solid #d1d9e0; padding-bottom: 0.3em; }
                 pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
                 code { background: #eff1f3; padding: 0.2em 0.4em; border-radius: 6px; font-size: 85%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-                pre code { background: none; padding: 0; font-size: 100%; }
+                pre code { background: none; padding: 0; font-size: 100%; display: block; }
                 table { border-spacing: 0; border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant: tabular-nums; }
                 th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
                 th { font-weight: 600; }
