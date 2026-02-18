@@ -3027,11 +3027,25 @@ runner.test("Quick Look entitlements enable app sandbox") {
         "Quick Look extension entitlements must enable app sandbox (required by pluginkit)")
 }
 
-runner.test("Quick Look entitlements allow JIT for WKWebView") {
+runner.test("Quick Look entitlements allow library validation bypass for WKWebView") {
     let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
     let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(entitlements.contains("com.apple.security.cs.allow-unsigned-executable-memory"),
-        "Quick Look extension needs JIT entitlement for WKWebView JavaScript execution")
+    try expect(entitlements.contains("com.apple.security.cs.disable-library-validation"),
+        "Quick Look extension needs disable-library-validation for WKWebView WebContent process")
+}
+
+runner.test("Quick Look entitlements allow network client for WKWebView IPC") {
+    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
+    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
+    try expect(entitlements.contains("com.apple.security.network.client"),
+        "Quick Look extension needs network.client for WKWebView WebContent subprocess IPC")
+}
+
+runner.test("Quick Look entitlements allow file read access") {
+    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
+    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
+    try expect(entitlements.contains("temporary-exception.files.absolute-path.read-only"),
+        "Quick Look extension needs file read access for WebContent process")
 }
 
 runner.test("Quick Look extension imports WebKit") {
@@ -3051,16 +3065,28 @@ runner.test("Quick Look extension uses preparePreviewOfFile") {
         "Extension must implement preparePreviewOfFile(at:) for QLPreviewingController")
 }
 
-runner.test("Quick Look extension uses fixed content size (not NSScreen.main)") {
-    // NSScreen.main is nil in sandboxed QL extension — must use fixed size hint
-    try expect(!qlSource.contains("NSScreen.main"),
-        "Extension must NOT use NSScreen.main (nil in sandbox). Use a fixed CGSize instead.")
+runner.test("Quick Look extension uses screen-relative height") {
+    // Dynamic sizing: use screen height percentage for taller preview panel
+    try expect(qlSource.contains("visibleFrame") || qlSource.contains("NSScreen"),
+        "Extension should use screen-relative sizing for optimal preview height")
 }
 
 runner.test("Quick Look extension content size is at least 1000px wide") {
     // Small content size hints cause Quick Look to open a tiny window
     try expect(qlSource.contains("width: 1200") || qlSource.contains("width:1200"),
         "Content size hint width should be >= 1200 for a properly-sized QL window")
+}
+
+runner.test("Quick Look extension forces dark mode colors") {
+    // WKWebView in extension sandbox may not inherit system appearance — force dark mode
+    try expect(qlSource.contains("color: #e6edf3") && qlSource.contains("background: #0d1117"),
+        "Extension must force dark mode body colors (WKWebView may not inherit system appearance)")
+}
+
+runner.test("Quick Look extension forces dark mode table colors") {
+    // Tables had poor contrast without forced dark mode colors
+    try expect(qlSource.contains("th, td") && qlSource.contains("border-color: #3d444d"),
+        "Extension must force dark mode table border/text colors for readability")
 }
 
 runner.test("Quick Look extension overrides max-width for full-width content") {
