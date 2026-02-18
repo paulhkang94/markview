@@ -54,7 +54,10 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        preferredContentSize = NSSize(width: 1200, height: 900)
+        // Use 90% of screen height for a tall preview panel
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        let height = screen.map { $0.visibleFrame.height * 0.9 } ?? 900
+        preferredContentSize = NSSize(width: 1200, height: height)
     }
 
     // MARK: - QLPreviewingController (callback-based API)
