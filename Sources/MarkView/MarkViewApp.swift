@@ -49,7 +49,7 @@ struct MarkViewApp: App {
 
     init() {
         SentrySDK.start { options in
-            options.dsn = "https://examplePublicKey@o0.ingest.sentry.io/0"
+            options.dsn = "https://b72cf30350da5450221ea62ce5dc1069@o4510904217108480.ingest.us.sentry.io/4510904219074560"
             options.enableUncaughtNSExceptionReporting = true
             options.environment = {
                 #if DEBUG

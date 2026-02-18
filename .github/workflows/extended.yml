@@ -1,0 +1,63 @@
+name: Extended Tests
+
+# Run after CI completes on main (not on PRs — saves runner minutes)
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# Cancel in-progress runs to save runner minutes
+concurrency:
+  group: extended-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SWIFT_VERSION: "6.1"
+
+jobs:
+  fuzz:
+    name: Fuzz Testing
+    runs-on: macos-14
+    # Only run if CI succeeded (not on failure or cancellation)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run fuzz tests (10,000 inputs)
+        run: swift run MarkViewFuzzTester
+        timeout-minutes: 10
+
+  diff:
+    name: Differential Testing
+    runs-on: macos-14
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Run differential tests vs cmark-gfm
+        run: swift run MarkViewDiffTester
