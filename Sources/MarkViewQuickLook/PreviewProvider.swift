@@ -32,9 +32,29 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
 
     /// CSS override that removes the main app's max-width constraint so the
     /// rendered markdown fills the entire Quick Look panel.
+    /// Force dark mode styles in Quick Look since the QL panel always uses a dark
+    /// background. The WKWebView in extension sandbox may not inherit the system
+    /// appearance, causing light-mode colors (dark text on dark bg = unreadable).
     static let quickLookCSS = """
         <style>
-            body { max-width: 100% !important; padding: 24px 48px !important; }
+            body {
+                max-width: 100% !important;
+                padding: 24px 48px !important;
+                color: #e6edf3 !important;
+                background: #0d1117 !important;
+            }
+            a { color: #58a6ff !important; }
+            code:not([class*="language-"]) { background: #343942 !important; color: #e6edf3 !important; }
+            pre { background: #161b22 !important; color: #e6edf3 !important; }
+            th, td { border-color: #3d444d !important; color: #e6edf3 !important; }
+            tr { background-color: #0d1117 !important; border-top-color: #3d444db3 !important; }
+            tr:nth-child(2n) { background-color: #151b23 !important; }
+            blockquote { border-left-color: #3d444d !important; color: #8b949e !important; }
+            hr { border-top-color: #3d444d !important; }
+            h1, h2, h3, h4, h5 { color: #e6edf3 !important; }
+            h1, h2 { border-bottom-color: #3d444d !important; }
+            h6 { color: #8b949e !important; }
+            :focus-visible { outline-color: #58a6ff !important; }
         </style>
     """
 
