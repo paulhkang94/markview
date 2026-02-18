@@ -106,6 +106,42 @@ WKWebView spawns a separate WebContent subprocess via XPC. In an app extension s
 
 Symptoms: infinite loading spinner in Quick Look, `log show` shows "Invalid connection identifier (web process failed to launch)". Reference: sbarex/QLMarkdown uses all three.
 
+## App Signing & Distribution
+
+### Developer ID without notarization is REJECTED by Gatekeeper (since macOS 10.15)
+
+Code-signing with Developer ID + hardened runtime is necessary but NOT sufficient for distribution. Since Catalina, Gatekeeper also requires a notarization ticket stapled to the app. Without it, downloaded apps trigger "MarkView.app is damaged and can't be opened."
+
+The quarantine flag (`com.apple.quarantine`) is applied by:
+- **Homebrew** (when extracting cask downloads)
+- **Safari/browsers** (any downloaded .app or .dmg)
+- **AirDrop, Mail attachments** (sometimes)
+
+It is NOT applied by:
+- Local `cp` / `mv` / `bundle.sh --install`
+- `git clone` + build from source
+
+This is why local testing always works but Homebrew installs break — the developer never sees the quarantine flag.
+
+**Fix:** Always notarize. Short-term: strip quarantine in Homebrew cask `postflight` and `bundle.sh --install`.
+
+### Distribution is multi-repo — test the FULL install path
+
+MarkView's distribution involves 3 repos:
+1. `markview` — source, build scripts, notarize.sh
+2. `homebrew-markview` — cask formula (downloads tar.gz from GitHub Releases)
+3. GitHub Releases — the actual .tar.gz artifact
+
+Changes to signing in repo 1 are meaningless if repo 2 doesn't update and repo 3 doesn't get a new release with the notarized artifact. Always test:
+```bash
+brew uninstall markview; brew install --cask paulhkang94/markview/markview
+open -a MarkView  # This is what users see
+```
+
+### Release scripts must default to distribution-safe, not opt-in
+
+`release.sh --notarize` was opt-in — which meant it was never used. Auto-detect credentials and enable by default. Dangerous operations should be opt-in; safety gates should be opt-out.
+
 ### Disable competing QL extensions before removing their apps
 
 `pluginkit -e ignore -i <bundle-id>` BEFORE deleting an app that provides a QL extension. macOS caches the extension as the preferred handler; deleting the app causes "Extension not found" errors. `qlmanage -r` + `killall quicklookd` + `killall Finder` to clear caches after.
