@@ -12,7 +12,7 @@ private final class SharedBox<T>: @unchecked Sendable {
 /// All WKWebView work happens on @MainActor. The public `renderToPNG` entry point
 /// is nonisolated (called from background thread) and dispatches to main internally.
 @MainActor
-final class OffscreenRenderer: NSObject, WKNavigationDelegate, @unchecked Sendable {
+final class OffscreenRenderer: NSObject, @preconcurrency WKNavigationDelegate, @unchecked Sendable {
     private let width: CGFloat
     private let height: CGFloat
     private var webView: WKWebView?

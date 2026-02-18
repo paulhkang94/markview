@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SWIFT_VERSION: "6.1"
+  SWIFT_VERSION: "6.2"
 
 jobs:
   fuzz:
