@@ -39,6 +39,12 @@ brew tap paulhkang94/markview
 brew install markview
 ```
 
+**Note:** If macOS shows _"MarkView.app is damaged and can't be opened"_ after installing via Homebrew, run:
+```bash
+xattr -d com.apple.quarantine /Applications/MarkView.app
+```
+This happens because the app is not yet Apple-notarized. The Homebrew cask handles this automatically on newer versions.
+
 ### Build from source
 
 **Prerequisites:** macOS 13+, Swift 6.1+ (included with Xcode Command Line Tools)

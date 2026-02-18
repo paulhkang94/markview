@@ -97,6 +97,12 @@ fi
 # Step 6: Build + install app bundle
 echo "--- Building and installing app bundle ---"
 BUNDLE_FLAGS="--install"
+
+# Auto-enable notarization if credentials exist and not explicitly disabled
+if [ "$DO_NOTARIZE" = false ] && [ -n "${NOTARIZE_KEY_ID:-}" ] && [ -n "${NOTARIZE_ISSUER_ID:-}" ]; then
+    echo "Notarization credentials detected — auto-enabling --notarize"
+    DO_NOTARIZE=true
+fi
 if [ "$DO_NOTARIZE" = true ]; then
     BUNDLE_FLAGS="$BUNDLE_FLAGS --notarize"
 fi

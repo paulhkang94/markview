@@ -162,10 +162,9 @@ if [ "$DO_INSTALL" = true ]; then
     rm -rf "$INSTALL_DIR"
     cp -R "$APP_DIR" "$INSTALL_DIR"
 
-    if [ "$SIGN_IDENTITY" = "-" ]; then
-        # Only strip quarantine for ad-hoc signed builds
-        xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null || true
-    fi
+    # Strip quarantine for all local installs — notarization only applies to
+    # downloads (Homebrew, GitHub Releases). Local bundle.sh --install is trusted.
+    xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null || true
 
     # Register with Launch Services
     LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

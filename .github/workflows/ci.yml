@@ -87,6 +87,9 @@ jobs:
       - name: Build .app bundle
         run: bash scripts/bundle.sh
 
+      - name: Verify signing
+        run: bash scripts/verify-signing.sh MarkView.app
+
   mcp:
     name: MCP Tests
     runs-on: macos-15
