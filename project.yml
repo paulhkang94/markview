@@ -8,6 +8,9 @@ options:
 packages:
   MarkViewCore:
     path: .
+  sentry-cocoa:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: "9.4.0"
 
 targets:
   MarkView:
@@ -24,6 +27,8 @@ targets:
     dependencies:
       - package: MarkViewCore
         product: MarkViewCore
+      - package: sentry-cocoa
+        product: Sentry
       - target: MarkViewQuickLook
         embed: true
         codeSign: true
