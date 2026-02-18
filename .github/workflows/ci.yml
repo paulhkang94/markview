@@ -84,11 +84,20 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-
 
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
       - name: Build .app bundle
         run: bash scripts/bundle.sh
 
       - name: Verify signing
         run: bash scripts/verify-signing.sh MarkView.app
+
+      - name: Test distribution (local install path)
+        run: bash scripts/test-distribution.sh --local
 
   mcp:
     name: MCP Tests
@@ -153,4 +162,4 @@ jobs:
           SENTRY_PROJECT: apple-macos
         with:
           environment: production
-          version: ${{ github.sha }}
+          release: ${{ github.sha }}
