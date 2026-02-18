@@ -3077,11 +3077,19 @@ runner.test("Quick Look extension content size is at least 1000px wide") {
         "Content size hint width should be >= 1200 for a properly-sized QL window")
 }
 
-runner.test("Quick Look extension propagates system appearance to WKWebView") {
-    // WKWebView in extension sandbox doesn't inherit system appearance — must set explicitly
-    // so the template's @media (prefers-color-scheme) CSS works for both light and dark mode
-    try expect(qlSource.contains("appearance") && qlSource.contains("NSAppearance"),
-        "Extension must set webView.appearance for prefers-color-scheme CSS to work")
+runner.test("Quick Look extension detects system appearance and injects matching CSS") {
+    // WKWebView's WebContent process in extension sandbox doesn't inherit system appearance,
+    // so @media (prefers-color-scheme) doesn't fire. Must detect in Swift and inject CSS directly.
+    try expect(qlSource.contains("isDarkMode") && qlSource.contains("darkModeCSS"),
+        "Extension must detect dark mode in Swift and inject appropriate CSS (media queries don't work in sandbox)")
+}
+
+runner.test("Quick Look extension has dark mode CSS with proper contrast colors") {
+    // Regression guard: dark mode table text was unreadable (faint gray on dark bg)
+    try expect(qlSource.contains("color: #e6edf3") && qlSource.contains("background: #0d1117"),
+        "Dark mode CSS must include high-contrast body colors")
+    try expect(qlSource.contains("th, td { border-color: #3d444d"),
+        "Dark mode CSS must include table border/text colors for readability")
 }
 
 runner.test("Quick Look extension overrides max-width for full-width content") {
