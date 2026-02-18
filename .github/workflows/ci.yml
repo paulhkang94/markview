@@ -90,11 +90,11 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build .app bundle
-        run: bash scripts/bundle.sh
+      - name: Build and install .app bundle
+        run: bash scripts/bundle.sh --install
 
       - name: Verify signing
-        run: bash scripts/verify-signing.sh MarkView.app
+        run: bash scripts/verify-signing.sh /Applications/MarkView.app
 
       - name: Test distribution (local install path)
         run: bash scripts/test-distribution.sh --local
