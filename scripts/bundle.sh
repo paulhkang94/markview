@@ -73,6 +73,7 @@ if [ -d "$SPM_BUNDLE" ]; then
     echo "✓ SPM resource bundle copied to Contents/Resources/"
 else
     echo "⚠ SPM resource bundle not found at $SPM_BUNDLE — app will crash at launch!"
+    exit 1
 fi
 
 # Also copy resources to Contents/Resources/ for direct access and AppIcon
