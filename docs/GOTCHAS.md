@@ -55,6 +55,16 @@ pluginkit -m | grep your.bundle.id   # ground truth for registration
 
 If another app handles the same UTI, your broken extension looks like it works in the UI. Always check the registry, not the UI output.
 
+## Automated Testing
+
+### Never launch the app GUI during automated testing
+
+`open -a MarkView`, `qlmanage -p`, and similar commands steal focus, interrupt the user, and create unpredictable window state. For CI and agent-driven testing:
+- Use `MarkViewE2ETester` (runs headless via AXUIElement APIs with proper setup)
+- For unit/integration tests, use `swift run MarkViewTestRunner` (no GUI)
+- If you must test app behavior, run in background with `open -g -a MarkView` (no activation) or defer to the user
+- Never launch GUI apps in automated bash commands without warning the user first
+
 ## Sentry Integration
 <!-- local-only -->
 

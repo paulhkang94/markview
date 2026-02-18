@@ -4,6 +4,9 @@ import WebKit
 struct WebPreviewView: NSViewRepresentable {
     let html: String
     var baseDirectoryURL: URL?
+    /// Unique identifier for the current file. When this changes (new file opened),
+    /// the coordinator forces a full page reload instead of the JS fast-path.
+    var fileIdentifier: String?
     // These must be explicit properties (not read from AppSettings inside updateNSView)
     // so that SwiftUI detects changes and triggers updateNSView.
     var previewFontSize: Double = 16
@@ -45,6 +48,7 @@ struct WebPreviewView: NSViewRepresentable {
             webView.appearance = nil // inherit from system
         }
         context.coordinator.baseDirectoryURL = baseDirectoryURL
+        context.coordinator.fileIdentifier = fileIdentifier
         context.coordinator.previewFontSize = previewFontSize
         context.coordinator.previewWidth = previewWidth
         context.coordinator.theme = theme
@@ -60,6 +64,7 @@ struct WebPreviewView: NSViewRepresentable {
     class Coordinator: NSObject, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var baseDirectoryURL: URL?
+        var fileIdentifier: String?
         var previewFontSize: Double = 16
         var previewWidth: String = "900px"
         var theme: AppTheme = .system
@@ -68,6 +73,7 @@ struct WebPreviewView: NSViewRepresentable {
         private var lastHTML: String = ""
         private var lastCSS: String = ""
         private var lastBaseDirectory: URL?
+        private var lastFileIdentifier: String?
         private var prismJS: String?
         /// When true, ignore the next scroll event from JS (it's from a programmatic scroll).
         var suppressNextScroll = false
@@ -211,17 +217,21 @@ struct WebPreviewView: NSViewRepresentable {
             let cssChanged = currentCSS != lastCSS
             lastCSS = currentCSS
 
-            // Force full page reload when base directory changes (different file opened
-            // from a different folder) so <base href> and relative paths resolve correctly.
+            // Force full page reload when a different file is opened (even from the same
+            // directory) so the entire document is replaced. The JS fast-path (innerHTML
+            // swap) fails silently on loadFileURL-loaded pages after the temp file is deleted.
+            let fileChanged = fileIdentifier != lastFileIdentifier
+            lastFileIdentifier = fileIdentifier
+
             let baseDirChanged = baseDirectoryURL != lastBaseDirectory
             lastBaseDirectory = baseDirectoryURL
 
-            guard html != lastHTML || cssChanged || baseDirChanged else { return }
+            guard html != lastHTML || cssChanged || baseDirChanged || fileChanged else { return }
             lastHTML = html
 
             let styledHTML = injectSettingsCSS(into: html)
 
-            if !hasLoadedInitialPage || baseDirChanged {
+            if !hasLoadedInitialPage || baseDirChanged || fileChanged {
                 let fullHTML = injectPrism(into: styledHTML)
                 loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true

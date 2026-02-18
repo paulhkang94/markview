@@ -32,6 +32,7 @@ struct ContentView: View {
                                 WebPreviewView(
                                     html: viewModel.renderedHTML,
                                     baseDirectoryURL: viewModel.currentFileDirectoryURL,
+                                    fileIdentifier: viewModel.currentFilePath,
                                     previewFontSize: settings.previewFontSize,
                                     previewWidth: settings.previewWidth.cssValue,
                                     theme: settings.theme,
@@ -44,6 +45,7 @@ struct ContentView: View {
                             WebPreviewView(
                                 html: viewModel.renderedHTML,
                                 baseDirectoryURL: viewModel.currentFileDirectoryURL,
+                                fileIdentifier: viewModel.currentFilePath,
                                 previewFontSize: settings.previewFontSize,
                                 previewWidth: settings.previewWidth.cssValue,
                                 theme: settings.theme
