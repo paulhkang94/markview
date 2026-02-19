@@ -88,14 +88,49 @@ open -a MarkView README.md
 
 ## MCP Server (AI Integration)
 
-MarkView includes an MCP (Model Context Protocol) server for AI-powered workflows. It lets AI assistants like Claude preview markdown files directly in MarkView.
+MarkView includes an [MCP](https://modelcontextprotocol.io) server that lets AI assistants preview markdown directly in MarkView.
 
 ### Tools
 
 | Tool | Description |
 |------|-------------|
-| `preview_markdown` | Write content to a temp file and open it in MarkView |
+| `preview_markdown` | Write content to a temp file and open it in MarkView with live reload |
 | `open_file` | Open an existing `.md` file in MarkView |
+
+### Quick Start (npx)
+
+```bash
+npx mcp-server-markview
+```
+
+### Claude Code Setup
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "markview": {
+      "command": "npx",
+      "args": ["mcp-server-markview"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+Or use the built binary directly (faster startup, no Node.js required):
+
+```json
+{
+  "mcpServers": {
+    "markview": {
+      "command": "/path/to/markview/.build/release/MarkViewMCPServer",
+      "type": "stdio"
+    }
+  }
+}
+```
 
 ### Claude Desktop Setup
 
@@ -105,7 +140,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "markview": {
-      "command": "/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+      "command": "npx",
+      "args": ["mcp-server-markview"]
     }
   }
 }
