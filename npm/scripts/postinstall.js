@@ -155,19 +155,14 @@ async function main() {
 
     console.log("[mcp-server-markview] Extracting MCP server binary...");
 
-    // Use the system tar to extract only the binary we need.
-    // -x  extract
-    // -z  gzip
-    // -f  archive file
-    // --strip-components strips leading path components so the binary lands
-    //   directly at DEST_BINARY.  We strip 4 components:
-    //   MarkView.app / Contents / MacOS / markview-mcp-server → binary name only.
+    // Extract only the MCP server binary from the archive.
+    // Path is MarkView.app/Contents/MacOS/markview-mcp-server (3 dirs deep).
     execFileSync(
       "tar",
       [
         "-xzf",
         archivePath,
-        "--strip-components=4",
+        "--strip-components=3",
         "-C",
         path.dirname(DEST_BINARY),
         BINARY_IN_ARCHIVE,
