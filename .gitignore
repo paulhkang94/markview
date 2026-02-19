@@ -41,3 +41,5 @@ docs/personal/
 # Apple signing credentials
 *.p8
 *.provisionprofile
+npm/.mcpregistry_github_token
+npm/.mcpregistry_registry_token

@@ -45,9 +45,7 @@ final class PreviewViewModel: ObservableObject {
     }
 
     func contentDidChange(_ newText: String) {
-        // NOTE: Do NOT set editorContent here. The EditorView's Coordinator already set it
-        // via the @Binding in textDidChange. Setting it again triggers a second @Published
-        // notification, causing an extra SwiftUI update cycle that can race with the NSTextView.
+        editorContent = newText
         isDirty = newText != originalContent
         renderDebounced(newText)
         lintDebounced(newText)
