@@ -39,15 +39,11 @@ brew tap paulhkang94/markview
 brew install markview
 ```
 
-**Note:** If macOS shows _"MarkView.app is damaged and can't be opened"_ after installing via Homebrew, run:
-```bash
-xattr -d com.apple.quarantine /Applications/MarkView.app
-```
-This happens because the app is not yet Apple-notarized. The Homebrew cask handles this automatically on newer versions.
+The app is Apple notarized and Gatekeeper approved — no quarantine warnings on install.
 
 ### Build from source
 
-**Prerequisites:** macOS 13+, Swift 6.1+ (included with Xcode Command Line Tools)
+**Prerequisites:** macOS 14+, Swift 6.0+ (included with Xcode Command Line Tools)
 
 ```bash
 git clone https://github.com/paulhkang94/markview.git
@@ -142,11 +138,11 @@ Sources/MarkView/               # SwiftUI app (macOS 13+)
 Sources/MarkViewMCPServer/      # MCP server for AI tool integration
   main.swift                    # stdio JSON-RPC server (preview_markdown, open_file)
 
-Tests/TestRunner/               # 178 standalone tests (no XCTest)
+Tests/TestRunner/               # 341 standalone tests (no XCTest)
 Tests/VisualTester/             # 19 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
-scripts/test-mcp.sh             # 29 MCP protocol + integration tests
+scripts/test-mcp.sh             # 5 MCP protocol + integration tests
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
@@ -154,7 +150,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (276 tests)
+# Run all tests (341 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + tests)
