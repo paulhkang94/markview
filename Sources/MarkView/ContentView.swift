@@ -26,7 +26,7 @@ struct ContentView: View {
                                     },
                                     syncController: syncController
                                 )
-                                .frame(minWidth: 200)
+                                .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
                                 .accessibilityElement(children: .contain)
 
                                 WebPreviewView(
@@ -39,7 +39,7 @@ struct ContentView: View {
                                     syncController: syncController
                                 )
                                 .id(viewModel.currentFilePath ?? "")
-                                .frame(minWidth: 200)
+                                .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
                                 .accessibilityElement(children: .contain)
                             }
                         } else {
