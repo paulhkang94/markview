@@ -1,4 +1,8 @@
 name: MarkView
+configs:
+  Debug: debug
+  Release: release
+  Release-AppStore: release
 options:
   deploymentTarget:
     macOS: "14.0"
@@ -47,6 +51,10 @@ targets:
         DEVELOPMENT_TEAM: B4M2AX4B6X
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "Developer ID Application"
+      configs:
+        Release-AppStore:
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          CODE_SIGN_STYLE: Manual
 
   MarkViewQuickLook:
     type: app-extension
@@ -73,3 +81,7 @@ targets:
         CODE_SIGN_IDENTITY: "Developer ID Application"
         # QL extensions need this for WKWebView JS execution
         OTHER_SWIFT_FLAGS: -application-extension
+      configs:
+        Release-AppStore:
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          CODE_SIGN_STYLE: Manual

@@ -2,7 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Required for WKWebView JIT compilation (Prism.js syntax highlighting). Without this, JavaScript execution in the preview is blocked under hardened runtime. -->
+	<!-- App Store requires sandbox -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- File access via Open/Save panels (user-granted) -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<!-- Network access for Sentry error reporting -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Required for WKWebView JIT compilation (Prism.js syntax highlighting) -->
 	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
 	<true/>
 </dict>
