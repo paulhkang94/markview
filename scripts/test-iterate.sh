@@ -10,6 +10,10 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 MODE="${1:-}"
 
+echo "=== Bootstrap Dependencies ==="
+bash scripts/bootstrap-swiftpm.sh
+echo ""
+
 echo "=== Build ==="
 swift build 2>&1 | tail -3
 echo ""

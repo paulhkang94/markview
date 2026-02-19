@@ -26,10 +26,18 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
+          path: |
+            .build
+            ~/.cache/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Bootstrap helper self-test
+        run: bash scripts/test-bootstrap-swiftpm.sh
+
+      - name: Bootstrap SwiftPM dependencies
+        run: bash scripts/bootstrap-swiftpm.sh
 
       - name: Build (debug)
         run: swift build
@@ -61,7 +69,9 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
+          path: |
+            .build
+            ~/.cache/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-
@@ -79,10 +89,15 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
+          path: |
+            .build
+            ~/.cache/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Bootstrap SwiftPM dependencies
+        run: bash scripts/bootstrap-swiftpm.sh
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -109,10 +124,15 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
+          path: |
+            .build
+            ~/.cache/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Bootstrap SwiftPM dependencies
+        run: bash scripts/bootstrap-swiftpm.sh
 
       - name: Run MCP protocol tests
         run: bash scripts/test-mcp.sh --skip-e2e
@@ -127,10 +147,15 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
+          path: |
+            .build
+            ~/.cache/org.swift.swiftpm
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Bootstrap SwiftPM dependencies
+        run: bash scripts/bootstrap-swiftpm.sh
 
       - name: Regenerate goldens
         run: swift run MarkViewTestRunner --generate-goldens
