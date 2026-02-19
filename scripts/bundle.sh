@@ -49,6 +49,9 @@ VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST" 2>/dev/null ||
 BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo "?")
 echo "=== Building $APP_NAME.app v$VERSION (build $BUILD) ==="
 
+# Bootstrap SwiftPM dependencies before any SPM-backed build steps
+bash "$PROJECT_DIR/scripts/bootstrap-swiftpm.sh"
+
 # Step 1: Ensure .xcodeproj exists (XcodeGen)
 if [ ! -d "$PROJECT_DIR/$APP_NAME.xcodeproj" ]; then
     echo "--- Generating Xcode project ---"

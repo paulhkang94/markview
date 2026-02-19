@@ -3413,6 +3413,90 @@ runner.test("MarkViewApp uses Window (not WindowGroup) for single-window enforce
 }
 
 // =============================================================================
+// MARK: - Window Layout Behavior
+// =============================================================================
+
+print("")
+print("--- Window Layout Behavior ---")
+
+runner.test("defaultWindowSize uses fallback size without screen frame") {
+    let size = WindowLayout.defaultWindowSize(for: nil)
+    try expect(size.width == 900, "Fallback width should be 900")
+    try expect(size.height == 800, "Fallback height should be 800")
+}
+
+runner.test("defaultWindowSize uses 55% width and 85% height with minimums") {
+    let largeScreen = CGRect(x: 0, y: 0, width: 2000, height: 1200)
+    let largeSize = WindowLayout.defaultWindowSize(for: largeScreen)
+    try expect(largeSize.width == 1100, "Width should be 55% of 2000")
+    try expect(largeSize.height == 1020, "Height should be 85% of 1200")
+
+    let smallScreen = CGRect(x: 0, y: 0, width: 1000, height: 500)
+    let smallSize = WindowLayout.defaultWindowSize(for: smallScreen)
+    try expect(smallSize.width == 800, "Width should respect 800 minimum")
+    try expect(smallSize.height == 600, "Height should respect 600 minimum")
+}
+
+runner.test("resizedFrame centers preview mode width") {
+    let current = CGRect(x: 10, y: 120, width: 700, height: 640)
+    let visible = CGRect(x: 100, y: 50, width: 1600, height: 900)
+
+    let resized = WindowLayout.resizedFrame(currentFrame: current, visibleFrame: visible, showEditor: false)
+    try expect(resized.width == 880, "Preview width should be 55% of 1600")
+    try expect(resized.origin.x == 460, "Preview frame should be centered horizontally")
+    try expect(resized.origin.y == current.origin.y, "Y origin should be preserved")
+    try expect(resized.height == current.height, "Height should be preserved")
+}
+
+runner.test("resizedFrame centers editor mode width and enforces minimum") {
+    let current = CGRect(x: 10, y: 120, width: 700, height: 640)
+    let largeVisible = CGRect(x: 100, y: 50, width: 1600, height: 900)
+    let largeResized = WindowLayout.resizedFrame(currentFrame: current, visibleFrame: largeVisible, showEditor: true)
+    try expect(largeResized.width == 1280, "Editor width should be 80% of 1600")
+
+    let smallVisible = CGRect(x: 0, y: 0, width: 1000, height: 900)
+    let smallResized = WindowLayout.resizedFrame(currentFrame: current, visibleFrame: smallVisible, showEditor: true)
+    try expect(smallResized.width == 900, "Editor width should respect 900 minimum")
+}
+
+runner.test("AppDelegate captures and restores frame across fullscreen toggles") {
+    let source = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(source.contains("func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool"),
+        "AppDelegate should intercept title-bar double-click via windowShouldZoom")
+    try expect(source.contains("restoreFrameAfterFullScreen = window.frame"),
+        "AppDelegate should store the current frame before entering fullscreen")
+    try expect(source.contains("func windowWillExitFullScreen(_ notification: Notification)"),
+        "AppDelegate should restore the prior frame when leaving fullscreen")
+}
+
+// =============================================================================
+// MARK: - Dependency Bootstrap Wiring
+// =============================================================================
+
+print("")
+print("--- Dependency Bootstrap Wiring ---")
+
+runner.test("verify.sh validates bootstrap helper and bootstraps SwiftPM dependencies") {
+    let source = try String(contentsOfFile: "verify.sh", encoding: .utf8)
+    try expect(source.contains("scripts/test-bootstrap-swiftpm.sh"),
+        "verify.sh should run scripts/test-bootstrap-swiftpm.sh before full verification")
+    try expect(source.contains("scripts/bootstrap-swiftpm.sh"),
+        "verify.sh should call scripts/bootstrap-swiftpm.sh before build/test")
+}
+
+runner.test("test-iterate.sh bootstraps SwiftPM dependencies") {
+    let source = try String(contentsOfFile: "scripts/test-iterate.sh", encoding: .utf8)
+    try expect(source.contains("scripts/bootstrap-swiftpm.sh"),
+        "test-iterate.sh should call scripts/bootstrap-swiftpm.sh before build/test")
+}
+
+runner.test("bundle.sh bootstraps SwiftPM dependencies") {
+    let source = try String(contentsOfFile: "scripts/bundle.sh", encoding: .utf8)
+    try expect(source.contains("scripts/bootstrap-swiftpm.sh"),
+        "bundle.sh should call scripts/bootstrap-swiftpm.sh before SPM build steps")
+}
+
+// =============================================================================
 // MARK: - WKWebView Security Tests
 // =============================================================================
 

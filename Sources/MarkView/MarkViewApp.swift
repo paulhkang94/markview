@@ -1,13 +1,15 @@
 import Combine
 import SwiftUI
+import MarkViewCore
 import Sentry
 
 /// Intercepts file-open events at the AppKit layer before SwiftUI processes them.
 /// With `Window` (not `WindowGroup`), SwiftUI never creates duplicate windows.
 /// The AppDelegate routes file opens to the existing single window via @Published.
-final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     /// File path requested by Finder — observed by MarkViewApp via @Published.
     @Published var pendingFilePath: String?
+    private var restoreFrameAfterFullScreen: NSRect?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent automatic window tabbing (Cmd+T creating tabs)
@@ -17,6 +19,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first, url.isFileURL else { return }
         pendingFilePath = url.path
+    }
+
+    /// Treat title-bar double-click (zoom) as a fullscreen toggle.
+    /// We preserve the current frame so exiting fullscreen restores the
+    /// same dynamic size chosen by the app (preview-only or split view).
+    func windowShouldZoom(_ window: NSWindow, toFrame newFrame: NSRect) -> Bool {
+        if window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+            return false
+        }
+
+        restoreFrameAfterFullScreen = window.frame
+        window.toggleFullScreen(nil)
+        return false
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              let restoreFrameAfterFullScreen else { return }
+        window.setFrame(restoreFrameAfterFullScreen, display: true)
+        self.restoreFrameAfterFullScreen = nil
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -63,18 +86,8 @@ struct MarkViewApp: App {
         }
     }
 
-    /// Default window size for preview-only mode: 55% width, 85% height.
-    /// Editor+preview mode uses 80% width (handled by ContentView.toggleEditor).
-    /// Conservative: slightly wide is better than too narrow for readability.
     private var defaultWindowSize: CGSize {
-        if let screen = NSScreen.main {
-            let frame = screen.visibleFrame
-            return CGSize(
-                width: max(frame.width * 0.55, 800),
-                height: max(frame.height * 0.85, 600)
-            )
-        }
-        return CGSize(width: 900, height: 800)
+        WindowLayout.defaultWindowSize(for: NSScreen.main?.visibleFrame)
     }
 
     var body: some Scene {
@@ -97,6 +110,7 @@ struct MarkViewApp: App {
                     // Always apply to override macOS state restoration which saves the previous frame.
                     DispatchQueue.main.async {
                         guard let window = NSApplication.shared.windows.first(where: { $0.isVisible || $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
+                        window.delegate = appDelegate
                         let size = defaultWindowSize
                         let screen = window.screen ?? NSScreen.main
                         if let screenFrame = screen?.visibleFrame {

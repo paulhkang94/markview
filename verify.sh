@@ -6,6 +6,12 @@ cd "$PROJECT_DIR"
 
 echo "=== MarkView Verification ==="
 
+# Sanity-check bootstrap helper behavior (mocked, no network required)
+bash "$PROJECT_DIR/scripts/test-bootstrap-swiftpm.sh"
+
+# Bootstrap SwiftPM dependencies (with retries)
+bash "$PROJECT_DIR/scripts/bootstrap-swiftpm.sh"
+
 # Version sync check
 echo ""
 echo "--- Version Sync ---"
