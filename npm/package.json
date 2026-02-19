@@ -6,7 +6,7 @@
   "author": "Paul Kang <contact@paulkang.dev>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/paulhkang94/markview.git",
+    "url": "git+https://github.com/paulhkang94/markview.git",
     "directory": "npm"
   },
   "homepage": "https://github.com/paulhkang94/markview#readme",
@@ -14,7 +14,7 @@
     "url": "https://github.com/paulhkang94/markview/issues"
   },
   "bin": {
-    "mcp-server-markview": "./bin/mcp-server-markview"
+    "mcp-server-markview": "bin/mcp-server-markview"
   },
   "mcpName": "io.github.paulhkang94/markview",
   "scripts": {
