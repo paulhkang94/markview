@@ -1,0 +1,70 @@
+#!/bin/sh
+# mcp-server-markview
+#
+# Shell wrapper that locates the MarkView MCP server binary and exec's it,
+# passing through all arguments and preserving stdio (required for JSON-RPC
+# over stdio transport).
+#
+# Resolution order:
+#   1. Downloaded binary next to this script (placed by postinstall.js)
+#   2. MarkView.app installed at /Applications (system install)
+#   3. MarkView.app installed in ~/Applications (user install)
+
+set -e
+
+# Resolve the real directory of this script, following symlinks.
+# This is important when the script is invoked via `npx` which may symlink bin/.
+resolve_dir() {
+  local target="$1"
+  # Loop until target is not a symlink.
+  while [ -L "$target" ]; do
+    local link
+    link="$(readlink "$target")"
+    case "$link" in
+      /*) target="$link" ;;
+      *)  target="$(dirname "$target")/$link" ;;
+    esac
+  done
+  dirname "$target"
+}
+
+SCRIPT_DIR="$(resolve_dir "$0")"
+
+# --- Candidate 1: binary downloaded by postinstall ---
+DOWNLOADED_BINARY="$SCRIPT_DIR/markview-mcp-server-binary"
+
+if [ -x "$DOWNLOADED_BINARY" ]; then
+  exec "$DOWNLOADED_BINARY" "$@"
+fi
+
+# --- Candidate 2: /Applications (system-wide install) ---
+SYSTEM_APP_BINARY="/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+
+if [ -x "$SYSTEM_APP_BINARY" ]; then
+  exec "$SYSTEM_APP_BINARY" "$@"
+fi
+
+# --- Candidate 3: ~/Applications (user install) ---
+USER_APP_BINARY="$HOME/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+
+if [ -x "$USER_APP_BINARY" ]; then
+  exec "$USER_APP_BINARY" "$@"
+fi
+
+# --- Not found ---
+cat >&2 <<'EOF'
+mcp-server-markview: could not find the MarkView MCP server binary.
+
+To fix this, try one of the following:
+
+  1. Re-run postinstall to download the binary:
+       node "$(npm root -g)/mcp-server-markview/scripts/postinstall.js"
+
+  2. Install MarkView.app from:
+       https://github.com/paulhkang94/markview/releases
+
+  3. If postinstall failed during `npm install`, re-install the package:
+       npm install -g mcp-server-markview
+
+EOF
+exit 1
