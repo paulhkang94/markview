@@ -5,6 +5,10 @@ import AppKit
 ///
 /// Scroll sync: The editor reports its visible top source line to ScrollSyncController,
 /// and accepts scrollToLine commands from the preview pane — all bypassing SwiftUI.
+///
+/// Text integrity: The coordinator owns the "source of truth" flag (`isUserEditing`) to prevent
+/// SwiftUI's updateNSView from overwriting NSTextView content during active typing. This avoids
+/// the classic NSViewRepresentable race condition where binding updates lag behind the native view.
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
     let onChange: (String) -> Void
@@ -25,7 +29,13 @@ struct EditorView: NSViewRepresentable {
         textView.isSelectable = true
         textView.allowsUndo = true
         textView.isRichText = false
-        textView.drawsBackground = false
+
+        // Editor colors: use system label color on system background for proper contrast
+        // in both light and dark mode. drawsBackground = true so the editor pane is opaque.
+        textView.drawsBackground = true
+        textView.backgroundColor = .textBackgroundColor
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .labelColor
 
         // Find bar
         textView.usesFindBar = true
@@ -42,7 +52,7 @@ struct EditorView: NSViewRepresentable {
         // Initial content
         textView.string = text
 
-        // Apply settings
+        // Apply settings (includes font + colors)
         applySettings(to: textView)
 
         scrollView.documentView = textView
@@ -69,13 +79,27 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
-        // Only update text if it actually changed (avoid cursor reset)
-        if textView.string != text {
-            let selection = textView.selectedRanges
+        // CRITICAL: If the coordinator just set the binding from textDidChange, the NSTextView
+        // already has the correct content. Overwriting it would cause cursor jumps, character
+        // corruption, and undo stack damage. Only push text into NSTextView when it was changed
+        // externally (file reload, programmatic edit, etc.).
+        if !context.coordinator.isUserEditing, textView.string != text {
+            let textLength = (text as NSString).length
+            // Clamp saved selection ranges to the new text length to avoid out-of-bounds crashes
+            let clampedRanges: [NSValue] = textView.selectedRanges.map { rangeValue in
+                let range = rangeValue.rangeValue
+                let loc = min(range.location, textLength)
+                let len = min(range.length, textLength - loc)
+                return NSValue(range: NSRange(location: loc, length: len))
+            }
             textView.string = text
-            textView.selectedRanges = selection
+            textView.selectedRanges = clampedRanges.isEmpty
+                ? [NSValue(range: NSRange(location: textLength, length: 0))]
+                : clampedRanges
             context.coordinator.rebuildLineOffsets(from: text)
         }
+        // Reset the flag — the next updateNSView call from a non-typing source should apply
+        context.coordinator.isUserEditing = false
 
         applySettings(to: textView)
 
@@ -91,7 +115,13 @@ struct EditorView: NSViewRepresentable {
     private func applySettings(to textView: NSTextView) {
         let font = NSFont.monospacedSystemFont(ofSize: settings.editorFontSize, weight: .regular)
         textView.font = font
-        textView.typingAttributes = [.font: font]
+
+        // Typing attributes must include foreground color to ensure new text has proper contrast.
+        // Without this, newly typed text can inherit transparent/low-contrast attributes.
+        textView.typingAttributes = [
+            .font: font,
+            .foregroundColor: NSColor.labelColor
+        ]
 
         // Word wrap
         if settings.wordWrap {
@@ -113,6 +143,10 @@ struct EditorView: NSViewRepresentable {
         weak var textView: NSTextView?
         weak var scrollView: NSScrollView?
         weak var syncController: ScrollSyncController?
+        /// Set to true during textDidChange to prevent updateNSView from overwriting NSTextView.
+        /// This is the core fix for the text corruption bug. The flag is set in textDidChange
+        /// (before the binding propagates) and cleared in updateNSView (after it skips the write).
+        var isUserEditing = false
         /// When true, the next scroll event is from a programmatic scroll and should be ignored.
         var suppressNextScroll = false
         /// Last reported line to avoid redundant sync calls.
@@ -132,6 +166,10 @@ struct EditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             let newText = textView.string
+            // Set the flag BEFORE updating the binding. When SwiftUI processes the binding
+            // change and calls updateNSView, it will see isUserEditing=true and skip the
+            // text replacement — NSTextView already has the correct content.
+            isUserEditing = true
             text.wrappedValue = newText
             onChange(newText)
             rebuildLineOffsets(from: newText)

@@ -30,6 +30,9 @@ final class PreviewViewModel: ObservableObject {
     private var template: String?
     private var originalContent: String = ""
     private let linter = MarkdownLinter()
+    /// Suppresses file watcher reload during our own saves to prevent the watcher from
+    /// reading back the file we just wrote and triggering a redundant (or racy) content reload.
+    private var suppressFileWatcher = false
 
     func loadFile(at path: String) {
         currentFilePath = path
@@ -42,7 +45,9 @@ final class PreviewViewModel: ObservableObject {
     }
 
     func contentDidChange(_ newText: String) {
-        editorContent = newText
+        // NOTE: Do NOT set editorContent here. The EditorView's Coordinator already set it
+        // via the @Binding in textDidChange. Setting it again triggers a second @Published
+        // notification, causing an extra SwiftUI update cycle that can race with the NSTextView.
         isDirty = newText != originalContent
         renderDebounced(newText)
         lintDebounced(newText)
@@ -68,9 +73,19 @@ final class PreviewViewModel: ObservableObject {
         if AppSettings.shared.formatOnSave {
             autoFixLint()
         }
+        // Suppress file watcher during our own write to prevent it from reloading the file
+        // we just saved. The watcher fires on .write/.rename events from atomic saves, and
+        // without suppression it would call loadContent → replace editor content → lose cursor.
+        suppressFileWatcher = true
         try editorContent.write(toFile: path, atomically: true, encoding: .utf8)
         originalContent = editorContent
         isDirty = false
+        // Re-enable watcher after a delay that exceeds the FileWatcher debounce (100ms) plus
+        // the atomic-save re-watch delay (50ms). 250ms gives comfortable margin.
+        Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            suppressFileWatcher = false
+        }
     }
 
     func startAutoSaveTimer() {
@@ -171,6 +186,10 @@ final class PreviewViewModel: ObservableObject {
         fileWatcher = FileWatcher(path: path) { [weak self] in
             Task { @MainActor in
                 guard let self = self else { return }
+                // Ignore file watcher events triggered by our own save operation.
+                // Without this, save() → file write → watcher fires → loadContent() → replaces
+                // editor content with what we just wrote, which resets cursor position.
+                guard !self.suppressFileWatcher else { return }
                 if self.isDirty {
                     self.externalChangeConflict = true
                 } else {
