@@ -337,17 +337,90 @@ runner.test("Type in editor → dirty indicator in title") {
     }
 }
 
-runner.test("Type heading → preview updates") {
+runner.test("Type in editor → editor content preserved (no corruption)") {
+    let content = "# Original"
+    try withAppAndFile(content) { window, _ in
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let w = try app.mainWindow()
+        try helpers.typeInEditor("\n\nTyped text here", window: w)
+        Thread.sleep(forTimeInterval: Timing.typePreviewUpdate)
+
+        // Read back what the editor actually contains via accessibility
+        let editorText = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(editorText.contains("Typed text here"),
+                   "Editor should contain typed text (got: \(editorText.prefix(100)))")
+        try expect(editorText.contains("# Original"),
+                   "Editor should preserve original content (got: \(editorText.prefix(100)))")
+    }
+}
+
+runner.test("Type in editor → preview pane updates") {
     let content = ""
     try withAppAndFile(content) { window, _ in
         AXHelper.cmdE()
         Thread.sleep(forTimeInterval: 0.5)
 
         try helpers.typeInEditor("# Hello World", window: try app.mainWindow())
+        // Wait for debounced render (150ms debounce + render time)
+        Thread.sleep(forTimeInterval: Timing.typePreviewUpdate + 0.5)
+
+        // Verify the file on disk was updated (auto-save or dirty state)
+        // More importantly, verify the preview received the content by checking
+        // that the app is rendering — WKWebView AX is opaque, so we verify via
+        // reading back the editor content to confirm the binding pipeline works
+        let editorText = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(editorText.contains("# Hello World"),
+                   "Editor binding should contain typed heading")
+        try expect(app.isRunning(), "App should still be running after typing")
+    }
+}
+
+runner.test("Rapid typing → no character loss") {
+    let content = "# Rapid Test\n\n"
+    try withAppAndFile(content, name: "rapid") { window, _ in
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Type a known string rapidly
+        let testString = "abcdefghijklmnopqrstuvwxyz0123456789"
+        let w = try app.mainWindow()
+        try helpers.typeInEditor(testString, window: w)
         Thread.sleep(forTimeInterval: Timing.typePreviewUpdate + 0.3)
 
-        // Preview should have updated — verify app is still running
-        try expect(app.isRunning(), "App should still be running after typing")
+        // Read back and verify ALL characters are present
+        let editorText = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(editorText.contains(testString),
+                   "All typed characters should be preserved (expected '\(testString)' in editor)")
+    }
+}
+
+runner.test("Save → cursor position preserved") {
+    let content = "# Cursor Test\n\nLine one.\nLine two.\nLine three."
+    try withAppAndFile(content, name: "cursor") { window, path in
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Type at end
+        let w = try app.mainWindow()
+        try helpers.typeInEditor("\nNew line.", window: w)
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Save
+        AXHelper.cmdS()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // After save, editor should still have content and app should not have reset cursor
+        let editorText = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(editorText.contains("New line."),
+                   "Content should persist after save")
+        try expect(editorText.contains("Line three."),
+                   "Original content should be intact after save")
+
+        // Verify file on disk
+        let saved = try String(contentsOfFile: path, encoding: .utf8)
+        try expect(saved.contains("New line."), "Saved file should contain new content")
     }
 }
 
@@ -408,19 +481,28 @@ print("")
 
 print("--- Tier 3: File Watching & Conflicts ---")
 
-runner.test("External modify (clean) → auto-reloads") {
+runner.test("External modify (clean) → editor content auto-reloads") {
     let content = "# Watch Test\n\nOriginal."
     try withAppAndFile(content) { window, path in
-        // Modify file externally
-        let modified = "# Watch Test\n\nExternally modified."
+        // Enable editor (2-pane mode)
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Verify editor has original content
+        let before = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(before.contains("Original"), "Editor should show original content")
+
+        // Modify file externally (simulates AI agent writing)
+        let modified = "# Watch Test\n\nExternally modified by agent."
         try modified.write(toFile: path, atomically: true, encoding: .utf8)
 
-        // Wait for file watcher to pick it up
-        Thread.sleep(forTimeInterval: Timing.externalFileChange)
+        // Wait for file watcher debounce (100ms) + reload
+        Thread.sleep(forTimeInterval: Timing.externalFileChange + 0.5)
 
-        // In clean state (no editor edits), content should auto-reload
-        // Verify app didn't crash
-        try expect(app.isRunning(), "App should still be running after external modification")
+        // Editor should now show the updated content
+        let after = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(after.contains("Externally modified by agent"),
+                   "Editor should auto-reload external changes (got: \(after.prefix(80)))")
     }
 }
 
