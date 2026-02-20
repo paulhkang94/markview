@@ -2980,8 +2980,8 @@ runner.test("Quick Look Info.plist declares principal class") {
 
 runner.test("Quick Look Info.plist uses module-qualified principal class") {
     // Swift requires module.ClassName format for macOS to find the class
-    try expect(qlPlist.contains("MarkViewQuickLook.PreviewViewController"),
-        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewViewController")
+    try expect(qlPlist.contains("MarkViewQuickLook.PreviewProvider"),
+        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewProvider")
 }
 
 runner.test("Quick Look Info.plist has QLSupportedContentTypes inside NSExtensionAttributes") {
@@ -3002,10 +3002,10 @@ runner.test("Quick Look Info.plist has LSMinimumSystemVersion") {
         "Info.plist must declare LSMinimumSystemVersion for extension registration")
 }
 
-runner.test("Quick Look Info.plist does NOT have QLIsDataBasedPreview") {
-    // View-controller path (QLPreviewingController) must NOT declare QLIsDataBasedPreview
-    try expect(!qlPlist.contains("QLIsDataBasedPreview"),
-        "Info.plist must NOT declare QLIsDataBasedPreview (view-controller path, not data-based)")
+runner.test("Quick Look Info.plist declares QLIsDataBasedPreview") {
+    // Data-based path (QLPreviewProvider) requires QLIsDataBasedPreview = true
+    try expect(qlPlist.contains("QLIsDataBasedPreview"),
+        "Info.plist must declare QLIsDataBasedPreview for data-based preview path")
 }
 
 runner.test("Quick Look Info.plist does not claim public.plain-text") {
@@ -3027,69 +3027,39 @@ runner.test("Quick Look entitlements enable app sandbox") {
         "Quick Look extension entitlements must enable app sandbox (required by pluginkit)")
 }
 
-runner.test("Quick Look entitlements allow library validation bypass for WKWebView") {
+runner.test("Quick Look entitlements do NOT have WKWebView workarounds") {
+    // Data-based path doesn't need WKWebView entitlements — these block App Store
     let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
     let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(entitlements.contains("com.apple.security.cs.disable-library-validation"),
-        "Quick Look extension needs disable-library-validation for WKWebView WebContent process")
+    try expect(!entitlements.contains("com.apple.security.cs.disable-library-validation"),
+        "Data-based QL extension must NOT have disable-library-validation (WKWebView workaround)")
+    try expect(!entitlements.contains("com.apple.security.network.client"),
+        "Data-based QL extension must NOT have network.client (WKWebView workaround)")
+    try expect(!entitlements.contains("temporary-exception.files.absolute-path.read-only"),
+        "Data-based QL extension must NOT have temporary-exception (blocks App Store)")
 }
 
-runner.test("Quick Look entitlements allow network client for WKWebView IPC") {
-    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
-    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(entitlements.contains("com.apple.security.network.client"),
-        "Quick Look extension needs network.client for WKWebView WebContent subprocess IPC")
+runner.test("Quick Look extension does NOT import WebKit") {
+    // Data-based path renders HTML directly — no WKWebView needed
+    try expect(!qlSource.contains("import WebKit"),
+        "Data-based QL extension must NOT import WebKit (no WKWebView)")
 }
 
-runner.test("Quick Look entitlements allow file read access") {
-    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
-    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(entitlements.contains("temporary-exception.files.absolute-path.read-only"),
-        "Quick Look extension needs file read access for WebContent process")
+runner.test("Quick Look extension uses QLPreviewProvider") {
+    // Data-based path for sandbox-compatible rendering
+    try expect(qlSource.contains("QLPreviewProvider"),
+        "Extension must subclass QLPreviewProvider (data-based path)")
 }
 
-runner.test("Quick Look extension imports WebKit") {
-    // WKWebView is used for rendering in the view-controller path
-    try expect(qlSource.contains("import WebKit"), "Extension must import WebKit for WKWebView rendering")
+runner.test("Quick Look extension implements providePreview") {
+    // QLPreviewProvider entry point
+    try expect(qlSource.contains("providePreview"),
+        "Extension must implement providePreview(for:) for QLPreviewProvider")
 }
 
-runner.test("Quick Look extension uses QLPreviewingController") {
-    // View-controller path provides reliable preferredContentSize
-    try expect(qlSource.contains("QLPreviewingController"),
-        "Extension must conform to QLPreviewingController (view-controller path for reliable sizing)")
-}
-
-runner.test("Quick Look extension uses preparePreviewOfFile") {
-    // QLPreviewingController entry point (replaces providePreview from data-based path)
-    try expect(qlSource.contains("preparePreviewOfFile"),
-        "Extension must implement preparePreviewOfFile(at:) for QLPreviewingController")
-}
-
-runner.test("Quick Look extension uses screen-relative height") {
-    // Dynamic sizing: use screen height percentage for taller preview panel
-    try expect(qlSource.contains("visibleFrame") || qlSource.contains("NSScreen"),
-        "Extension should use screen-relative sizing for optimal preview height")
-}
-
-runner.test("Quick Look extension content size is at least 1000px wide") {
-    // Small content size hints cause Quick Look to open a tiny window
-    try expect(qlSource.contains("width: 1200") || qlSource.contains("width:1200"),
-        "Content size hint width should be >= 1200 for a properly-sized QL window")
-}
-
-runner.test("Quick Look extension detects system appearance and injects matching CSS") {
-    // WKWebView's WebContent process in extension sandbox doesn't inherit system appearance,
-    // so @media (prefers-color-scheme) doesn't fire. Must detect in Swift and inject CSS directly.
-    try expect(qlSource.contains("isDarkMode") && qlSource.contains("darkModeCSS"),
-        "Extension must detect dark mode in Swift and inject appropriate CSS (media queries don't work in sandbox)")
-}
-
-runner.test("Quick Look extension has dark mode CSS with proper contrast colors") {
-    // Regression guard: dark mode table text was unreadable (faint gray on dark bg)
-    try expect(qlSource.contains("color: #e6edf3") && qlSource.contains("background: #0d1117"),
-        "Dark mode CSS must include high-contrast body colors")
-    try expect(qlSource.contains("th, td { border-color: #3d444d"),
-        "Dark mode CSS must include table border/text colors for readability")
+runner.test("Quick Look extension returns QLPreviewReply with HTML") {
+    try expect(qlSource.contains("QLPreviewReply"),
+        "Extension must return QLPreviewReply with HTML data")
 }
 
 runner.test("Quick Look extension overrides max-width for full-width content") {
