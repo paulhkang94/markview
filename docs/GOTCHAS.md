@@ -155,3 +155,17 @@ If a test checks `/Applications/MarkView.app`, CI must run `bundle.sh --install`
 ### Disable competing QL extensions before removing their apps
 
 `pluginkit -e ignore -i <bundle-id>` BEFORE deleting an app that provides a QL extension. macOS caches the extension as the preferred handler; deleting the app causes "Extension not found" errors. `qlmanage -r` + `killall quicklookd` + `killall Finder` to clear caches after.
+
+### QLPreviewProvider (data-based) renders as thumbnails in Finder column view
+
+`QLPreviewProvider` returns data (HTML/PDF/image) that QL renders. In Finder column view, this produces a **thumbnail** — a small, non-interactive preview image. No `contentSize` value fixes this; it's how QL displays data-based previews in the sidebar.
+
+`QLPreviewingController` (view-based) provides an `NSViewController` that fills the entire panel — scrollable, interactive, full-size. Use this for document previews.
+
+For sandbox-safe rendering without WKWebView, use `NSAttributedString(html:baseURL:documentAttributes:)` in an `NSTextView`. It handles basic HTML/CSS (headings, bold, tables, blockquotes) and doesn't spawn XPC subprocesses.
+
+**Dark mode caveat:** `NSAttributedString(html:)` bakes in CSS colors at parse time — it doesn't evaluate `@media (prefers-color-scheme: dark)`. You must post-process the attributed string: remap dark foreground colors to light, strip light background colors.
+
+### NSTextView spell/grammar checking crashes in QL extension sandbox
+
+`NSTextView` enables spell checking by default, which triggers XPC service lookups (`com.apple.TextInput`) blocked by the QL extension sandbox. Always set `isContinuousSpellCheckingEnabled = false` and `isGrammarCheckingEnabled = false` in extension contexts.

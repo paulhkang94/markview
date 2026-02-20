@@ -122,18 +122,10 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
         let linkColor = NSColor(red: 0.34, green: 0.65, blue: 1.0, alpha: 1)  // ~#58a6ff
         let fullRange = NSRange(location: 0, length: mutable.length)
 
-        mutable.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
-            if let color = value as? NSColor {
-                // Remap dark colors to light. Leave already-light colors alone.
-                let brightness = color.brightnessComponent
-                if brightness < 0.5 {
-                    mutable.addAttribute(.foregroundColor, value: lightText, range: range)
-                }
-            } else {
-                // No explicit foreground color = uses system default (black). Set to light.
-                mutable.addAttribute(.foregroundColor, value: lightText, range: range)
-            }
-        }
+        // Set ALL text to light color. NSAttributedString(html:) bakes in CSS colors
+        // at parse time in an unpredictable color space — brightness checks are unreliable.
+        // Since the entire preview is dark mode, just force all text to light.
+        mutable.addAttribute(.foregroundColor, value: lightText, range: fullRange)
 
         // Fix link colors
         mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
