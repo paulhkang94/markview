@@ -23,7 +23,7 @@ enum ExtensionMain {
 
 /// Data-based Quick Look preview for Markdown files.
 /// Returns rendered HTML directly — no WKWebView, no sandbox issues.
-class PreviewProvider: QLPreviewProvider, @preconcurrency QLPreviewingController {
+class PreviewProvider: QLPreviewProvider {
 
     private static let logger = Logger(subsystem: "dev.paulkang.MarkView.QuickLook", category: "preview")
 
