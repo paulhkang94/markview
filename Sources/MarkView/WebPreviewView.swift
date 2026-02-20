@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import MarkViewCore
 
 struct WebPreviewView: NSViewRepresentable {
     let html: String
@@ -23,7 +24,7 @@ struct WebPreviewView: NSViewRepresentable {
 
         // Register message handler for scroll sync: JS posts source line to Swift.
         let contentController = config.userContentController
-        contentController.add(context.coordinator, name: "scrollSync")
+        contentController.add(context.coordinator, name: TemplateConstants.scrollSyncHandler)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -97,7 +98,7 @@ struct WebPreviewView: NSViewRepresentable {
 
         /// Receives source line messages from the JS scroll listener.
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "scrollSync" else { return }
+            guard message.name == TemplateConstants.scrollSyncHandler else { return }
 
             if suppressNextScroll {
                 suppressNextScroll = false
@@ -344,7 +345,7 @@ struct WebPreviewView: NSViewRepresentable {
 
             if css.isEmpty { return html }
 
-            let styleTag = "<style id=\"settings-override\">\(css)</style>"
+            let styleTag = "<style id=\"\(TemplateConstants.settingsStyleID)\">\(css)</style>"
             return html.replacingOccurrences(of: "</head>", with: "\(styleTag)\n</head>")
         }
 
@@ -356,7 +357,7 @@ struct WebPreviewView: NSViewRepresentable {
 
         private func updateContentViaJS(_ html: String, in webView: WKWebView) {
             let bodyContent: String
-            if let startRange = html.range(of: "<article id=\"content\"", options: .literal).flatMap({ html.range(of: ">", range: $0.upperBound..<html.endIndex) }),
+            if let startRange = html.range(of: "<article id=\"\(TemplateConstants.contentElementID)\"", options: .literal).flatMap({ html.range(of: ">", range: $0.upperBound..<html.endIndex) }),
                let endRange = html.range(of: "</article>") {
                 bodyContent = String(html[startRange.upperBound..<endRange.lowerBound])
             } else if let startRange = html.range(of: "<body>"),
@@ -384,11 +385,11 @@ struct WebPreviewView: NSViewRepresentable {
             let js = """
             (function() {
                 var scrollPos = window.scrollY;
-                var contentEl = document.getElementById('content');
+                var contentEl = document.getElementById('\(TemplateConstants.contentElementID)');
                 if (contentEl) {
                     contentEl.innerHTML = \(escapedContent);
                 }
-                var existing = document.getElementById('settings-override');
+                var existing = document.getElementById('\(TemplateConstants.settingsStyleID)');
                 if (existing) { existing.textContent = \(Self.jsStringLiteral(css)); }
                 if (typeof Prism !== 'undefined') {
                     Prism.highlightAll();

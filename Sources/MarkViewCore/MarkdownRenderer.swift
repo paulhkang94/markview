@@ -69,7 +69,7 @@ public final class MarkdownRenderer {
     /// If a template is provided, replaces {{CONTENT}}. Otherwise uses built-in template.
     public static func wrapInTemplate(_ bodyHTML: String, template: String? = nil) -> String {
         if let template = template {
-            return template.replacingOccurrences(of: "{{CONTENT}}", with: bodyHTML)
+            return template.replacingOccurrences(of: TemplateConstants.contentPlaceholder, with: bodyHTML)
         }
         return """
         <!DOCTYPE html>

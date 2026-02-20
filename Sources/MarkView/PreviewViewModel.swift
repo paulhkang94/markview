@@ -112,12 +112,18 @@ final class PreviewViewModel: ObservableObject {
 
     private func loadTemplate() {
         guard let url = ResourceBundle.url(forResource: "template", withExtension: "html", subdirectory: "Resources") else {
-            AppLogger.render.warning("Template resource not found in bundle")
-            AppLogger.breadcrumb("Template resource missing", category: "render", level: .warning)
+            AppLogger.render.error("Template resource not found in bundle — preview will use fallback template")
+            AppLogger.captureError(CocoaError(.fileNoSuchFile), category: "render", message: "Template resource missing from bundle")
+            assertionFailure("Template resource not found — ResourceBundle may not be resolving correctly")
             return
         }
         do {
             template = try String(contentsOf: url, encoding: .utf8)
+            // Verify template contract: must contain required elements
+            assert(template?.contains(TemplateConstants.contentPlaceholder) == true,
+                   "Template missing \(TemplateConstants.contentPlaceholder) placeholder")
+            assert(template?.contains("id=\"\(TemplateConstants.contentElementID)\"") == true,
+                   "Template missing element with id=\"\(TemplateConstants.contentElementID)\"")
         } catch {
             AppLogger.render.error("Failed to load template: \(error.localizedDescription)")
             AppLogger.captureError(error, category: "render", message: "Template load failed")

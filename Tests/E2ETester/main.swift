@@ -377,6 +377,40 @@ runner.test("Type in editor → preview pane updates") {
     }
 }
 
+runner.test("Type in editor → preview DOM actually renders content") {
+    // This test crosses the editor→viewmodel→webview boundary.
+    // Previous test only verified editor content (binding). This verifies
+    // the WKWebView actually rendered the content by checking AXStaticText
+    // children within the AXWebArea. Catches: nil template, JS fast-path
+    // failure, missing element IDs — all of which are silent failures.
+    let content = ""
+    try withAppAndFile(content, name: "dom-verify") { window, _ in
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Type distinctive text that we can search for in the preview
+        let marker = "UNIQUEPREVIEWMARKER42"
+        try helpers.typeInEditor("# \(marker)", window: try app.mainWindow())
+        // Wait for debounced render + WKWebView load
+        Thread.sleep(forTimeInterval: Timing.typePreviewUpdate + 1.0)
+
+        let w = try app.mainWindow()
+        // Check if the preview (AXWebArea) contains our marker text
+        if let preview = helpers.findPreview(in: w) {
+            let previewTexts = helpers.allStaticText(in: preview)
+            let found = previewTexts.contains(where: { $0.contains(marker) })
+            try expect(found,
+                "Preview DOM must contain typed text '\(marker)' — found texts: \(previewTexts.prefix(5))")
+        } else {
+            // Fallback: check all static text in window for the marker
+            let allTexts = helpers.allStaticText(in: w)
+            let found = allTexts.contains(where: { $0.contains(marker) })
+            try expect(found,
+                "Preview must render typed text '\(marker)' — no AXWebArea found, checked all texts: \(allTexts.prefix(10))")
+        }
+    }
+}
+
 runner.test("Rapid typing → no character loss") {
     let content = "# Rapid Test\n\n"
     try withAppAndFile(content, name: "rapid") { window, _ in

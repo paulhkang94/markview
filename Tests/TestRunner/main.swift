@@ -434,9 +434,33 @@ runner.test("template wrapping") {
 }
 
 runner.test("custom template") {
-    let template = "<html><body>{{CONTENT}}</body></html>"
+    let template = "<html><body>\(TemplateConstants.contentPlaceholder)</body></html>"
     let html = MarkdownRenderer.wrapInTemplate("<p>Test</p>", template: template)
     try expect(html == "<html><body><p>Test</p></body></html>", "Custom template failed")
+}
+
+runner.test("template.html contract: contains required element IDs and placeholder") {
+    // This test catches drift between template.html and the code that references it.
+    // If template.html is modified to remove/rename these, this test fails.
+    let templatePath = "Sources/MarkView/Resources/template.html"
+    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
+
+    try expect(template.contains(TemplateConstants.contentPlaceholder),
+        "template.html must contain '\(TemplateConstants.contentPlaceholder)' — MarkdownRenderer.wrapInTemplate depends on this")
+    try expect(template.contains("id=\"\(TemplateConstants.contentElementID)\""),
+        "template.html must contain id=\"\(TemplateConstants.contentElementID)\" — WebPreviewView JS fast-path depends on this")
+    try expect(template.contains("</head>"),
+        "template.html must contain </head> — CSS injection inserts before this tag")
+    try expect(template.contains("</body>"),
+        "template.html must contain </body> — Prism.js injection inserts before this tag")
+}
+
+runner.test("TemplateConstants.contentPlaceholder used by wrapInTemplate") {
+    // Verify the constant is actually what wrapInTemplate replaces
+    let template = "BEFORE\(TemplateConstants.contentPlaceholder)AFTER"
+    let result = MarkdownRenderer.wrapInTemplate("<p>X</p>", template: template)
+    try expect(result == "BEFORE<p>X</p>AFTER", "wrapInTemplate must replace TemplateConstants.contentPlaceholder")
+    try expect(!result.contains(TemplateConstants.contentPlaceholder), "Placeholder must be fully replaced")
 }
 
 // MARK: - Fixture-Based GFM Compliance
@@ -3239,6 +3263,34 @@ if appBundleExists {
         let directPath = "\(appBundlePath)/Contents/Resources/prism-bundle.min.js"
         try expect(FileManager.default.fileExists(atPath: spmPath) || FileManager.default.fileExists(atPath: directPath),
             "prism-bundle.min.js must exist in SPM bundle or Contents/Resources/")
+    }
+
+    // Runtime resource load tests — verify resources are actually loadable,
+    // not just that files exist on disk. This catches ResourceBundle path issues.
+    runner.test("Runtime: template.html loadable from app bundle") {
+        let appBundle = Bundle(path: "\(appBundlePath)")
+        // Try SPM bundle first, then direct in Resources/
+        let spmBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle"
+        let resourceBundle = Bundle(path: spmBundlePath) ?? appBundle
+        let templateURL = resourceBundle?.url(forResource: "template", withExtension: "html", subdirectory: "Resources")
+            ?? resourceBundle?.url(forResource: "template", withExtension: "html")
+        try expect(templateURL != nil, "template.html must be loadable via Bundle resource lookup (not just file existence)")
+        if let url = templateURL {
+            let content = try String(contentsOf: url, encoding: .utf8)
+            try expect(content.contains(TemplateConstants.contentPlaceholder),
+                "template.html must contain \(TemplateConstants.contentPlaceholder) placeholder")
+            try expect(content.contains("id=\"\(TemplateConstants.contentElementID)\""),
+                "template.html must contain article with id=\"\(TemplateConstants.contentElementID)\"")
+        }
+    }
+
+    runner.test("Runtime: prism-bundle.min.js loadable from app bundle") {
+        let appBundle = Bundle(path: "\(appBundlePath)")
+        let spmBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle"
+        let resourceBundle = Bundle(path: spmBundlePath) ?? appBundle
+        let prismURL = resourceBundle?.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources")
+            ?? resourceBundle?.url(forResource: "prism-bundle.min", withExtension: "js")
+        try expect(prismURL != nil, "prism-bundle.min.js must be loadable via Bundle resource lookup")
     }
 
     runner.test("App bundle contains PlugIns directory") {
