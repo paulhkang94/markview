@@ -1,10 +1,15 @@
 import AppKit
+import Foundation
 import MarkViewCore
 import QuickLookUI
+import WebKit
 import os
 
 // MARK: - Extension entry point
 
+/// Calls NSExtensionMain() to start the XPC service loop.
+/// macOS loads this binary, calls main, which starts the extension hosting runtime.
+/// The runtime then instantiates NSExtensionPrincipalClass from Info.plist.
 @_silgen_name("NSExtensionMain")
 func NSExtensionMain() -> Int32
 
@@ -17,132 +22,138 @@ enum ExtensionMain {
 
 // MARK: - Quick Look Preview Controller
 
-/// View-based Quick Look preview for Markdown files.
-/// Uses NSAttributedString(html:) in an NSTextView — no WKWebView, no sandbox issues,
-/// and fills the entire Quick Look panel (unlike data-based QLPreviewProvider which
-/// renders as a thumbnail in Finder column view).
-class PreviewViewController: NSViewController, @preconcurrency QLPreviewingController {
+/// Quick Look preview extension for Markdown files.
+/// Uses QLPreviewingController (view-controller path) with WKWebView for full-fidelity
+/// rendering (CSS, Prism.js syntax highlighting, dark mode). Writes HTML to a temp file
+/// and loads via file URL for sandbox compatibility.
+class PreviewViewController: NSViewController, @preconcurrency QLPreviewingController, WKNavigationDelegate {
 
     private static let logger = Logger(subsystem: "dev.paulkang.MarkView.QuickLook", category: "preview")
 
-    private let scrollView = NSScrollView()
-    private let textView = NSTextView()
+    /// Layout-only CSS injected into every preview. Color theming is handled by
+    /// `darkModeCSS` / `lightModeCSS` which are selected at runtime based on
+    /// the system appearance (WKWebView in extension sandbox doesn't inherit it).
+    static let layoutCSS = """
+        body { max-width: 100% !important; padding: 24px 48px !important; }
+    """
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
-        preferredContentSize = NSSize(width: screen.width * 0.5, height: screen.height)
+    /// Dark mode overrides — matches the template's @media (prefers-color-scheme: dark) block.
+    /// Duplicated here because WKWebView's WebContent process in the extension sandbox
+    /// does not receive the host system's appearance, so media queries don't fire.
+    static let darkModeCSS = """
+        body { color: #e6edf3 !important; background: #0d1117 !important; }
+        a { color: #58a6ff !important; }
+        code:not([class*="language-"]) { background: #343942 !important; color: #e6edf3 !important; }
+        pre { background: #161b22 !important; color: #e6edf3 !important; }
+        th, td { border-color: #3d444d !important; color: #e6edf3 !important; }
+        tr { background-color: #0d1117 !important; border-top-color: #3d444db3 !important; }
+        tr:nth-child(2n) { background-color: #151b23 !important; }
+        blockquote { border-left-color: #3d444d !important; color: #8b949e !important; }
+        hr { border-top-color: #3d444d !important; }
+        h1, h2, h3, h4, h5 { color: #e6edf3 !important; }
+        h1, h2 { border-bottom-color: #3d444d !important; }
+        h6 { color: #8b949e !important; }
+    """
+
+    /// Light mode — the template defaults are light, so only layout overrides needed.
+    static let lightModeCSS = ""
+
+    private var webView: WKWebView!
+    private var completionHandler: ((Error?) -> Void)?
+    private var tempFileURL: URL?
+
+    /// Detect whether the system is in dark mode.
+    private var isDarkMode: Bool {
+        NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
     override func loadView() {
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = true
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = true
-        textView.isContinuousSpellCheckingEnabled = false
-        textView.isGrammarCheckingEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainerInset = NSSize(width: 24, height: 24)
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-
-        scrollView.documentView = textView
-        self.view = scrollView
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 900), configuration: configuration)
+        webView.autoresizingMask = [.height, .width]
+        webView.navigationDelegate = self
+        view = webView
     }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        let height = screen.map { $0.visibleFrame.height * 0.9 } ?? 900
+        preferredContentSize = NSSize(width: 1200, height: height)
+    }
+
+    // MARK: - QLPreviewingController (callback-based API)
 
     func preparePreviewOfFile(at url: URL, completionHandler handler: @escaping (Error?) -> Void) {
+        self.completionHandler = handler
+
+        let markdown: String
         do {
-            let markdown = try String(contentsOf: url, encoding: .utf8)
-
-            let bodyHTML = MarkdownRenderer.renderHTML(from: markdown)
-            let accessible = MarkdownRenderer.postProcessForAccessibility(bodyHTML)
-            let document = MarkdownRenderer.wrapInTemplate(accessible)
-
-            guard let htmlData = document.data(using: .utf8) else {
-                handler(CocoaError(.fileReadCorruptFile))
-                return
-            }
-
-            guard let attributed = NSAttributedString(
-                html: htmlData,
-                baseURL: url.deletingLastPathComponent(),
-                documentAttributes: nil
-            ) else {
-                handler(CocoaError(.fileReadCorruptFile))
-                return
-            }
-
-            // NSAttributedString(html:) renders with small default fonts (~12px).
-            // Scale all fonts up by 1.35x to match the app's 16px base / WKWebView rendering.
-            var processed = Self.scaleFonts(in: attributed, by: 1.6)
-
-            // NSAttributedString(html:) parses CSS at creation time — it doesn't respect
-            // @media (prefers-color-scheme: dark). In dark mode, the template's light-mode
-            // colors (dark text #1f2328 on white) produce invisible text on our dark background.
-            // Fix: rewrite foreground colors to light equivalents.
-            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            if isDark {
-                processed = Self.applyDarkModeColors(to: processed)
-            }
-
-            textView.textStorage?.setAttributedString(processed)
-            textView.backgroundColor = isDark ? NSColor(red: 0.05, green: 0.07, blue: 0.09, alpha: 1) : .white
-            scrollView.backgroundColor = textView.backgroundColor
-
-            handler(nil)
+            markdown = try String(contentsOf: url, encoding: .utf8)
         } catch {
-            Self.logger.error("Preview failed: \(error.localizedDescription)")
+            Self.logger.error("Quick Look failed to read \(url.path): \(error.localizedDescription)")
             handler(error)
+            return
+        }
+
+        let html = MarkdownRenderer.renderHTML(from: markdown)
+        let accessible = MarkdownRenderer.postProcessForAccessibility(html)
+        var document = MarkdownRenderer.wrapInTemplate(accessible)
+
+        // Inject appearance-appropriate CSS. We detect dark mode in Swift because
+        // WKWebView's WebContent process doesn't inherit the system appearance in
+        // the extension sandbox, so @media (prefers-color-scheme) doesn't work.
+        let colorCSS = isDarkMode ? Self.darkModeCSS : Self.lightModeCSS
+        let fullCSS = "<style>\(Self.layoutCSS)\n\(colorCSS)</style>"
+        document = document.replacingOccurrences(of: "</head>", with: "\(fullCSS)</head>")
+
+        // Write to temp file and load via file URL — more reliable in sandboxed extensions
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempFile = tempDir.appendingPathComponent("ql-preview-\(UUID().uuidString).html")
+        do {
+            try document.write(to: tempFile, atomically: true, encoding: .utf8)
+            tempFileURL = tempFile
+            webView.loadFileURL(tempFile, allowingReadAccessTo: tempDir)
+        } catch {
+            Self.logger.error("Failed to write temp HTML: \(error.localizedDescription)")
+            webView.loadHTMLString(document, baseURL: nil)
         }
     }
 
-    /// Scale all fonts in an attributed string by a multiplier.
-    private static func scaleFonts(in attrString: NSAttributedString, by scale: CGFloat) -> NSAttributedString {
-        let mutable = NSMutableAttributedString(attributedString: attrString)
-        mutable.enumerateAttribute(.font, in: NSRange(location: 0, length: mutable.length)) { value, range, _ in
-            guard let font = value as? NSFont else { return }
-            let scaled = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * scale) ?? font
-            mutable.addAttribute(.font, value: scaled, range: range)
+    // MARK: - WKNavigationDelegate
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let handler = completionHandler {
+            handler(nil)
+            completionHandler = nil
         }
-        return mutable
+        cleanupTempFile()
     }
 
-    /// Rewrite foreground colors for dark mode. NSAttributedString(html:) bakes in the
-    /// template's light-mode CSS colors, so we remap dark text to light text.
-    private static func applyDarkModeColors(to attrString: NSAttributedString) -> NSAttributedString {
-        let mutable = NSMutableAttributedString(attributedString: attrString)
-        let lightText = NSColor(red: 0.90, green: 0.93, blue: 0.95, alpha: 1) // ~#e6edf3
-        let linkColor = NSColor(red: 0.34, green: 0.65, blue: 1.0, alpha: 1)  // ~#58a6ff
-        let fullRange = NSRange(location: 0, length: mutable.length)
-
-        // Set ALL text to light color. NSAttributedString(html:) bakes in CSS colors
-        // at parse time in an unpredictable color space — brightness checks are unreliable.
-        // Since the entire preview is dark mode, just force all text to light.
-        mutable.addAttribute(.foregroundColor, value: lightText, range: fullRange)
-
-        // Fix link colors
-        mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
-            if value != nil {
-                mutable.addAttribute(.foregroundColor, value: linkColor, range: range)
-            }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Self.logger.error("WKWebView didFail: \(error.localizedDescription)")
+        if let handler = completionHandler {
+            handler(error)
+            completionHandler = nil
         }
+        cleanupTempFile()
+    }
 
-        // Remove all background colors — NSAttributedString(html:) bakes in the template's
-        // light-mode backgrounds (white #fff, light gray #f6f8fa for table rows). Color space
-        // conversion makes brightness checks unreliable, so strip them all in dark mode.
-        mutable.enumerateAttribute(.backgroundColor, in: fullRange) { value, range, _ in
-            if value != nil {
-                mutable.removeAttribute(.backgroundColor, range: range)
-            }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        Self.logger.error("WKWebView didFailProvisionalNavigation: \(error.localizedDescription)")
+        if let handler = completionHandler {
+            handler(error)
+            completionHandler = nil
         }
+        cleanupTempFile()
+    }
 
-        return mutable
+    private func cleanupTempFile() {
+        if let url = tempFileURL {
+            try? FileManager.default.removeItem(at: url)
+            tempFileURL = nil
+        }
     }
 }

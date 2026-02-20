@@ -3051,40 +3051,42 @@ runner.test("Quick Look entitlements enable app sandbox") {
         "Quick Look extension entitlements must enable app sandbox (required by pluginkit)")
 }
 
-runner.test("Quick Look entitlements do NOT have WKWebView workarounds") {
-    // NSAttributedString path doesn't need WKWebView entitlements — these block App Store
+runner.test("Quick Look entitlements have WKWebView sandbox workarounds") {
+    // WKWebView in QL extension sandbox needs these entitlements to launch WebContent process.
+    // These block App Store — when App Store submission is needed, switch to NSAttributedString.
     let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
     let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(!entitlements.contains("com.apple.security.cs.disable-library-validation"),
-        "QL extension must NOT have disable-library-validation (WKWebView workaround)")
-    try expect(!entitlements.contains("com.apple.security.network.client"),
-        "QL extension must NOT have network.client (WKWebView workaround)")
-    try expect(!entitlements.contains("temporary-exception.files.absolute-path.read-only"),
-        "QL extension must NOT have temporary-exception (blocks App Store)")
+    try expect(entitlements.contains("com.apple.security.cs.disable-library-validation"),
+        "WKWebView QL extension needs disable-library-validation for WebContent process")
+    try expect(entitlements.contains("com.apple.security.network.client"),
+        "WKWebView QL extension needs network.client for WebKit IPC")
 }
 
-runner.test("Quick Look extension does NOT import WebKit") {
-    // NSAttributedString renders HTML natively — no WKWebView sandbox issues
-    try expect(!qlSource.contains("import WebKit"),
-        "QL extension must NOT import WebKit (no WKWebView)")
+runner.test("Quick Look extension imports WebKit") {
+    try expect(qlSource.contains("import WebKit"),
+        "QL extension must import WebKit for WKWebView rendering")
 }
 
 runner.test("Quick Look extension uses QLPreviewingController") {
-    // View-based path: full-panel, scrollable preview via NSTextView
     try expect(qlSource.contains("QLPreviewingController"),
         "Extension must conform to QLPreviewingController (view-based path)")
 }
 
 runner.test("Quick Look extension implements preparePreviewOfFile") {
-    // QLPreviewingController entry point
     try expect(qlSource.contains("preparePreviewOfFile"),
         "Extension must implement preparePreviewOfFile(at:completionHandler:)")
 }
 
-runner.test("Quick Look extension uses NSAttributedString for HTML rendering") {
-    // NSAttributedString(html:) renders HTML without WKWebView — no sandbox issues
-    try expect(qlSource.contains("NSAttributedString"),
-        "Extension must use NSAttributedString(html:) for sandbox-safe rendering")
+runner.test("Quick Look extension uses WKWebView for full-fidelity rendering") {
+    try expect(qlSource.contains("WKWebView"),
+        "Extension must use WKWebView for CSS + Prism.js rendering")
+}
+
+runner.test("Quick Look extension handles dark mode via CSS injection") {
+    // WKWebView in sandbox doesn't inherit system appearance, so dark mode
+    // must be detected in Swift and injected as CSS overrides.
+    try expect(qlSource.contains("darkModeCSS") && qlSource.contains("isDarkMode"),
+        "Extension must detect dark mode in Swift and inject CSS (media queries don't work in sandbox)")
 }
 
 // Verify bundle.sh includes PlugIns directory creation
