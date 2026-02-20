@@ -28,6 +28,12 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
     private let scrollView = NSScrollView()
     private let textView = NSTextView()
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        preferredContentSize = NSSize(width: screen.width * 0.5, height: screen.height)
+    }
+
     override func loadView() {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -75,7 +81,7 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
 
             // NSAttributedString(html:) renders with small default fonts (~12px).
             // Scale all fonts up by 1.35x to match the app's 16px base / WKWebView rendering.
-            var processed = Self.scaleFonts(in: attributed, by: 1.35)
+            var processed = Self.scaleFonts(in: attributed, by: 1.6)
 
             // NSAttributedString(html:) parses CSS at creation time — it doesn't respect
             // @media (prefers-color-scheme: dark). In dark mode, the template's light-mode
