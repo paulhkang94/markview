@@ -61,15 +61,19 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
                 return
             }
 
-            let attributed = NSAttributedString(
+            guard let attributed = NSAttributedString(
                 html: htmlData,
                 baseURL: url.deletingLastPathComponent(),
                 documentAttributes: nil
-            )
-
-            if let attributed = attributed {
-                textView.textStorage?.setAttributedString(attributed)
+            ) else {
+                handler(CocoaError(.fileReadCorruptFile))
+                return
             }
+
+            // NSAttributedString(html:) renders with small default fonts (~12px).
+            // Scale all fonts up by 1.35x to match the app's 16px base / WKWebView rendering.
+            let scaled = Self.scaleFonts(in: attributed, by: 1.35)
+            textView.textStorage?.setAttributedString(scaled)
 
             // Match system appearance for dark mode
             updateAppearance()
@@ -79,6 +83,17 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
             Self.logger.error("Preview failed: \(error.localizedDescription)")
             handler(error)
         }
+    }
+
+    /// Scale all fonts in an attributed string by a multiplier.
+    private static func scaleFonts(in attrString: NSAttributedString, by scale: CGFloat) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attrString)
+        mutable.enumerateAttribute(.font, in: NSRange(location: 0, length: mutable.length)) { value, range, _ in
+            guard let font = value as? NSFont else { return }
+            let scaled = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * scale) ?? font
+            mutable.addAttribute(.font, value: scaled, range: range)
+        }
+        return mutable
     }
 
     private func updateAppearance() {
