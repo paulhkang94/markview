@@ -72,11 +72,20 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
 
             // NSAttributedString(html:) renders with small default fonts (~12px).
             // Scale all fonts up by 1.35x to match the app's 16px base / WKWebView rendering.
-            let scaled = Self.scaleFonts(in: attributed, by: 1.35)
-            textView.textStorage?.setAttributedString(scaled)
+            var processed = Self.scaleFonts(in: attributed, by: 1.35)
 
-            // Match system appearance for dark mode
-            updateAppearance()
+            // NSAttributedString(html:) parses CSS at creation time — it doesn't respect
+            // @media (prefers-color-scheme: dark). In dark mode, the template's light-mode
+            // colors (dark text #1f2328 on white) produce invisible text on our dark background.
+            // Fix: rewrite foreground colors to light equivalents.
+            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isDark {
+                processed = Self.applyDarkModeColors(to: processed)
+            }
+
+            textView.textStorage?.setAttributedString(processed)
+            textView.backgroundColor = isDark ? NSColor(red: 0.05, green: 0.07, blue: 0.09, alpha: 1) : .white
+            scrollView.backgroundColor = textView.backgroundColor
 
             handler(nil)
         } catch {
@@ -96,9 +105,41 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
         return mutable
     }
 
-    private func updateAppearance() {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        textView.backgroundColor = isDark ? NSColor(red: 0.05, green: 0.07, blue: 0.09, alpha: 1) : .white
-        scrollView.backgroundColor = textView.backgroundColor
+    /// Rewrite foreground colors for dark mode. NSAttributedString(html:) bakes in the
+    /// template's light-mode CSS colors, so we remap dark text to light text.
+    private static func applyDarkModeColors(to attrString: NSAttributedString) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attrString)
+        let lightText = NSColor(red: 0.90, green: 0.93, blue: 0.95, alpha: 1) // ~#e6edf3
+        let linkColor = NSColor(red: 0.34, green: 0.65, blue: 1.0, alpha: 1)  // ~#58a6ff
+        let fullRange = NSRange(location: 0, length: mutable.length)
+
+        mutable.enumerateAttribute(.foregroundColor, in: fullRange) { value, range, _ in
+            if let color = value as? NSColor {
+                // Remap dark colors to light. Leave already-light colors alone.
+                let brightness = color.brightnessComponent
+                if brightness < 0.5 {
+                    mutable.addAttribute(.foregroundColor, value: lightText, range: range)
+                }
+            } else {
+                // No explicit foreground color = uses system default (black). Set to light.
+                mutable.addAttribute(.foregroundColor, value: lightText, range: range)
+            }
+        }
+
+        // Fix link colors
+        mutable.enumerateAttribute(.link, in: fullRange) { value, range, _ in
+            if value != nil {
+                mutable.addAttribute(.foregroundColor, value: linkColor, range: range)
+            }
+        }
+
+        // Also rewrite background colors on table cells etc — white backgrounds look wrong
+        mutable.enumerateAttribute(.backgroundColor, in: fullRange) { value, range, _ in
+            if let color = value as? NSColor, color.brightnessComponent > 0.8 {
+                mutable.removeAttribute(.backgroundColor, range: range)
+            }
+        }
+
+        return mutable
     }
 }
