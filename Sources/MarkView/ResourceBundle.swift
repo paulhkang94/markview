@@ -34,11 +34,22 @@ enum ResourceBundle {
             return bundle
         }
 
-        return nil
+        // 4. Fall back to Bundle.main — Xcode/XcodeGen builds copy resources directly
+        // into Contents/Resources/ (no SPM .bundle wrapper). This is the standard
+        // macOS app bundle layout.
+        return Bundle.main
     }()
 
     /// Load a resource URL, returning nil instead of crashing if the bundle is missing.
+    /// Tries with the given subdirectory first, then without it (Xcode builds place
+    /// resources directly in Contents/Resources/, not in a Resources/ subfolder).
     static func url(forResource name: String, withExtension ext: String, subdirectory: String? = nil) -> URL? {
-        bundle?.url(forResource: name, withExtension: ext, subdirectory: subdirectory)
+        if let url = bundle?.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
+            return url
+        }
+        if subdirectory != nil, let url = bundle?.url(forResource: name, withExtension: ext) {
+            return url
+        }
+        return nil
     }
 }
