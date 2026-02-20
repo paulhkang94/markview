@@ -2980,8 +2980,8 @@ runner.test("Quick Look Info.plist declares principal class") {
 
 runner.test("Quick Look Info.plist uses module-qualified principal class") {
     // Swift requires module.ClassName format for macOS to find the class
-    try expect(qlPlist.contains("MarkViewQuickLook.PreviewProvider"),
-        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewProvider")
+    try expect(qlPlist.contains("MarkViewQuickLook.PreviewViewController"),
+        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewViewController")
 }
 
 runner.test("Quick Look Info.plist has QLSupportedContentTypes inside NSExtensionAttributes") {
@@ -3002,10 +3002,10 @@ runner.test("Quick Look Info.plist has LSMinimumSystemVersion") {
         "Info.plist must declare LSMinimumSystemVersion for extension registration")
 }
 
-runner.test("Quick Look Info.plist declares QLIsDataBasedPreview") {
-    // Data-based path (QLPreviewProvider) requires QLIsDataBasedPreview = true
-    try expect(qlPlist.contains("QLIsDataBasedPreview"),
-        "Info.plist must declare QLIsDataBasedPreview for data-based preview path")
+runner.test("Quick Look Info.plist does not declare QLIsDataBasedPreview") {
+    // View-based path (QLPreviewingController) must NOT set QLIsDataBasedPreview
+    try expect(!qlPlist.contains("QLIsDataBasedPreview"),
+        "View-based QL extension must NOT declare QLIsDataBasedPreview")
 }
 
 runner.test("Quick Look Info.plist does not claim public.plain-text") {
@@ -3028,44 +3028,39 @@ runner.test("Quick Look entitlements enable app sandbox") {
 }
 
 runner.test("Quick Look entitlements do NOT have WKWebView workarounds") {
-    // Data-based path doesn't need WKWebView entitlements — these block App Store
+    // NSAttributedString path doesn't need WKWebView entitlements — these block App Store
     let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
     let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
     try expect(!entitlements.contains("com.apple.security.cs.disable-library-validation"),
-        "Data-based QL extension must NOT have disable-library-validation (WKWebView workaround)")
+        "QL extension must NOT have disable-library-validation (WKWebView workaround)")
     try expect(!entitlements.contains("com.apple.security.network.client"),
-        "Data-based QL extension must NOT have network.client (WKWebView workaround)")
+        "QL extension must NOT have network.client (WKWebView workaround)")
     try expect(!entitlements.contains("temporary-exception.files.absolute-path.read-only"),
-        "Data-based QL extension must NOT have temporary-exception (blocks App Store)")
+        "QL extension must NOT have temporary-exception (blocks App Store)")
 }
 
 runner.test("Quick Look extension does NOT import WebKit") {
-    // Data-based path renders HTML directly — no WKWebView needed
+    // NSAttributedString renders HTML natively — no WKWebView sandbox issues
     try expect(!qlSource.contains("import WebKit"),
-        "Data-based QL extension must NOT import WebKit (no WKWebView)")
+        "QL extension must NOT import WebKit (no WKWebView)")
 }
 
-runner.test("Quick Look extension uses QLPreviewProvider") {
-    // Data-based path for sandbox-compatible rendering
-    try expect(qlSource.contains("QLPreviewProvider"),
-        "Extension must subclass QLPreviewProvider (data-based path)")
+runner.test("Quick Look extension uses QLPreviewingController") {
+    // View-based path: full-panel, scrollable preview via NSTextView
+    try expect(qlSource.contains("QLPreviewingController"),
+        "Extension must conform to QLPreviewingController (view-based path)")
 }
 
-runner.test("Quick Look extension implements providePreview") {
-    // QLPreviewProvider entry point
-    try expect(qlSource.contains("providePreview"),
-        "Extension must implement providePreview(for:) for QLPreviewProvider")
+runner.test("Quick Look extension implements preparePreviewOfFile") {
+    // QLPreviewingController entry point
+    try expect(qlSource.contains("preparePreviewOfFile"),
+        "Extension must implement preparePreviewOfFile(at:completionHandler:)")
 }
 
-runner.test("Quick Look extension returns QLPreviewReply with HTML") {
-    try expect(qlSource.contains("QLPreviewReply"),
-        "Extension must return QLPreviewReply with HTML data")
-}
-
-runner.test("Quick Look extension overrides max-width for full-width content") {
-    // The shared template has max-width:900px — QL must override this
-    try expect(qlSource.contains("max-width: 100%") || qlSource.contains("max-width:100%"),
-        "Extension must override max-width to fill the QL panel (shared template constrains to 900px)")
+runner.test("Quick Look extension uses NSAttributedString for HTML rendering") {
+    // NSAttributedString(html:) renders HTML without WKWebView — no sandbox issues
+    try expect(qlSource.contains("NSAttributedString"),
+        "Extension must use NSAttributedString(html:) for sandbox-safe rendering")
 }
 
 // Verify bundle.sh includes PlugIns directory creation

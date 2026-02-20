@@ -1,14 +1,10 @@
-import Foundation
+import AppKit
 import MarkViewCore
 import QuickLookUI
-import UniformTypeIdentifiers
 import os
 
 // MARK: - Extension entry point
 
-/// Calls NSExtensionMain() to start the XPC service loop.
-/// macOS loads this binary, calls main, which starts the extension hosting runtime.
-/// The runtime then instantiates NSExtensionPrincipalClass from Info.plist.
 @_silgen_name("NSExtensionMain")
 func NSExtensionMain() -> Int32
 
@@ -19,56 +15,75 @@ enum ExtensionMain {
     }
 }
 
-// MARK: - Quick Look Preview Provider
+// MARK: - Quick Look Preview Controller
 
-/// Data-based Quick Look preview for Markdown files.
-/// Returns rendered HTML directly — no WKWebView, no sandbox issues.
-class PreviewProvider: QLPreviewProvider {
+/// View-based Quick Look preview for Markdown files.
+/// Uses NSAttributedString(html:) in an NSTextView — no WKWebView, no sandbox issues,
+/// and fills the entire Quick Look panel (unlike data-based QLPreviewProvider which
+/// renders as a thumbnail in Finder column view).
+class PreviewViewController: NSViewController, @preconcurrency QLPreviewingController {
 
     private static let logger = Logger(subsystem: "dev.paulkang.MarkView.QuickLook", category: "preview")
 
-    /// Layout CSS for Quick Look: fill the panel, readable font size.
-    static let headInjection = """
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body {
-                max-width: 100% !important;
-                padding: 16px 24px !important;
-                box-sizing: border-box;
-                font-size: 14px !important;
-                line-height: 1.5 !important;
+    private let scrollView = NSScrollView()
+    private let textView = NSTextView()
+
+    override func loadView() {
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = true
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 24, height: 24)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        scrollView.documentView = textView
+        self.view = scrollView
+    }
+
+    func preparePreviewOfFile(at url: URL, completionHandler handler: @escaping (Error?) -> Void) {
+        do {
+            let markdown = try String(contentsOf: url, encoding: .utf8)
+
+            let bodyHTML = MarkdownRenderer.renderHTML(from: markdown)
+            let accessible = MarkdownRenderer.postProcessForAccessibility(bodyHTML)
+            let document = MarkdownRenderer.wrapInTemplate(accessible)
+
+            guard let htmlData = document.data(using: .utf8) else {
+                handler(CocoaError(.fileReadCorruptFile))
+                return
             }
-            pre { font-size: 12px !important; }
-            h1 { font-size: 1.6em !important; }
-            h2 { font-size: 1.3em !important; }
-            h3 { font-size: 1.15em !important; }
-        </style>
-    """
 
-    func providePreview(for request: QLFilePreviewRequest) async throws -> QLPreviewReply {
-        let fileURL = request.fileURL
+            let attributed = NSAttributedString(
+                html: htmlData,
+                baseURL: url.deletingLastPathComponent(),
+                documentAttributes: nil
+            )
 
-        let markdown = try String(contentsOf: fileURL, encoding: .utf8)
+            if let attributed = attributed {
+                textView.textStorage?.setAttributedString(attributed)
+            }
 
-        let html = MarkdownRenderer.renderHTML(from: markdown)
-        let accessible = MarkdownRenderer.postProcessForAccessibility(html)
-        var document = MarkdownRenderer.wrapInTemplate(accessible)
+            // Match system appearance for dark mode
+            updateAppearance()
 
-        // Inject layout CSS. Dark mode is handled by the template's existing
-        // @media (prefers-color-scheme: dark) — the data-based QL renderer
-        // respects system appearance, unlike WKWebView in extension sandbox.
-        document = document.replacingOccurrences(of: "</head>", with: "\(Self.headInjection)</head>")
-
-        guard let data = document.data(using: .utf8) else {
-            throw CocoaError(.fileReadCorruptFile)
+            handler(nil)
+        } catch {
+            Self.logger.error("Preview failed: \(error.localizedDescription)")
+            handler(error)
         }
+    }
 
-        // contentSize is a "hint" per Apple docs. For HTML, QL renders at this viewport
-        // width then displays the result. 480px is close to the Finder column view panel
-        // width (~400px), so minimal scaling. The spacebar popup (larger) scales up,
-        // which is fine for text — better to be slightly scaled up than scaled down.
-        return QLPreviewReply(dataOfContentType: .html, contentSize: CGSize(width: 480, height: 640)) { _ in
-            return data
-        }
+    private func updateAppearance() {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        textView.backgroundColor = isDark ? NSColor(red: 0.05, green: 0.07, blue: 0.09, alpha: 1) : .white
+        scrollView.backgroundColor = textView.backgroundColor
     }
 }

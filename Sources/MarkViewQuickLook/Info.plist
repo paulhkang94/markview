@@ -34,13 +34,11 @@
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<true/>
-			<key>QLIsDataBasedPreview</key>
-			<true/>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.quicklook.preview</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>MarkViewQuickLook.PreviewProvider</string>
+		<string>MarkViewQuickLook.PreviewViewController</string>
 	</dict>
 </dict>
 </plist>
