@@ -142,9 +142,11 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
             }
         }
 
-        // Also rewrite background colors on table cells etc — white backgrounds look wrong
+        // Remove all background colors — NSAttributedString(html:) bakes in the template's
+        // light-mode backgrounds (white #fff, light gray #f6f8fa for table rows). Color space
+        // conversion makes brightness checks unreliable, so strip them all in dark mode.
         mutable.enumerateAttribute(.backgroundColor, in: fullRange) { value, range, _ in
-            if let color = value as? NSColor, color.brightnessComponent > 0.8 {
+            if value != nil {
                 mutable.removeAttribute(.backgroundColor, range: range)
             }
         }

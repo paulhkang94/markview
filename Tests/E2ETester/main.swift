@@ -1,4 +1,5 @@
 @preconcurrency import ApplicationServices
+import AppKit
 import Foundation
 
 // MARK: - Test Runner (same pattern as MarkViewTestRunner)
@@ -1033,6 +1034,103 @@ runner.test("Open different file → window reuses (title changes)") {
 
     app.terminate()
     Thread.sleep(forTimeInterval: Timing.afterTerminate)
+}
+
+print("")
+
+// ========== Tier 5: Quick Look Preview Size ==========
+
+print("--- Tier 5: Quick Look Preview ---")
+
+/// Launch qlmanage -p, find its window via AX, return window element + PID.
+func launchQLPreview(file: String) -> (window: AXUIElement, pid: pid_t)? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/qlmanage")
+    process.arguments = ["-p", file]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try? process.run()
+
+    // Wait for window to appear
+    Thread.sleep(forTimeInterval: 3.0)
+
+    let pid = process.processIdentifier
+    let appElement = AXUIElementCreateApplication(pid)
+    let windows: [AXUIElement] = AXHelper.children(appElement).filter {
+        AXHelper.role($0) == kAXWindowRole
+    }
+    guard let window = windows.first else { return nil }
+    return (window, pid)
+}
+
+func killQL(_ pid: pid_t) {
+    kill(pid, SIGTERM)
+    Thread.sleep(forTimeInterval: 0.5)
+}
+
+let qlFixturePath = FileManager.default.currentDirectoryPath + "/Tests/TestRunner/Fixtures/basic.md"
+let qlFixtureExists = FileManager.default.fileExists(atPath: qlFixturePath)
+
+if qlFixtureExists {
+    runner.test("Quick Look preview window opens at expected size") {
+        guard let (window, pid) = launchQLPreview(file: qlFixturePath) else {
+            throw E2EError.preconditionFailed("qlmanage -p did not produce a window")
+        }
+        defer { killQL(pid) }
+
+        guard let windowSize = AXHelper.size(window) else {
+            throw E2EError.assertionFailed("Could not read QL window size")
+        }
+
+        guard let screen = NSScreen.main else {
+            throw E2EError.preconditionFailed("No main screen")
+        }
+        let screenFrame = screen.visibleFrame
+
+        // Window should be at least 40% of screen width (we request 50%)
+        let widthRatio = windowSize.width / screenFrame.width
+        try expect(widthRatio >= 0.35,
+            "QL window width should be ≥35% of screen (got \(Int(widthRatio * 100))%: \(Int(windowSize.width))px of \(Int(screenFrame.width))px)")
+
+        // Window should be at least 60% of screen height (we request 100%)
+        let heightRatio = windowSize.height / screenFrame.height
+        try expect(heightRatio >= 0.5,
+            "QL window height should be ≥50% of screen (got \(Int(heightRatio * 100))%: \(Int(windowSize.height))px of \(Int(screenFrame.height))px)")
+    }
+
+    runner.test("Quick Look preview has readable content (not blank)") {
+        guard let (window, pid) = launchQLPreview(file: qlFixturePath) else {
+            throw E2EError.preconditionFailed("qlmanage -p did not produce a window")
+        }
+        defer { killQL(pid) }
+
+        // Find text content in the QL window
+        let texts = AXHelper.allElements(root: window, role: kAXStaticTextRole)
+            .compactMap { AXHelper.value($0) }
+        let hasContent = texts.contains(where: { $0.contains("Heading") || $0.contains("paragraph") || $0.contains("bold") })
+        try expect(hasContent,
+            "QL preview must render markdown content (found \(texts.count) text elements: \(texts.prefix(5)))")
+    }
+
+    runner.test("Quick Look preview is not a thumbnail (view-based, fills panel)") {
+        guard let (window, pid) = launchQLPreview(file: qlFixturePath) else {
+            throw E2EError.preconditionFailed("qlmanage -p did not produce a window")
+        }
+        defer { killQL(pid) }
+
+        guard let windowSize = AXHelper.size(window) else {
+            throw E2EError.assertionFailed("Could not read QL window size")
+        }
+
+        // A thumbnail-style data-based preview would be small (<300px wide).
+        // View-based previews fill the panel (>400px).
+        try expect(windowSize.width > 400,
+            "QL preview must be view-based (width \(Int(windowSize.width))px > 400px minimum — thumbnail would be <300px)")
+        try expect(windowSize.height > 400,
+            "QL preview must be view-based (height \(Int(windowSize.height))px > 400px minimum — thumbnail would be <300px)")
+    }
+} else {
+    runner.skip("Quick Look preview tests", reason: "Fixture file not found: \(qlFixturePath)")
 }
 
 print("")

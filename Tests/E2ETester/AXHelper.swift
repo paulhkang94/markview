@@ -144,6 +144,24 @@ enum AXHelper {
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, true as CFTypeRef)
     }
 
+    /// Get the size of an AX element (window, view, etc).
+    static func size(_ element: AXUIElement) -> CGSize? {
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success else { return nil }
+        var size = CGSize.zero
+        guard AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else { return nil }
+        return size
+    }
+
+    /// Get the position of an AX element.
+    static func position(_ element: AXUIElement) -> CGPoint? {
+        var posValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posValue) == .success else { return nil }
+        var pos = CGPoint.zero
+        guard AXValueGetValue(posValue as! AXValue, .cgPoint, &pos) else { return nil }
+        return pos
+    }
+
     // MARK: - Keyboard (via CGEvent)
 
     static func typeText(_ text: String) {
