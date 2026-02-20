@@ -27,12 +27,22 @@ class PreviewProvider: QLPreviewProvider {
 
     private static let logger = Logger(subsystem: "dev.paulkang.MarkView.QuickLook", category: "preview")
 
-    /// Extra tags injected into <head> to make the preview fill the QL panel.
-    /// - viewport meta: tells the QL HTML renderer to use device width, not a fixed viewport
-    /// - layout CSS: removes the template's max-width constraint so content fills the panel
+    /// Layout CSS for Quick Look: fill the panel, readable font size.
     static let headInjection = """
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>body { max-width: 100% !important; padding: 24px 32px !important; box-sizing: border-box; }</style>
+        <style>
+            body {
+                max-width: 100% !important;
+                padding: 16px 24px !important;
+                box-sizing: border-box;
+                font-size: 14px !important;
+                line-height: 1.5 !important;
+            }
+            pre { font-size: 12px !important; }
+            h1 { font-size: 1.6em !important; }
+            h2 { font-size: 1.3em !important; }
+            h3 { font-size: 1.15em !important; }
+        </style>
     """
 
     func providePreview(for request: QLFilePreviewRequest) async throws -> QLPreviewReply {
@@ -44,7 +54,7 @@ class PreviewProvider: QLPreviewProvider {
         let accessible = MarkdownRenderer.postProcessForAccessibility(html)
         var document = MarkdownRenderer.wrapInTemplate(accessible)
 
-        // Inject viewport + layout CSS. Dark mode is handled by the template's existing
+        // Inject layout CSS. Dark mode is handled by the template's existing
         // @media (prefers-color-scheme: dark) — the data-based QL renderer
         // respects system appearance, unlike WKWebView in extension sandbox.
         document = document.replacingOccurrences(of: "</head>", with: "\(Self.headInjection)</head>")
@@ -53,9 +63,11 @@ class PreviewProvider: QLPreviewProvider {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        // contentSize .zero = let QL determine the rendering size from the panel dimensions.
-        // A fixed size (e.g. 1200x900) gets scaled down to fit, making content tiny.
-        return QLPreviewReply(dataOfContentType: .html, contentSize: .zero) { _ in
+        // contentSize is a "hint" per Apple docs. For HTML, QL renders at this viewport
+        // width then displays the result. 480px is close to the Finder column view panel
+        // width (~400px), so minimal scaling. The spacebar popup (larger) scales up,
+        // which is fine for text — better to be slightly scaled up than scaled down.
+        return QLPreviewReply(dataOfContentType: .html, contentSize: CGSize(width: 480, height: 640)) { _ in
             return data
         }
     }
