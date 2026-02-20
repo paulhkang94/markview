@@ -37,6 +37,9 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = true
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isGrammarCheckingEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
