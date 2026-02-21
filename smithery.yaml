@@ -1,0 +1,20 @@
+name: markview
+description: Native macOS markdown previewer with MCP server
+license: MIT
+homepage: https://github.com/paulhkang94/markview
+
+build:
+  dockerfile: null
+
+startCommand:
+  type: stdio
+  command: npx
+  args:
+    - "-y"
+    - "mcp-server-markview"
+
+tools:
+  - name: preview_markdown
+    description: Render markdown content in MarkView's native macOS preview window
+  - name: open_file
+    description: Open a markdown file in MarkView for preview
