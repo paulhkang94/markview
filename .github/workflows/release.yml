@@ -1,0 +1,146 @@
+name: Release
+
+# Triggers when a vX.Y.Z tag is pushed — auto-builds, notarizes, and
+# publishes a GitHub Release with the .zip artifact.
+#
+# Required secrets (set in repo Settings → Secrets):
+#   APPLE_ID              — Apple ID email for notarization
+#   NOTARIZE_KEY_ID       — App Store Connect API key ID
+#   NOTARIZE_ISSUER_ID    — App Store Connect issuer ID
+#   NOTARIZE_API_KEY      — Base64-encoded .p8 key file content
+#
+# The release.sh script handles signing + notarization on macOS runners.
+# GitHub-hosted macOS runners have Xcode pre-installed.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
+
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: markview-ci
+        run: |
+          # Create a temporary keychain for the CI signing cert
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          echo "$CERTIFICATE_BASE64" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm /tmp/cert.p12
+
+      - name: Store notarization credentials
+        env:
+          NOTARIZE_KEY_ID: ${{ secrets.NOTARIZE_KEY_ID }}
+          NOTARIZE_ISSUER_ID: ${{ secrets.NOTARIZE_ISSUER_ID }}
+          NOTARIZE_API_KEY: ${{ secrets.NOTARIZE_API_KEY }}
+        run: |
+          mkdir -p ~/.private_keys
+          echo "$NOTARIZE_API_KEY" | base64 --decode > ~/.private_keys/AuthKey_${NOTARIZE_KEY_ID}.p8
+          # Store in keychain so xcrun notarytool can find them
+          xcrun notarytool store-credentials "notarytool-profile" \
+            --key ~/.private_keys/AuthKey_${NOTARIZE_KEY_ID}.p8 \
+            --key-id "$NOTARIZE_KEY_ID" \
+            --issuer "$NOTARIZE_ISSUER_ID"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        run: swift run MarkViewTestRunner
+
+      - name: Build, sign, notarize
+        run: bash scripts/bundle.sh --notarize
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: Create release zip
+        run: |
+          cd /tmp
+          zip -r "MarkView-${{ steps.version.outputs.VERSION }}.zip" \
+            "${{ github.workspace }}/MarkView.app"
+          echo "ARTIFACT=/tmp/MarkView-${{ steps.version.outputs.VERSION }}.zip" >> $GITHUB_ENV
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          # Auto-generate from git log since last tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          if [[ -n "$PREV_TAG" ]]; then
+            NOTES=$(git log --oneline "${PREV_TAG}..HEAD" | grep -v "^[a-f0-9]* chore\|^[a-f0-9]* docs\|^[a-f0-9]* Release" | head -20 | sed 's/^[a-f0-9]* /- /')
+          else
+            NOTES="Initial release"
+          fi
+          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: MarkView ${{ github.ref_name }}
+          body: |
+            ${{ steps.notes.outputs.NOTES }}
+
+            **Installation**: Download `MarkView-${{ steps.version.outputs.VERSION }}.zip`, extract, move to `/Applications`.
+          files: ${{ env.ARTIFACT }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          # Only update tap if HOMEBREW_TAP_TOKEN is set
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping tap update"
+            exit 0
+          fi
+          # Compute SHA256 of the release zip
+          SHA256=$(shasum -a 256 "$ARTIFACT" | awk '{print $1}')
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          # Clone the tap, update the cask, push
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/paulhkang94/homebrew-markview.git" /tmp/tap
+          cd /tmp/tap
+          sed -i '' \
+            -e "s/version \".*\"/version \"${VERSION}\"/" \
+            -e "s/sha256 \".*\"/sha256 \"${SHA256}\"/" \
+            Casks/markview.rb
+          git config user.email "contact@paulkang.dev"
+          git config user.name "Paul Kang"
+          git add Casks/markview.rb
+          git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap"
+          git push
