@@ -89,7 +89,10 @@
         }
 
         /* Tables — matches GitHub Primer */
-        table { border-spacing: 0; border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow: auto; font-variant: tabular-nums; margin-bottom: 16px; }
+        /* overflow-x is on .table-wrapper (injected by JS below), not the table itself,
+           so wide tables scroll horizontally without clipping at the viewport edge */
+        .table-wrapper { overflow-x: auto; margin-bottom: 16px; -webkit-overflow-scrolling: touch; }
+        table { border-spacing: 0; border-collapse: collapse; display: table; width: max-content; min-width: 100%; font-variant: tabular-nums; margin-bottom: 0; }
         th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
         th { font-weight: 600; }
         tr { background-color: #ffffff; border-top: 1px solid #d1d9e0b3; }
@@ -142,6 +145,15 @@
         {{CONTENT}}
     </article>
     <script>
+        // Wrap tables in scrollable containers so wide tables scroll horizontally
+        // instead of clipping at the viewport edge (GitHub Primer pattern)
+        document.querySelectorAll('article table').forEach(function(table) {
+            if (table.parentElement.classList.contains('table-wrapper')) return;
+            var wrapper = document.createElement('div');
+            wrapper.className = 'table-wrapper';
+            table.parentNode.insertBefore(wrapper, table);
+            wrapper.appendChild(table);
+        });
         // Inline Prism.js will be loaded here by the app
     </script>
 </body>
