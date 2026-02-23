@@ -20,6 +20,26 @@ echo "Canonical version: $CANONICAL (build $CANONICAL_BUILD)"
 
 ERRORS=0
 
+# Git tag ↔ plist version check (Tier 0: no AI, pure string comparison)
+LATEST_TAG=$(git -C "$PROJECT_DIR" describe --tags --abbrev=0 --match "v*" 2>/dev/null | sed 's/^v//' || true)
+if [ -z "$LATEST_TAG" ]; then
+    echo "  ⚠ No version tags found — skipping tag sync check"
+else
+    if [ "$LATEST_TAG" = "$CANONICAL" ]; then
+        echo "  ✓ Git tag v$LATEST_TAG matches Info.plist $CANONICAL"
+    else
+        echo "  ✗ Git tag v$LATEST_TAG does not match Info.plist $CANONICAL"
+        echo "    Fix: bash scripts/release.sh --bump patch  (or major/minor)"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
+# Warn if commits exist since last tag (unreleased changes)
+COMMITS_SINCE_TAG=$(git -C "$PROJECT_DIR" rev-list "v${LATEST_TAG}..HEAD" --count 2>/dev/null || echo "0")
+if [ "$COMMITS_SINCE_TAG" -gt 0 ] 2>/dev/null; then
+    echo "  ⚠ $COMMITS_SINCE_TAG commit(s) since v$LATEST_TAG — consider bumping version before release"
+fi
+
 # Quick Look Info.plist
 QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
 if [ -f "$QL_PLIST" ]; then

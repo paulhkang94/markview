@@ -14,3 +14,12 @@ jobs:
             echo "$blocked"
             exit 1
           fi
+
+  check-version-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for git tag checks
+      - name: Version strings in sync (plist ↔ git tag ↔ QL ↔ MCP)
+        run: bash scripts/check-version-sync.sh

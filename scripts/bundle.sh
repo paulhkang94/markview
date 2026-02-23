@@ -46,7 +46,16 @@ fi
 
 PLIST="$PROJECT_DIR/Sources/MarkView/Info.plist"
 VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST" 2>/dev/null || echo "unknown")
-BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo "?")
+
+# Auto-set build number from git commit count — always monotonically increasing,
+# never stale regardless of whether a version bump was run. This is the Tier 0
+# guardrail: the installed app always shows a unique build number per commit.
+GIT_BUILD=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+plutil -replace CFBundleVersion -string "$GIT_BUILD" "$PLIST"
+# Mirror to QuickLook plist so check-version-sync.sh passes
+QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
+[ -f "$QL_PLIST" ] && plutil -replace CFBundleVersion -string "$GIT_BUILD" "$QL_PLIST"
+BUILD="$GIT_BUILD"
 echo "=== Building $APP_NAME.app v$VERSION (build $BUILD) ==="
 
 # Step 1: Ensure .xcodeproj exists (XcodeGen)
