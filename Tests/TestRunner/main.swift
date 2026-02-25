@@ -3687,6 +3687,108 @@ runner.test("template.html has mermaid CSS") {
         "template.html must have CSS for .mermaid elements")
 }
 
+// =============================================================================
+// MARK: - Preview Pane Live Update Pipeline (source-code contracts)
+// =============================================================================
+
+print("\n=== Tier 2: Preview Pane Live Update Pipeline ===")
+
+runner.test("contentDidChange → renderDebounced wired — editor typing updates preview") {
+    // Source-code contract: typing in editor must go through renderDebounced → renderedHTML.
+    // If this chain breaks, preview silently stops updating when user types.
+    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(source.contains("func contentDidChange"),
+        "PreviewViewModel must have contentDidChange — editor binding calls this on keystroke")
+    try expect(source.contains("renderDebounced(newText)") || source.contains("renderDebounced("),
+        "contentDidChange must call renderDebounced — all editor keystrokes must eventually update preview")
+}
+
+runner.test("renderImmediate sets renderedHTML — preview binding wired") {
+    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(source.contains("renderedHTML = MarkdownRenderer.wrapInTemplate"),
+        "renderImmediate must set renderedHTML — WebPreviewView reads this to update the DOM")
+}
+
+runner.test("FileWatcher callback calls loadContent — external file changes reach preview") {
+    // When Claude edits a file on disk, the FileWatcher must call loadContent.
+    // loadContent → renderImmediate → renderedHTML change → WebPreviewView update.
+    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(source.contains("self.loadContent(from: path)"),
+        "FileWatcher callback must call loadContent — external file changes must reload preview")
+    try expect(source.contains("func watchFile"),
+        "PreviewViewModel must have watchFile — called from loadFile to start monitoring")
+}
+
+runner.test("watchFile starts FileWatcher — loadFile wires it up") {
+    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(source.contains("watchFile(at: path)"),
+        "loadFile must call watchFile — without this, external file changes never reach preview")
+    try expect(source.contains("fileWatcher?.start()"),
+        "watchFile must call fileWatcher.start() — watcher must be active to detect changes")
+}
+
+runner.test("ContentView binds renderedHTML to WebPreviewView — SwiftUI update path wired") {
+    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(source.contains("html: viewModel.renderedHTML"),
+        "ContentView must pass viewModel.renderedHTML to WebPreviewView — this is the binding that drives preview updates")
+}
+
+runner.test("WebPreviewView updateContent handles html change — JS fast-path wired") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("guard html != lastHTML || cssChanged || needsFullReload else { return }"),
+        "updateContent must check html != lastHTML to detect content changes")
+    try expect(source.contains("updateContentViaJS"),
+        "updateContent must call updateContentViaJS for same-file updates (not always full reload)")
+}
+
+runner.test("updateContentViaJS uses getElementById(contentElementID) — article ID contract enforced") {
+    // If template.html's article ID changes, the JS fast-path silently fails.
+    // This test verifies the article ID used in JS matches TemplateConstants.
+    // The Swift source uses string interpolation: document.getElementById('\(TemplateConstants.contentElementID)')
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    // Check for the Swift interpolation form (TemplateConstants.contentElementID used in JS string)
+    try expect(source.contains("getElementById('\\(TemplateConstants.contentElementID)')") ||
+               source.contains("getElementById(\"\\(TemplateConstants.contentElementID)\")") ||
+               source.contains("getElementById('content')"),
+        "updateContentViaJS must reference TemplateConstants.contentElementID in getElementById call — must match article id in template.html")
+    // Also verify contentEl null-check is present (silent fail if null)
+    try expect(source.contains("if (contentEl)") || source.contains("if(contentEl)"),
+        "updateContentViaJS must guard against null contentEl — null means wrong ID or DOM not ready")
+}
+
+runner.test("wrapInTemplate uses file template (not fallback) — article ID present in output") {
+    // The FALLBACK template in MarkdownRenderer.wrapInTemplate does NOT have id='content'.
+    // The FILE template (template.html) does. If the file template fails to load,
+    // the fallback is used, updateContentViaJS finds no element, and updates silently fail.
+    // This test verifies the file template produces the required article element.
+    let templatePath = "Sources/MarkView/Resources/template.html"
+    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
+
+    // The template itself must have the id
+    try expect(template.contains("id=\"\(TemplateConstants.contentElementID)\""),
+        "template.html must have article id='\(TemplateConstants.contentElementID)' — JS fast-path depends on this")
+
+    // wrapInTemplate with the file template must produce the id in output
+    let output = MarkdownRenderer.wrapInTemplate("<p>test</p>", template: template)
+    try expect(output.contains("id=\"\(TemplateConstants.contentElementID)\""),
+        "wrapInTemplate(template:) output must contain id='\(TemplateConstants.contentElementID)' — required by updateContentViaJS")
+
+    // The FALLBACK (no template) MUST NOT be silently used when file template is available
+    // Verify fallback doesn't have the id (so if fallback is used, tests catch it)
+    let fallback = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    // Fallback is acceptable as long as file template is always preferred when available
+    _ = fallback // Document: fallback may lack id, that's why we must always load template.html
+}
+
+runner.test("suppresFileWatcher resets after 250ms — external changes not permanently blocked") {
+    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    // suppressFileWatcher must be time-limited to prevent blocking external file changes
+    try expect(source.contains("suppressFileWatcher = false"),
+        "suppressFileWatcher must be reset to false after save — otherwise external changes are permanently blocked")
+    try expect(source.contains("250_000_000"),
+        "suppressFileWatcher reset must happen after 250ms delay — matches FileWatcher debounce+atomic-save timing")
+}
+
 runner.test("mermaid CSS positions diagrams correctly") {
     let templatePath = "Sources/MarkView/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)

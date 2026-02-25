@@ -541,6 +541,71 @@ runner.test("External modify (clean) → editor content auto-reloads") {
     }
 }
 
+runner.test("External modify (clean) → preview DOM actually renders new content") {
+    // Critical gap: the previous test only checks editor text content, not the preview DOM.
+    // This test verifies the FULL pipeline: disk write → FileWatcher → loadContent
+    //   → renderedHTML → WebPreviewView.updateNSView → updateContentViaJS → DOM updated.
+    // Runs in PREVIEW-ONLY mode (no editor) — simulates "Claude edits a file MarkView has open."
+    let marker = "EXTPREVIEW_\(UUID().uuidString.prefix(8))"
+    let content = "# External Preview Test\n\nOriginal content before external change."
+    try withAppAndFile(content) { window, path in
+        // Stay in PREVIEW-ONLY mode (don't open editor)
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Modify file externally — atomic write (simulates Swift write / most editors)
+        let modified = "# External Preview Test\n\n\(marker)"
+        try modified.write(toFile: path, atomically: true, encoding: .utf8)
+
+        // Wait: FileWatcher debounce (100ms) + re-watch (50ms) + loadContent + WKWebView render
+        Thread.sleep(forTimeInterval: Timing.externalFileChange + 0.5)
+
+        let w = try app.mainWindow()
+        // Verify preview DOM contains the marker — NOT just the editor binding
+        if let preview = helpers.findPreview(in: w) {
+            let previewTexts = helpers.allStaticText(in: preview)
+            let found = previewTexts.contains(where: { $0.contains(marker) })
+            try expect(found,
+                "Preview DOM must contain externally-written text '\(marker)' after FileWatcher reload — found: \(previewTexts.prefix(5))")
+        } else {
+            // Fallback: check all visible text (WKWebView AX may not expose AXWebArea on all configs)
+            let allTexts = helpers.allStaticText(in: w)
+            let found = allTexts.contains(where: { $0.contains(marker) })
+            try expect(found,
+                "Preview must render externally-written content '\(marker)' — no AXWebArea found, all texts: \(allTexts.prefix(10))")
+        }
+    }
+}
+
+runner.test("External direct write → preview DOM updates (non-atomic write)") {
+    // Tests the .write (not .rename) event path in FileWatcher.
+    // Python's open('f','w').write() and shell `echo ... > file` use direct overwrites.
+    // This simulates the Claude Code Edit tool writing to a file MarkView has open.
+    let marker = "DIRECTWRITE_\(UUID().uuidString.prefix(8))"
+    let content = "# Direct Write Test\n\nOriginal."
+    try withAppAndFile(content) { window, path in
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Direct (non-atomic) write — same inode, triggers NOTE_WRITE not NOTE_RENAME
+        let fileData = "# Direct Write Test\n\n\(marker)".data(using: .utf8)!
+        try fileData.write(to: URL(fileURLWithPath: path), options: [])  // no .atomic
+
+        Thread.sleep(forTimeInterval: Timing.externalFileChange + 0.5)
+
+        let w = try app.mainWindow()
+        if let preview = helpers.findPreview(in: w) {
+            let previewTexts = helpers.allStaticText(in: preview)
+            let found = previewTexts.contains(where: { $0.contains(marker) })
+            try expect(found,
+                "Preview DOM must update on direct (non-atomic) write '\(marker)' — found: \(previewTexts.prefix(5))")
+        } else {
+            let allTexts = helpers.allStaticText(in: w)
+            let found = allTexts.contains(where: { $0.contains(marker) })
+            try expect(found,
+                "Preview must render direct-write content '\(marker)' — all texts: \(allTexts.prefix(10))")
+        }
+    }
+}
+
 runner.test("External modify (dirty) → conflict alert") {
     let content = "# Conflict Test\n\nOriginal."
     try withAppAndFile(content) { window, path in
