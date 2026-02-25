@@ -387,10 +387,13 @@ struct WebPreviewView: NSViewRepresentable {
                         pre.parentNode.replaceChild(div, pre);
                     });
                     var isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    // Read the document font size so diagrams scale with the preview font size slider
+                    var docFontSize = parseFloat(window.getComputedStyle(document.body).fontSize) || 16;
                     mermaid.initialize({
                         startOnLoad: false,
                         theme: isDark ? 'dark' : 'default',
                         securityLevel: 'loose',
+                        fontSize: docFontSize,
                         // htmlLabels:false: SVG text wraps correctly vs HTML mode which clips.
                         // rankSpacing:80 pushes the first node down far enough that multi-line
                         // subgraph titles don't overlap child nodes (Dagre default is 50 — too tight).
