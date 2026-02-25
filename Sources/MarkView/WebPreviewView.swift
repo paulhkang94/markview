@@ -77,6 +77,7 @@ struct WebPreviewView: NSViewRepresentable {
         private var lastBaseDirectory: URL?
         private var lastFileIdentifier: String?
         private var prismJS: String?
+        private var mermaidJS: String?
         /// When true, ignore the next scroll event from JS (it's from a programmatic scroll).
         var suppressNextScroll = false
 
@@ -91,6 +92,18 @@ struct WebPreviewView: NSViewRepresentable {
             } else {
                 AppLogger.render.warning("Prism.js bundle resource not found")
                 AppLogger.breadcrumb("Prism.js resource missing", category: "render", level: .warning)
+            }
+
+            if let mermaidURL = ResourceBundle.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Resources") {
+                do {
+                    mermaidJS = try String(contentsOf: mermaidURL, encoding: .utf8)
+                } catch {
+                    AppLogger.render.warning("Failed to load Mermaid.js bundle: \(error.localizedDescription)")
+                    AppLogger.breadcrumb("Mermaid.js load failed", category: "render", level: .warning)
+                }
+            } else {
+                AppLogger.render.warning("Mermaid.js bundle resource not found")
+                AppLogger.breadcrumb("Mermaid.js resource missing", category: "render", level: .warning)
             }
         }
 
@@ -271,7 +284,7 @@ struct WebPreviewView: NSViewRepresentable {
 
             if needsFullReload {
                 pendingFileReload = false
-                let fullHTML = injectPrism(into: styledHTML)
+                let fullHTML = injectMermaid(into: injectPrism(into: styledHTML))
                 loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true
             } else {
@@ -355,6 +368,39 @@ struct WebPreviewView: NSViewRepresentable {
             return html.replacingOccurrences(of: "</body>", with: "\(scriptTag)\n</body>")
         }
 
+        private func injectMermaid(into html: String) -> String {
+            guard let mermaidJS = mermaidJS else { return html }
+            // The bridge converts cmark-gfm output (<pre><code class="language-mermaid">) to
+            // Mermaid-ready <div class="mermaid"> elements, then calls mermaid.run().
+            // Exposed as window._markviewRenderMermaid so the JS fast-path can re-invoke it
+            // after innerHTML swaps without reloading the full library.
+            let scriptTag = """
+            <script>
+            \(mermaidJS)
+            ;(function() {
+                window._markviewRenderMermaid = function() {
+                    document.querySelectorAll('pre code.language-mermaid').forEach(function(code) {
+                        var pre = code.parentElement;
+                        var div = document.createElement('div');
+                        div.className = 'mermaid';
+                        div.textContent = code.textContent;
+                        pre.parentNode.replaceChild(div, pre);
+                    });
+                    var isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default', securityLevel: 'loose' });
+                    mermaid.run();
+                };
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', window._markviewRenderMermaid);
+                } else {
+                    window._markviewRenderMermaid();
+                }
+            })();
+            </script>
+            """
+            return html.replacingOccurrences(of: "</body>", with: "\(scriptTag)\n</body>")
+        }
+
         private func updateContentViaJS(_ html: String, in webView: WKWebView) {
             let bodyContent: String
             if let startRange = html.range(of: "<article id=\"\(TemplateConstants.contentElementID)\"", options: .literal).flatMap({ html.range(of: ">", range: $0.upperBound..<html.endIndex) }),
@@ -393,6 +439,9 @@ struct WebPreviewView: NSViewRepresentable {
                 if (existing) { existing.textContent = \(Self.jsStringLiteral(css)); }
                 if (typeof Prism !== 'undefined') {
                     Prism.highlightAll();
+                }
+                if (typeof window._markviewRenderMermaid === 'function') {
+                    window._markviewRenderMermaid();
                 }
                 requestAnimationFrame(function() {
                     window.scrollTo(0, scrollPos);

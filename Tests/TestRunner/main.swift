@@ -3482,6 +3482,221 @@ runner.test("loadViaFileURL uses restrictedAccessURL for access scope") {
 }
 
 // =============================================================================
+// MARK: - Mermaid Rendering Tests
+// =============================================================================
+
+print("\n=== Tier 1: Mermaid Rendering (cmark-gfm contract) ===")
+
+runner.test("mermaid fenced code block produces language-mermaid class") {
+    // cmark-gfm MUST wrap mermaid blocks as <pre><code class="language-mermaid">
+    // This is the contract that the JS bridge relies on to find and convert diagrams.
+    let md = "```mermaid\nflowchart LR\n    A --> B\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("language-mermaid"),
+        "cmark-gfm must output class=\"language-mermaid\" for mermaid fenced blocks")
+    try expect(hasOpenTag("pre", in: html), "Mermaid block must be wrapped in <pre>")
+    try expect(html.contains("<code"), "Mermaid block must be wrapped in <code>")
+}
+
+runner.test("mermaid block content is preserved verbatim") {
+    // The JS bridge reads code.textContent — content must survive cmark encoding unchanged
+    let diagramSource = "flowchart LR\n    A[Start] --> B[End]"
+    let md = "```mermaid\n\(diagramSource)\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("flowchart LR"), "Diagram type must be preserved")
+    try expect(html.contains("A[Start]"), "Node labels must be preserved in output")
+    try expect(html.contains("B[End]"), "Node labels must be preserved in output")
+}
+
+runner.test("multiple mermaid blocks all get language-mermaid class") {
+    let md = """
+    ```mermaid
+    flowchart LR
+        A --> B
+    ```
+
+    Some text between diagrams.
+
+    ```mermaid
+    sequenceDiagram
+        Alice->>Bob: Hello
+    ```
+    """
+    let html = MarkdownRenderer.renderHTML(from: md)
+    let count = html.components(separatedBy: "language-mermaid").count - 1
+    try expect(count == 2, "Expected 2 mermaid blocks, found \(count)")
+}
+
+runner.test("mermaid block does not get Prism syntax highlighting class interference") {
+    // Only language-mermaid, not any Prism-added token classes on the raw text
+    let md = "```mermaid\nflowchart LR\n    A --> B\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    // The raw output from cmark should just have language-mermaid — Prism runs client-side
+    try expect(html.contains("language-mermaid"), "Must have language-mermaid class")
+}
+
+runner.test("mermaid fixture renders non-empty output") {
+    let md = try loadFixture("mermaid.md")
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(!html.isEmpty, "mermaid.md produced empty output")
+    try expect(html.count > 100, "mermaid.md output suspiciously short: \(html.count) chars")
+}
+
+runner.test("mermaid fixture: all diagram types produce code blocks") {
+    let md = try loadFixture("mermaid.md")
+    let html = MarkdownRenderer.renderHTML(from: md)
+    let count = html.components(separatedBy: "language-mermaid").count - 1
+    // mermaid.md has 6 mermaid blocks (flowchart, sequence, class, pie, git, state)
+    try expect(count >= 6, "Expected at least 6 mermaid code blocks in fixture, found \(count)")
+}
+
+runner.test("mermaid fixture: non-mermaid content renders normally alongside diagrams") {
+    let md = try loadFixture("mermaid.md")
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(hasTag("h1", in: html, containing: "Mermaid Diagram Test"), "h1 heading missing")
+    try expect(hasTag("h2", in: html, containing: "Flowchart"), "Flowchart section missing")
+    try expect(hasTag("h2", in: html, containing: "Sequence"), "Sequence section missing")
+    try expect(hasOpenTag("table", in: html), "Table in fixture must render")
+    try expect(html.contains("language-mermaid"), "Mermaid blocks must be present")
+}
+
+runner.test("mermaid flowchart syntax is preserved in cmark output") {
+    // cmark HTML-encodes '>' as '&gt;' in code blocks, so '-->' becomes '--&gt;'.
+    // This is correct: the JS bridge uses code.textContent which decodes HTML entities,
+    // giving Mermaid the original '-->' string for diagram rendering.
+    let md = "```mermaid\nflowchart TD\n    A --> B\n    B -->|label| C\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("flowchart TD"), "flowchart TD directive preserved")
+    // Arrow is HTML-encoded in the raw HTML output (decoded by textContent in the browser)
+    try expect(html.contains("--&gt;") || html.contains("-->"),
+        "Arrow syntax must be present in cmark output (encoded as --&gt; or raw -->)")
+}
+
+runner.test("mermaid sequence diagram syntax is preserved") {
+    let md = "```mermaid\nsequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Hi\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("sequenceDiagram"), "sequenceDiagram directive preserved")
+    try expect(html.contains("Alice"), "Participant names preserved")
+}
+
+runner.test("mermaid class diagram syntax is preserved") {
+    let md = "```mermaid\nclassDiagram\n    class Foo {\n        +bar() String\n    }\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("classDiagram"), "classDiagram directive preserved")
+}
+
+runner.test("mermaid block with special chars does not break HTML structure") {
+    // Angle brackets inside mermaid must be HTML-escaped by cmark but not double-escaped
+    let md = "```mermaid\nflowchart LR\n    A[\"<start>\"] --> B\n```"
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("language-mermaid"), "Block still renders with angle brackets")
+    try expect(!html.contains("<start>"),
+        "Raw angle bracket inside code block must be HTML-escaped to prevent XSS")
+}
+
+print("\n=== Tier 2: Mermaid Integration (WebPreviewView source contracts) ===")
+
+runner.test("mermaid.min.js resource exists in expected location") {
+    let mermaidPath = "Sources/MarkView/Resources/mermaid.min.js"
+    let exists = FileManager.default.fileExists(atPath: mermaidPath)
+    try expect(exists, "mermaid.min.js must exist at \(mermaidPath)")
+}
+
+runner.test("mermaid.min.js is non-empty and contains mermaid API") {
+    let mermaidPath = "Sources/MarkView/Resources/mermaid.min.js"
+    let content = try String(contentsOfFile: mermaidPath, encoding: .utf8)
+    try expect(!content.isEmpty, "mermaid.min.js must not be empty")
+    // The bundle must expose the mermaid global
+    try expect(content.contains("mermaid") || content.contains("Mermaid"),
+        "mermaid.min.js must contain mermaid API code")
+    try expect(content.count > 100_000, "mermaid.min.js seems too small — may be truncated or corrupt")
+}
+
+runner.test("WebPreviewView loads mermaid.min.js resource") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("mermaid.min"),
+        "WebPreviewView must load mermaid.min.js from bundle")
+    try expect(source.contains("mermaidJS"),
+        "WebPreviewView must have a mermaidJS property")
+}
+
+runner.test("injectMermaid is called before loadViaFileURL") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("injectMermaid(into: injectPrism(into:"),
+        "injectMermaid must wrap injectPrism — Mermaid injected after Prism in the same pass")
+    try expect(source.contains("loadViaFileURL(fullHTML"),
+        "loadViaFileURL must receive the fully-injected HTML including Mermaid")
+}
+
+runner.test("JS fast-path calls _markviewRenderMermaid after innerHTML swap") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("_markviewRenderMermaid"),
+        "JS fast-path must call window._markviewRenderMermaid after content update")
+}
+
+runner.test("injectMermaid exposes bridge as window._markviewRenderMermaid") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("window._markviewRenderMermaid = function()"),
+        "Mermaid bridge must be exposed as window._markviewRenderMermaid for fast-path reuse")
+}
+
+runner.test("injectMermaid bridge converts pre>code.language-mermaid to div.mermaid") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("language-mermaid"),
+        "Mermaid bridge must target code.language-mermaid (cmark-gfm output format)")
+    try expect(source.contains("div.className = 'mermaid'") || source.contains("className = 'mermaid'"),
+        "Mermaid bridge must convert to <div class=\"mermaid\">")
+    try expect(source.contains("code.textContent") || source.contains("textContent"),
+        "Mermaid bridge must use textContent (not innerHTML) to safely read diagram source")
+    try expect(source.contains("pre.parentNode.replaceChild"),
+        "Mermaid bridge must replace the <pre> element with the mermaid div")
+}
+
+runner.test("injectMermaid uses dark theme in dark mode") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("prefers-color-scheme: dark"),
+        "Mermaid initialization must check dark mode preference")
+    try expect(source.contains("theme: isDark ? 'dark' : 'default'") ||
+               (source.contains("'dark'") && source.contains("'default'")),
+        "Mermaid must use dark theme in dark mode and default theme in light mode")
+}
+
+runner.test("injectMermaid uses startOnLoad: false for explicit control") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("startOnLoad: false"),
+        "Mermaid must be initialized with startOnLoad: false to prevent double-rendering")
+}
+
+runner.test("injectMermaid handles DOMContentLoaded for initial load timing") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("DOMContentLoaded"),
+        "Mermaid bridge must handle DOMContentLoaded for pages where DOM isn't ready yet")
+}
+
+runner.test("template.html has mermaid CSS") {
+    let templatePath = "Sources/MarkView/Resources/template.html"
+    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
+    try expect(template.contains(".mermaid"),
+        "template.html must have CSS for .mermaid elements")
+}
+
+runner.test("mermaid CSS positions diagrams correctly") {
+    let templatePath = "Sources/MarkView/Resources/template.html"
+    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
+    // Find the .mermaid CSS rule
+    guard let mermaidRange = template.range(of: ".mermaid") else {
+        throw TestError.assertionFailed("No .mermaid CSS rule found in template.html")
+    }
+    let afterMermaid = String(template[mermaidRange.upperBound...].prefix(200))
+    try expect(afterMermaid.contains("margin-bottom"),
+        "Mermaid container must have margin-bottom for spacing")
+    try expect(template.contains(".mermaid svg"),
+        "template.html must have CSS for .mermaid svg to constrain diagram size")
+    try expect(template.contains("max-width: 100%"),
+        ".mermaid svg must have max-width: 100% to prevent overflow on narrow viewports")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()

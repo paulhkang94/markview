@@ -8,7 +8,7 @@ import MarkViewCore
 
 let fixtureNames = [
     "basic", "gfm-tables", "gfm-tasklists", "gfm-strikethrough",
-    "gfm-autolinks", "code-blocks", "links-and-images", "edge-cases"
+    "gfm-autolinks", "code-blocks", "links-and-images", "edge-cases", "mermaid"
 ]
 
 let projectDir = FileManager.default.currentDirectoryPath
