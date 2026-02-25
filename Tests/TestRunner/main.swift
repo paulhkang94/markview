@@ -3251,16 +3251,27 @@ let appexPath = "\(appBundlePath)/Contents/PlugIns/MarkViewQuickLook.appex"
 let appBundleExists = FileManager.default.fileExists(atPath: appBundlePath)
 
 if appBundleExists {
-    // Resources are in MarkView_MarkViewCore.bundle (SPM-managed, added in v1.2.0).
-    // Fallback: MarkView_MarkView.bundle (legacy Xcode build) or direct in Contents/Resources/.
-    // Helper: check all three locations for a given resource filename.
+    // Automation fix: scan ALL *.bundle directories in Contents/Resources/ rather than
+    // hardcoding bundle names. When SPM target names change or new bundles are added,
+    // no test updates required — the scanner finds the resource automatically.
     func resourceExistsInBundle(_ filename: String) -> Bool {
-        let coreBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources/\(filename)"
-        let legacyBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle/Resources/\(filename)"
-        let directPath = "\(appBundlePath)/Contents/Resources/\(filename)"
-        return FileManager.default.fileExists(atPath: coreBundlePath)
-            || FileManager.default.fileExists(atPath: legacyBundlePath)
-            || FileManager.default.fileExists(atPath: directPath)
+        let resourcesDir = "\(appBundlePath)/Contents/Resources"
+
+        // 1. Check direct path (Xcode ad-hoc builds)
+        if FileManager.default.fileExists(atPath: "\(resourcesDir)/\(filename)") { return true }
+
+        // 2. Scan all *.bundle directories for the resource (handles any SPM bundle name)
+        let bundles = (try? FileManager.default.contentsOfDirectory(atPath: resourcesDir))?
+            .filter { $0.hasSuffix(".bundle") } ?? []
+        for bundle in bundles {
+            let paths = [
+                "\(resourcesDir)/\(bundle)/Contents/Resources/\(filename)",  // SPM bundle layout
+                "\(resourcesDir)/\(bundle)/Resources/\(filename)",           // legacy layout
+                "\(resourcesDir)/\(bundle)/\(filename)",                     // flat layout
+            ]
+            if paths.contains(where: { FileManager.default.fileExists(atPath: $0) }) { return true }
+        }
+        return false
     }
 
     runner.test("App bundle contains template.html") {
@@ -3280,10 +3291,21 @@ if appBundleExists {
 
     // Runtime resource load tests — verify resources are actually loadable via Bundle API.
     func loadResourceBundle() -> Bundle? {
-        // Priority: MarkView_MarkViewCore.bundle (SPM, v1.2.0+) → MarkView_MarkView.bundle (legacy) → Bundle.main
-        let corePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkViewCore.bundle"
-        let legacyPath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle"
-        return Bundle(path: corePath) ?? Bundle(path: legacyPath) ?? Bundle(path: appBundlePath)
+        // Scan all *.bundle dirs; return the first one that contains template.html.
+        // This is bundle-name-agnostic — works regardless of SPM target renaming.
+        let resourcesDir = "\(appBundlePath)/Contents/Resources"
+        let bundles = (try? FileManager.default.contentsOfDirectory(atPath: resourcesDir))?
+            .filter { $0.hasSuffix(".bundle") } ?? []
+        for bundleName in bundles {
+            let bundlePath = "\(resourcesDir)/\(bundleName)"
+            if let b = Bundle(path: bundlePath) {
+                // Check if this bundle contains our resources (any layout)
+                let has = b.url(forResource: "template", withExtension: "html") != nil
+                    || b.url(forResource: "template", withExtension: "html", subdirectory: "Resources") != nil
+                if has { return b }
+            }
+        }
+        return Bundle(path: appBundlePath)
     }
 
     runner.test("Runtime: template.html loadable from app bundle") {
