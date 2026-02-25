@@ -33,17 +33,22 @@ echo "Canonical version: $CANONICAL (build $CANONICAL_BUILD)"
 ERRORS=0
 
 # Git tag ↔ plist version check (Tier 0: no AI, pure string comparison)
+# Note: during a release, plist is bumped BEFORE the tag is created.
+# If plist version has no tag yet (unreleased bump), treat as warning not error.
 LATEST_TAG=$(git -C "$PROJECT_DIR" describe --tags --abbrev=0 --match "v*" 2>/dev/null | sed 's/^v//' || true)
+CANONICAL_TAG_EXISTS=$(git -C "$PROJECT_DIR" tag --list "v$CANONICAL" 2>/dev/null || true)
 if [ -z "$LATEST_TAG" ]; then
     echo "  ⚠ No version tags found — skipping tag sync check"
+elif [ "$LATEST_TAG" = "$CANONICAL" ]; then
+    echo "  ✓ Git tag v$LATEST_TAG matches Info.plist $CANONICAL"
+elif [ -z "$CANONICAL_TAG_EXISTS" ]; then
+    # Plist was bumped but tag not yet created — this is expected mid-release
+    echo "  ⚠ Info.plist is $CANONICAL but no tag v$CANONICAL exists yet (unreleased bump — run: git tag v$CANONICAL && git push --tags)"
 else
-    if [ "$LATEST_TAG" = "$CANONICAL" ]; then
-        echo "  ✓ Git tag v$LATEST_TAG matches Info.plist $CANONICAL"
-    else
-        echo "  ✗ Git tag v$LATEST_TAG does not match Info.plist $CANONICAL"
-        echo "    Fix: bash scripts/release.sh --bump patch  (or major/minor)"
-        ERRORS=$((ERRORS + 1))
-    fi
+    # Tag exists but doesn't match plist — genuine mismatch
+    echo "  ✗ Git tag v$LATEST_TAG does not match Info.plist $CANONICAL"
+    echo "    Fix: bash scripts/release.sh --bump patch  (or major/minor)"
+    ERRORS=$((ERRORS + 1))
 fi
 
 # Warn if commits exist since last tag (unreleased changes)
