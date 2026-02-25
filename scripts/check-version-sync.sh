@@ -7,14 +7,26 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 PLIST="$PROJECT_DIR/Sources/MarkView/Info.plist"
-CANONICAL=$(plutil -extract CFBundleShortVersionString raw "$PLIST" 2>/dev/null || true)
+
+# Read plist values using Python (cross-platform: works on macOS + Linux CI).
+# plutil is macOS-only and fails silently on Ubuntu.
+plist_value() {
+    python3 -c "
+import plistlib, sys
+with open(sys.argv[1], 'rb') as f:
+    d = plistlib.load(f)
+print(d.get(sys.argv[2], ''))
+" "$1" "$2" 2>/dev/null || true
+}
+
+CANONICAL=$(plist_value "$PLIST" "CFBundleShortVersionString")
 
 if [ -z "$CANONICAL" ]; then
     echo "✗ Cannot read version from Info.plist"
     exit 1
 fi
 
-CANONICAL_BUILD=$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || true)
+CANONICAL_BUILD=$(plist_value "$PLIST" "CFBundleVersion")
 
 echo "Canonical version: $CANONICAL (build $CANONICAL_BUILD)"
 
@@ -43,14 +55,14 @@ fi
 # Quick Look Info.plist
 QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
 if [ -f "$QL_PLIST" ]; then
-    QL_VER=$(plutil -extract CFBundleShortVersionString raw "$QL_PLIST" 2>/dev/null || true)
+    QL_VER=$(plist_value "$QL_PLIST" "CFBundleShortVersionString")
     if [ "$QL_VER" = "$CANONICAL" ]; then
         echo "  ✓ QuickLook CFBundleShortVersionString: $QL_VER"
     else
         echo "  ✗ QuickLook CFBundleShortVersionString: $QL_VER (expected $CANONICAL)"
         ERRORS=$((ERRORS + 1))
     fi
-    QL_BUILD=$(plutil -extract CFBundleVersion raw "$QL_PLIST" 2>/dev/null || true)
+    QL_BUILD=$(plist_value "$QL_PLIST" "CFBundleVersion")
     if [ "$QL_BUILD" = "$CANONICAL_BUILD" ]; then
         echo "  ✓ QuickLook CFBundleVersion: $QL_BUILD"
     else
@@ -74,7 +86,7 @@ fi
 # Installed app (advisory only — not an error if not installed)
 INSTALLED_PLIST="/Applications/MarkView.app/Contents/Info.plist"
 if [ -f "$INSTALLED_PLIST" ]; then
-    INST_VER=$(plutil -extract CFBundleShortVersionString raw "$INSTALLED_PLIST" 2>/dev/null || true)
+    INST_VER=$(plist_value "$INSTALLED_PLIST" "CFBundleShortVersionString")
     if [ "$INST_VER" = "$CANONICAL" ]; then
         echo "  ✓ Installed app: $INST_VER"
     else

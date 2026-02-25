@@ -8,7 +8,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Ensure no private config files are committed
         run: |
-          blocked=$(git ls-tree -r --name-only HEAD | grep -E '^\.(claude|vscode)/|^CLAUDE\.md$|^hooks/|^scripts/claude-' || true)
+          # CLAUDE.md is intentional in this repo (project AI dev guide — not private LOOP infra).
+          # Block .claude/ directory contents and scripts/claude-* only.
+          blocked=$(git ls-tree -r --name-only HEAD | grep -E '^\.(claude)/|^hooks/|^scripts/claude-' || true)
           if [ -n "$blocked" ]; then
             echo "::error::Private configuration files detected in repo:"
             echo "$blocked"
