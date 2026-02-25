@@ -20,7 +20,12 @@ let package = Package(
                 .product(name: "cmark-gfm", package: "swift-cmark"),
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
             ],
-            path: "Sources/MarkViewCore"
+            path: "Sources/MarkViewCore",
+            resources: [
+                .process("Resources/template.html"),
+                .process("Resources/prism-bundle.min.js"),
+                .process("Resources/mermaid.min.js"),
+            ]
         ),
         // MCP server — stdio JSON-RPC server for AI tool integration
         .executableTarget(

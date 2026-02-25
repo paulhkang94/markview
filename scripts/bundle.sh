@@ -78,7 +78,8 @@ xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
     -scheme "$APP_NAME" \
     -configuration Release \
     -derivedDataPath "$PROJECT_DIR/build" \
-    CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+    CODE_SIGN_IDENTITY="-" \
+    CODE_SIGN_STYLE=Manual \
     ONLY_ACTIVE_ARCH=NO \
     2>&1 | tail -5
 echo "✓ xcodebuild complete"
@@ -121,6 +122,12 @@ done
 # Re-sign framework bundles
 find "$APP_DIR/Contents/Frameworks" -name "*.framework" -maxdepth 1 2>/dev/null | while read -r fw; do
     codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$fw" 2>/dev/null && echo "  ✓ Re-signed: $(basename "$fw")" || true
+done
+
+# Re-sign SPM resource bundles in Contents/Resources/ (MarkView_MarkViewCore.bundle etc.)
+# xcodebuild uses ad-hoc (-) for these; we need Developer ID for distribution.
+find "$APP_DIR/Contents/Resources" -name "*.bundle" -maxdepth 1 2>/dev/null | while read -r bundle; do
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$bundle" 2>/dev/null && echo "  ✓ Re-signed: $(basename "$bundle")" || true
 done
 
 # Re-sign Quick Look extension with entitlements + timestamp

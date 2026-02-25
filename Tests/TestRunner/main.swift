@@ -442,7 +442,7 @@ runner.test("custom template") {
 runner.test("template.html contract: contains required element IDs and placeholder") {
     // This test catches drift between template.html and the code that references it.
     // If template.html is modified to remove/rename these, this test fails.
-    let templatePath = "Sources/MarkView/Resources/template.html"
+    let templatePath = "Sources/MarkViewCore/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)
 
     try expect(template.contains(TemplateConstants.contentPlaceholder),
@@ -2173,7 +2173,7 @@ print("\n=== Focus CSS Tests ===")
 runner.test("template has :focus-visible styles") {
     // Read template.html from disk
     let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let template = try String(contentsOf: templatePath, encoding: .utf8)
     try expect(template.contains(":focus-visible"), "template.html missing :focus-visible CSS")
     try expect(template.contains("outline:") || template.contains("outline-color:"), "template.html missing focus outline style")
@@ -2181,7 +2181,7 @@ runner.test("template has :focus-visible styles") {
 
 runner.test("dark mode has focus outline color") {
     let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let template = try String(contentsOf: templatePath, encoding: .utf8)
 
     guard let darkStart = template.range(of: "@media (prefers-color-scheme: dark)") else {
@@ -2198,7 +2198,7 @@ print("\n=== Internationalization Tests ===")
 
 runner.test("template has lang attribute") {
     let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let template = try String(contentsOf: templatePath, encoding: .utf8)
     try expect(template.contains("<html lang=\"en\">"), "template.html missing lang=en attribute")
 }
@@ -2210,7 +2210,7 @@ runner.test("inline template has lang attribute") {
 
 runner.test("RTL CSS rules exist in template") {
     let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let template = try String(contentsOf: templatePath, encoding: .utf8)
     try expect(template.contains("[dir=\"rtl\"]"), "template.html missing RTL CSS rules")
     try expect(template.contains("[dir=\"rtl\"] blockquote"), "template.html missing RTL blockquote rule")
@@ -2315,7 +2315,7 @@ runner.test("inline template: all text elements have explicit dark color") {
 
 runner.test("template.html: all text elements have explicit dark color") {
     let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let template = try String(contentsOf: templatePath, encoding: .utf8)
     let darkRules = extractDarkModeRules(from: template)
 
@@ -2377,7 +2377,7 @@ runner.test("dark mode CSS is consistent across all 3 locations") {
     let inlineDark = extractDarkModeRules(from: inlineHTML)
 
     // 2. template.html
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/Resources/template.html")
+    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let templateHTML = try String(contentsOf: templatePath, encoding: .utf8)
     let templateDark = extractDarkModeRules(from: templateHTML)
 
@@ -3251,38 +3251,46 @@ let appexPath = "\(appBundlePath)/Contents/PlugIns/MarkViewQuickLook.appex"
 let appBundleExists = FileManager.default.fileExists(atPath: appBundlePath)
 
 if appBundleExists {
-    // Resources must be accessible at runtime. They may live in an SPM resource bundle
-    // (MarkView_MarkView.bundle/Resources/) or directly in Contents/Resources/ (Xcode build).
+    // Resources are in MarkView_MarkViewCore.bundle (SPM-managed, added in v1.2.0).
+    // Fallback: MarkView_MarkView.bundle (legacy Xcode build) or direct in Contents/Resources/.
+    // Helper: check all three locations for a given resource filename.
+    func resourceExistsInBundle(_ filename: String) -> Bool {
+        let coreBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources/\(filename)"
+        let legacyBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle/Resources/\(filename)"
+        let directPath = "\(appBundlePath)/Contents/Resources/\(filename)"
+        return FileManager.default.fileExists(atPath: coreBundlePath)
+            || FileManager.default.fileExists(atPath: legacyBundlePath)
+            || FileManager.default.fileExists(atPath: directPath)
+    }
+
     runner.test("App bundle contains template.html") {
-        let spmPath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle/Resources/template.html"
-        let directPath = "\(appBundlePath)/Contents/Resources/template.html"
-        try expect(FileManager.default.fileExists(atPath: spmPath) || FileManager.default.fileExists(atPath: directPath),
-            "template.html must exist in SPM bundle or Contents/Resources/")
+        try expect(resourceExistsInBundle("template.html"),
+            "template.html must exist in MarkView_MarkViewCore.bundle, MarkView_MarkView.bundle, or Contents/Resources/")
     }
 
     runner.test("App bundle contains prism-bundle.min.js") {
-        let spmPath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle/Resources/prism-bundle.min.js"
-        let directPath = "\(appBundlePath)/Contents/Resources/prism-bundle.min.js"
-        try expect(FileManager.default.fileExists(atPath: spmPath) || FileManager.default.fileExists(atPath: directPath),
-            "prism-bundle.min.js must exist in SPM bundle or Contents/Resources/")
+        try expect(resourceExistsInBundle("prism-bundle.min.js"),
+            "prism-bundle.min.js must exist in MarkView_MarkViewCore.bundle, MarkView_MarkView.bundle, or Contents/Resources/")
     }
 
     runner.test("App bundle contains mermaid.min.js") {
-        let spmPath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle/Resources/mermaid.min.js"
-        let directPath = "\(appBundlePath)/Contents/Resources/mermaid.min.js"
-        try expect(FileManager.default.fileExists(atPath: spmPath) || FileManager.default.fileExists(atPath: directPath),
-            "mermaid.min.js must exist in app bundle — run xcodegen generate before building")
+        try expect(resourceExistsInBundle("mermaid.min.js"),
+            "mermaid.min.js must exist in app bundle (MarkView_MarkViewCore.bundle)")
     }
 
-    // Runtime resource load tests — verify resources are actually loadable,
-    // not just that files exist on disk. This catches ResourceBundle path issues.
+    // Runtime resource load tests — verify resources are actually loadable via Bundle API.
+    func loadResourceBundle() -> Bundle? {
+        // Priority: MarkView_MarkViewCore.bundle (SPM, v1.2.0+) → MarkView_MarkView.bundle (legacy) → Bundle.main
+        let corePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkViewCore.bundle"
+        let legacyPath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle"
+        return Bundle(path: corePath) ?? Bundle(path: legacyPath) ?? Bundle(path: appBundlePath)
+    }
+
     runner.test("Runtime: template.html loadable from app bundle") {
-        let appBundle = Bundle(path: "\(appBundlePath)")
-        // Try SPM bundle first, then direct in Resources/
-        let spmBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle"
-        let resourceBundle = Bundle(path: spmBundlePath) ?? appBundle
-        let templateURL = resourceBundle?.url(forResource: "template", withExtension: "html", subdirectory: "Resources")
-            ?? resourceBundle?.url(forResource: "template", withExtension: "html")
+        let resourceBundle = loadResourceBundle()
+        // SPM-managed resources land at Contents/Resources/ inside the bundle (no subdirectory needed)
+        let templateURL = resourceBundle?.url(forResource: "template", withExtension: "html")
+            ?? resourceBundle?.url(forResource: "template", withExtension: "html", subdirectory: "Resources")
         try expect(templateURL != nil, "template.html must be loadable via Bundle resource lookup (not just file existence)")
         if let url = templateURL {
             let content = try String(contentsOf: url, encoding: .utf8)
@@ -3294,11 +3302,9 @@ if appBundleExists {
     }
 
     runner.test("Runtime: prism-bundle.min.js loadable from app bundle") {
-        let appBundle = Bundle(path: "\(appBundlePath)")
-        let spmBundlePath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle"
-        let resourceBundle = Bundle(path: spmBundlePath) ?? appBundle
-        let prismURL = resourceBundle?.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources")
-            ?? resourceBundle?.url(forResource: "prism-bundle.min", withExtension: "js")
+        let resourceBundle = loadResourceBundle()
+        let prismURL = resourceBundle?.url(forResource: "prism-bundle.min", withExtension: "js")
+            ?? resourceBundle?.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources")
         try expect(prismURL != nil, "prism-bundle.min.js must be loadable via Bundle resource lookup")
     }
 
@@ -3604,13 +3610,13 @@ runner.test("mermaid block with special chars does not break HTML structure") {
 print("\n=== Tier 2: Mermaid Integration (WebPreviewView source contracts) ===")
 
 runner.test("mermaid.min.js resource exists in expected location") {
-    let mermaidPath = "Sources/MarkView/Resources/mermaid.min.js"
+    let mermaidPath = "Sources/MarkViewCore/Resources/mermaid.min.js"
     let exists = FileManager.default.fileExists(atPath: mermaidPath)
     try expect(exists, "mermaid.min.js must exist at \(mermaidPath)")
 }
 
 runner.test("mermaid.min.js is non-empty and contains mermaid API") {
-    let mermaidPath = "Sources/MarkView/Resources/mermaid.min.js"
+    let mermaidPath = "Sources/MarkViewCore/Resources/mermaid.min.js"
     let content = try String(contentsOfFile: mermaidPath, encoding: .utf8)
     try expect(!content.isEmpty, "mermaid.min.js must not be empty")
     // The bundle must expose the mermaid global
@@ -3681,7 +3687,7 @@ runner.test("injectMermaid handles DOMContentLoaded for initial load timing") {
 }
 
 runner.test("template.html has mermaid CSS") {
-    let templatePath = "Sources/MarkView/Resources/template.html"
+    let templatePath = "Sources/MarkViewCore/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)
     try expect(template.contains(".mermaid"),
         "template.html must have CSS for .mermaid elements")
@@ -3761,7 +3767,7 @@ runner.test("wrapInTemplate uses file template (not fallback) — article ID pre
     // The FILE template (template.html) does. If the file template fails to load,
     // the fallback is used, updateContentViaJS finds no element, and updates silently fail.
     // This test verifies the file template produces the required article element.
-    let templatePath = "Sources/MarkView/Resources/template.html"
+    let templatePath = "Sources/MarkViewCore/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)
 
     // The template itself must have the id
@@ -3790,7 +3796,7 @@ runner.test("suppresFileWatcher resets after 250ms — external changes not perm
 }
 
 runner.test("mermaid CSS positions diagrams correctly") {
-    let templatePath = "Sources/MarkView/Resources/template.html"
+    let templatePath = "Sources/MarkViewCore/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)
     // Find the .mermaid CSS rule
     guard let mermaidRange = template.range(of: ".mermaid") else {

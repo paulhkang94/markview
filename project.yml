@@ -26,7 +26,9 @@ targets:
           - Info.plist
           - "*.entitlements"
     resources:
-      - path: Sources/MarkView/Resources
+      # AppIcon.icns only — template.html, prism-bundle.min.js, mermaid.min.js are
+      # declared in Package.swift MarkViewCore target and bundled as MarkView_MarkViewCore.bundle.
+      - path: Sources/MarkView/Resources/AppIcon.icns
         buildPhase: resources
     dependencies:
       - package: MarkViewCore
