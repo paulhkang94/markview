@@ -391,21 +391,18 @@ struct WebPreviewView: NSViewRepresentable {
                         startOnLoad: false,
                         theme: isDark ? 'dark' : 'default',
                         securityLevel: 'loose',
-                        // htmlLabels:false fixes subgraph label overflow — with htmlLabels:true
-                        // Mermaid clips long subgraph titles onto node content areas.
-                        // SVG text rendering wraps correctly with the default label width.
-                        flowchart: { useMaxWidth: true, htmlLabels: false, wrappingWidth: 200 },
+                        // htmlLabels:false: SVG text wraps correctly vs HTML mode which clips.
+                        // rankSpacing:80 pushes the first node down far enough that multi-line
+                        // subgraph titles don't overlap child nodes (Dagre default is 50 — too tight).
+                        flowchart: { useMaxWidth: true, htmlLabels: false, rankSpacing: 80, nodeSpacing: 60 },
                         sequence: { useMaxWidth: true },
                         gantt: { useMaxWidth: true },
                         er: { useMaxWidth: true },
                         pie: { useMaxWidth: true }
                     });
                     mermaid.run().then(function() {
-                        // Post-render: normalize SVG dimensions so diagrams are
-                        // responsive. Mermaid sets absolute pixel widths on SVGs
-                        // which override CSS max-width unless we add a viewBox
-                        // and remove the fixed height attribute.
                         document.querySelectorAll('.mermaid svg').forEach(function(svg) {
+                            // 1. Responsive sizing: add viewBox so max-width:100% scales correctly
                             var w = parseFloat(svg.getAttribute('width') || '0');
                             var h = parseFloat(svg.getAttribute('height') || '0');
                             if (w > 0 && h > 0 && !svg.getAttribute('viewBox')) {
@@ -415,6 +412,32 @@ struct WebPreviewView: NSViewRepresentable {
                             svg.style.maxWidth = '100%';
                             svg.style.height = 'auto';
                             svg.style.display = 'block';
+
+                            // 2. Fix subgraph label overlap: Dagre places the cluster label
+                            // at the top of the cluster rect. When labels wrap to multiple lines,
+                            // the first child node can overlap the title. Detect and shift label up.
+                            svg.querySelectorAll('.cluster').forEach(function(cluster) {
+                                var clusterRect = cluster.querySelector('rect');
+                                var labelGroup = cluster.querySelector('.cluster-label');
+                                if (!clusterRect || !labelGroup) return;
+                                try {
+                                    var labelBB = labelGroup.getBBox();
+                                    var rectBB = clusterRect.getBBox();
+                                    // If label bottom extends below cluster top + 10px padding, shift it up
+                                    var labelBottom = labelBB.y + labelBB.height;
+                                    var rectTop = rectBB.y;
+                                    if (labelBottom > rectTop + labelBB.height + 10) {
+                                        var shift = labelBottom - (rectTop + labelBB.height + 10);
+                                        var currentTransform = labelGroup.getAttribute('transform') || '';
+                                        var match = currentTransform.match(/translate\(([^,]+),([^)]+)\)/);
+                                        if (match) {
+                                            var tx = parseFloat(match[1]);
+                                            var ty = parseFloat(match[2]) - shift;
+                                            labelGroup.setAttribute('transform', 'translate(' + tx + ',' + ty + ')');
+                                        }
+                                    }
+                                } catch(e) {}
+                            });
                         });
                     }).catch(function() {});
                 };
