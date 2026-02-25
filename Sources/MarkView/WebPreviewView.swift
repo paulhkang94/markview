@@ -387,8 +387,33 @@ struct WebPreviewView: NSViewRepresentable {
                         pre.parentNode.replaceChild(div, pre);
                     });
                     var isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    mermaid.initialize({ startOnLoad: false, theme: isDark ? 'dark' : 'default', securityLevel: 'loose' });
-                    mermaid.run();
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        theme: isDark ? 'dark' : 'default',
+                        securityLevel: 'loose',
+                        flowchart: { useMaxWidth: true, htmlLabels: true },
+                        sequence: { useMaxWidth: true },
+                        gantt: { useMaxWidth: true },
+                        er: { useMaxWidth: true },
+                        pie: { useMaxWidth: true }
+                    });
+                    mermaid.run().then(function() {
+                        // Post-render: normalize SVG dimensions so diagrams are
+                        // responsive. Mermaid sets absolute pixel widths on SVGs
+                        // which override CSS max-width unless we add a viewBox
+                        // and remove the fixed height attribute.
+                        document.querySelectorAll('.mermaid svg').forEach(function(svg) {
+                            var w = parseFloat(svg.getAttribute('width') || '0');
+                            var h = parseFloat(svg.getAttribute('height') || '0');
+                            if (w > 0 && h > 0 && !svg.getAttribute('viewBox')) {
+                                svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+                            }
+                            svg.removeAttribute('height');
+                            svg.style.maxWidth = '100%';
+                            svg.style.height = 'auto';
+                            svg.style.display = 'block';
+                        });
+                    }).catch(function() {});
                 };
                 if (document.readyState === 'loading') {
                     document.addEventListener('DOMContentLoaded', window._markviewRenderMermaid);
