@@ -432,7 +432,7 @@ struct WebPreviewView: NSViewRepresentable {
                                     if (labelBottom > rectTop + labelBB.height + 10) {
                                         var shift = labelBottom - (rectTop + labelBB.height + 10);
                                         var currentTransform = labelGroup.getAttribute('transform') || '';
-                                        var match = currentTransform.match(/translate\(([^,]+),([^)]+)\)/);
+                                        var match = currentTransform.match(/translate\\(([^,]+),([^)]+)\\)/);
                                         if (match) {
                                             var tx = parseFloat(match[1]);
                                             var ty = parseFloat(match[2]) - shift;
