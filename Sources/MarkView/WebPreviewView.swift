@@ -391,7 +391,10 @@ struct WebPreviewView: NSViewRepresentable {
                         startOnLoad: false,
                         theme: isDark ? 'dark' : 'default',
                         securityLevel: 'loose',
-                        flowchart: { useMaxWidth: true, htmlLabels: true },
+                        // htmlLabels:false fixes subgraph label overflow — with htmlLabels:true
+                        // Mermaid clips long subgraph titles onto node content areas.
+                        // SVG text rendering wraps correctly with the default label width.
+                        flowchart: { useMaxWidth: true, htmlLabels: false, wrappingWidth: 200 },
                         sequence: { useMaxWidth: true },
                         gantt: { useMaxWidth: true },
                         er: { useMaxWidth: true },
