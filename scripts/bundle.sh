@@ -58,16 +58,17 @@ QL_PLIST="$PROJECT_DIR/Sources/MarkViewQuickLook/Info.plist"
 BUILD="$GIT_BUILD"
 echo "=== Building $APP_NAME.app v$VERSION (build $BUILD) ==="
 
-# Step 1: Ensure .xcodeproj exists (XcodeGen)
-if [ ! -d "$PROJECT_DIR/$APP_NAME.xcodeproj" ]; then
-    echo "--- Generating Xcode project ---"
-    if command -v xcodegen &> /dev/null; then
-        xcodegen generate --spec "$PROJECT_DIR/project.yml" --project "$PROJECT_DIR"
-        echo "✓ Xcode project generated"
-    else
-        echo "ERROR: xcodegen not found. Install with: brew install xcodegen"
-        exit 1
-    fi
+# Step 1: Always regenerate .xcodeproj from project.yml (XcodeGen)
+# Must always re-run so new resources (e.g. mermaid.min.js) are picked up.
+# xcodeproj references individual files — skipping regeneration means new
+# files in Sources/MarkView/Resources/ are silently omitted from the build.
+echo "--- Generating Xcode project ---"
+if command -v xcodegen &> /dev/null; then
+    xcodegen generate --spec "$PROJECT_DIR/project.yml" --project "$PROJECT_DIR"
+    echo "✓ Xcode project generated"
+else
+    echo "ERROR: xcodegen not found. Install with: brew install xcodegen"
+    exit 1
 fi
 
 # Step 2: Build with xcodebuild (handles app + extension + signing order)
@@ -125,6 +126,14 @@ done
 # Re-sign Quick Look extension with entitlements + timestamp
 QL_APPEX="$APP_DIR/Contents/PlugIns/MarkViewQuickLook.appex"
 if [ -d "$QL_APPEX" ]; then
+    # Generate PkgInfo for the QL extension — xcodebuild omits it for app extensions
+    # but macOS expects it (XPC! = package type for XPC/app-extension bundles).
+    QL_CONTENTS="$QL_APPEX/Contents"
+    if [ ! -f "$QL_CONTENTS/PkgInfo" ]; then
+        printf 'XPC!????' > "$QL_CONTENTS/PkgInfo"
+        echo "  ✓ Generated PkgInfo for MarkViewQuickLook.appex"
+    fi
+
     ENTITLEMENTS_QL_FLAGS=()
     if [ -f "$ENTITLEMENTS_QL" ]; then
         ENTITLEMENTS_QL_FLAGS=(--entitlements "$ENTITLEMENTS_QL")

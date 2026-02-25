@@ -3267,6 +3267,13 @@ if appBundleExists {
             "prism-bundle.min.js must exist in SPM bundle or Contents/Resources/")
     }
 
+    runner.test("App bundle contains mermaid.min.js") {
+        let spmPath = "\(appBundlePath)/Contents/Resources/MarkView_MarkView.bundle/Resources/mermaid.min.js"
+        let directPath = "\(appBundlePath)/Contents/Resources/mermaid.min.js"
+        try expect(FileManager.default.fileExists(atPath: spmPath) || FileManager.default.fileExists(atPath: directPath),
+            "mermaid.min.js must exist in app bundle — run xcodegen generate before building")
+    }
+
     // Runtime resource load tests — verify resources are actually loadable,
     // not just that files exist on disk. This catches ResourceBundle path issues.
     runner.test("Runtime: template.html loadable from app bundle") {
