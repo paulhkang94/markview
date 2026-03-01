@@ -21,10 +21,16 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 - **File watching** with DispatchSource (works with VS Code, Vim, and other editors)
 - **Multi-format support** via plugin architecture (Markdown, CSV, HTML)
 - **HTML sanitizer** that strips scripts, event handlers, and XSS vectors
-- **Auto-suggestions** for code fence languages, emoji, headings, and links
+- **Mermaid diagrams** — flowcharts, sequence, Gantt, ER, and pie charts via mermaid.js
+- **Bidirectional scroll sync** — frame-perfect editor/preview sync via CADisplayLink
+- **Local image rendering** — correctly inlines relative paths like `![](./image.png)`
+- **Drag and drop** — drop any `.md` file onto the window to open
+- **Find & Replace** — Cmd+F to find, Cmd+Option+F to find and replace
+- **Format on save** — auto-applies markdown lint fixes when saving
+- **Window auto-resize** — smart resize when toggling editor/preview panes
 - **Export** to HTML and PDF
 - **Dark mode** support with system/light/dark theme options
-- **17 configurable settings** including font, preview width, tab behavior, and more
+- **18 configurable settings** including font, preview width, tab behavior, and more
 
 ## Installation
 
@@ -165,17 +171,17 @@ Sources/MarkViewCore/           # Library (no UI, fully testable)
   HTMLSanitizer.swift           # XSS prevention
   Plugins/                      # CSV, HTML, Markdown plugins
 
-Sources/MarkView/               # SwiftUI app (macOS 13+)
+Sources/MarkView/               # SwiftUI app (macOS 14+)
   ContentView.swift             # Split-pane editor + preview
   WebPreviewView.swift          # WKWebView with Prism.js
-  Settings.swift                # 17 settings with theme/width/font enums
+  Settings.swift                # 18 settings with theme/width/font enums
   ExportManager.swift           # HTML/PDF export
 
 Sources/MarkViewMCPServer/      # MCP server for AI tool integration
   main.swift                    # stdio JSON-RPC server (preview_markdown, open_file)
 
-Tests/TestRunner/               # 341 standalone tests (no XCTest)
-Tests/VisualTester/             # 19 visual regression tests + WCAG contrast
+Tests/TestRunner/               # 382 standalone tests (no XCTest)
+Tests/VisualTester/             # 5 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
 scripts/test-mcp.sh             # 5 MCP protocol + integration tests
@@ -186,7 +192,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (341 tests)
+# Run all tests (382 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + tests)
