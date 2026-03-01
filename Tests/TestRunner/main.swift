@@ -3885,16 +3885,15 @@ runner.test("ContentView handles .exportPDF notification — regression for sile
         "WebPreviewView must register WKWebView with viewModel via onWebViewCreated")
 }
 
-runner.test("ExportManager uses NSPrintOperation for full-document PDF pagination") {
+runner.test("ExportManager uses createPDF with JS-resolved height — not NSPrintOperation") {
     let source = try String(contentsOfFile: "Sources/MarkView/ExportManager.swift", encoding: .utf8)
-    // WKPDFConfiguration.rect captures a viewport rectangle only — always 1 page.
-    // NSPrintOperation paginates the full scrollable document correctly.
-    try expect(!source.contains("WKPDFConfiguration()"),
-        "ExportManager must NOT instantiate WKPDFConfiguration — it only captures a viewport rect, not the full document")
-    try expect(source.contains("NSPrintOperation") || source.contains("printOperation"),
-        "ExportManager must use NSPrintOperation/printOperation for full-document pagination")
-    try expect(source.contains("verticalPagination"),
-        "Print info must set verticalPagination = .automatic for multi-page output")
+    // NSPrintOperation: 16M+ objects for complex HTML → 50MB corrupt files
+    try expect(!source.contains("NSPrintOperation("),
+        "ExportManager must NOT instantiate NSPrintOperation() — produces corrupt 50MB+ files for complex HTML")
+    try expect(source.contains("scrollHeight"),
+        "ExportManager must use JS scrollHeight to capture full document height")
+    try expect(source.contains("createPDF"),
+        "ExportManager must use WKWebView.createPDF for efficient PDF output")
 }
 
 runner.test("ContentView handles .exportHTML notification") {
