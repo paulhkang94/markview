@@ -154,6 +154,34 @@ jobs:
           fi
           echo "Golden baselines are up to date."
 
+  visual-smoke:
+    name: Visual Smoke Tests
+    runs-on: macos-15
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/.cache/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Run visual smoke tests (non-blank render gate)
+        run: |
+          OUTPUT=$(swift run MarkViewVisualTester --smoke 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q " 0 failed"; then
+            echo "Visual smoke tests passed."
+          else
+            echo "::error::Visual smoke tests failed — WKWebView may be rendering blank"
+            exit 1
+          fi
+
   sentry-release:
     name: Sentry Release
     runs-on: ubuntu-latest

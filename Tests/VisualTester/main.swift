@@ -21,9 +21,15 @@ let goldensDir = URL(fileURLWithPath: projectDir).appendingPathComponent("Tests/
 
 let args = CommandLine.arguments
 let generateGoldens = args.contains("--generate-goldens")
+let smokeMode = args.contains("--smoke")
 let thresholdArg = args.firstIndex(of: "--threshold").flatMap { idx in
     idx + 1 < args.count ? Double(args[idx + 1]) : nil
 } ?? 0.995
+
+// Smoke mode: minimum % of non-white pixels required for a "non-blank" render.
+// Catches WKWebView rendering blank white (sandbox block, JS crash, template failure).
+// White pixel: all channels >= 0.95 in sRGB.
+let smokeBlankThreshold = 0.03  // at least 3% of pixels must be non-white
 
 // =============================================================================
 // MARK: - Helpers
@@ -110,8 +116,64 @@ RunLoop.main.run()
 // MARK: - Test Logic (runs on background thread)
 // =============================================================================
 
+/// Returns the fraction of pixels in a PNG that are non-white (luminance < 0.95).
+/// Used by smoke mode to detect blank renders.
+func nonWhitePixelFraction(pngData: Data) -> Double? {
+    guard let bitmap = NSBitmapImageRep(data: pngData) else { return nil }
+    let width = bitmap.pixelsWide
+    let height = bitmap.pixelsHigh
+    guard width > 0 && height > 0 else { return nil }
+
+    var nonWhiteCount = 0
+    for y in 0..<height {
+        for x in 0..<width {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+            let isWhite = color.redComponent >= 0.95 &&
+                          color.greenComponent >= 0.95 &&
+                          color.blueComponent >= 0.95
+            if !isWhite { nonWhiteCount += 1 }
+        }
+    }
+    return Double(nonWhiteCount) / Double(width * height)
+}
+
 func runAllTests(renderer: OffscreenRenderer) -> Int32 {
     var runner = VisualTestRunner()
+
+    // --- Smoke mode: non-blank rendering check (no goldens required) ---
+    // Catches: WKWebView rendering blank white (sandbox block, template failure, JS crash).
+    // Run in CI as a quick gate before golden comparison.
+    if smokeMode {
+        print("=== Visual Smoke Tests (non-blank render check) ===")
+        print("Threshold: renders must have >\(Int(smokeBlankThreshold * 100))% non-white pixels\n")
+
+        let smokeFixtures = ["basic", "gfm-tables", "code-blocks", "links-and-images", "mermaid"]
+
+        for theme in ["light", "dark"] {
+            print("--- \(theme.capitalized) Mode ---")
+            for name in smokeFixtures {
+                runner.test("\(name) (\(theme)): renders non-blank") {
+                    guard var html = renderFixtureToHTML(name) else {
+                        // Some fixtures may not exist — skip gracefully
+                        return
+                    }
+                    if theme == "dark" { html = injectDarkMode(into: html) }
+                    let pngData = try renderer.renderToPNG(html: html)
+                    guard let fraction = nonWhitePixelFraction(pngData: pngData) else {
+                        throw VisualTestError.renderFailed(name)
+                    }
+                    if fraction < smokeBlankThreshold {
+                        throw VisualTestError.contrastFailed(
+                            "\(name) (\(theme)): only \(String(format: "%.1f%%", fraction * 100)) non-white pixels — WKWebView may have rendered blank. Need >\(Int(smokeBlankThreshold * 100))%")
+                    }
+                }
+            }
+        }
+
+        print("")
+        runner.summary()
+        return runner.failed > 0 ? 1 : 0
+    }
 
     // --- Golden generation mode ---
     if generateGoldens {

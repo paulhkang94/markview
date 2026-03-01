@@ -3042,6 +3042,18 @@ runner.test("Quick Look extension calls NSExtensionMain") {
         "Extension must call NSExtensionMain() to start the XPC hosting runtime")
 }
 
+runner.test("Main app entitlements MUST NOT include App Sandbox — Developer ID image loading regression") {
+    // App Sandbox (com.apple.security.app-sandbox) breaks image loading for Developer ID distribution:
+    //   1. Main process: Data(contentsOf: imageURL) returns nil for files outside app container
+    //   2. WKWebView WebContent process: sandboxed independently; allowingReadAccessTo doesn't propagate
+    // Hardened Runtime (required for notarization) is independent of App Sandbox — sandbox is safe to remove.
+    // DO NOT re-add app-sandbox to MarkView.entitlements. If you think you need it, read GOTCHAS.md first.
+    let entPath = "Sources/MarkView/MarkView.entitlements"
+    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
+    try expect(!entitlements.contains("com.apple.security.app-sandbox"),
+        "MarkView.entitlements must NOT contain app-sandbox — it breaks image loading (see GOTCHAS.md Session 4)")
+}
+
 runner.test("Quick Look entitlements enable app sandbox") {
     let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
     let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
