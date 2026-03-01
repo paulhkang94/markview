@@ -158,9 +158,7 @@ struct ContentView: View {
         let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let currentFrame = window.frame
 
-        let targetWidthFraction: CGFloat = showEditor ? 0.80 : 0.55
-        let minWidth: CGFloat = showEditor ? 900 : 800
-        let newWidth = max(screenFrame.width * targetWidthFraction, minWidth)
+        let newWidth = WindowLayout.width(showEditor: showEditor, in: screenFrame)
 
         // Center horizontally, keep vertical position
         let newX = screenFrame.origin.x + (screenFrame.width - newWidth) / 2

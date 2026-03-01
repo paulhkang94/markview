@@ -1,4 +1,5 @@
 import Combine
+import MarkViewCore
 import SwiftUI
 import Sentry
 
@@ -63,18 +64,8 @@ struct MarkViewApp: App {
         }
     }
 
-    /// Default window size for preview-only mode: 55% width, 85% height.
-    /// Editor+preview mode uses 80% width (handled by ContentView.toggleEditor).
-    /// Conservative: slightly wide is better than too narrow for readability.
     private var defaultWindowSize: CGSize {
-        if let screen = NSScreen.main {
-            let frame = screen.visibleFrame
-            return CGSize(
-                width: max(frame.width * 0.55, 800),
-                height: max(frame.height * 0.85, 600)
-            )
-        }
-        return CGSize(width: 900, height: 800)
+        WindowLayout.defaultWindowSize(for: NSScreen.main?.visibleFrame)
     }
 
     var body: some Scene {
