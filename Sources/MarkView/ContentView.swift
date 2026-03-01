@@ -122,7 +122,11 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
-                guard viewModel.isLoaded else { return }
+                AppLogger.export.info("exportHTML notification received — isLoaded=\(viewModel.isLoaded)")
+                guard viewModel.isLoaded else {
+                    errorPresenter.show("Export failed", detail: "No file loaded — open a markdown file first")
+                    return
+                }
                 ExportManager.exportHTML(
                     html: viewModel.renderedHTML,
                     suggestedName: viewModel.fileName,
