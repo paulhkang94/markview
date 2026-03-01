@@ -1,18 +1,18 @@
 # MarkView Launch Publicization Plan
 
 **Repo**: https://github.com/paulhkang94/markview
-**Updated**: 2026-02-19
-**Status**: Ready to execute — all pre-launch items complete
+**Updated**: 2026-03-01
+**Status**: In distribution — Reddit posts queued for Tuesday 3/3
 
 ---
 
 ## Pre-launch Checklist (all done)
 
-- [x] Repo public with clean history
-- [x] README with screenshots + demo GIF
+- [x] Repo public with clean history (3 stars, 1 fork organically as of 3/1)
+- [x] README updated 3/1 — 9 features added (Mermaid, scroll sync, local images, drag-drop, find/replace, format-on-save, window resize), counts corrected (382 tests, 18 settings, macOS 14+)
 - [x] MIT LICENSE
 - [x] App icon
-- [x] GitHub topics (7 topics set)
+- [x] GitHub topics (10 topics: mcp, mcp-server, model-context-protocol added 3/1)
 - [x] paulkang.dev live on Cloudflare Pages
 - [x] Private contributions disabled on GitHub profile
 - [x] Screenshots in docs/screenshots/
@@ -20,12 +20,37 @@
 - [x] Apple notarized + Gatekeeper approved (v1.1.3)
 - [x] Quick Look extension (preview .md in Finder)
 - [x] MCP server for AI tool integration
-- [x] 276 tests (unit + fuzz + differential + e2e)
+- [x] MCP registry description updated 3/1 — now includes tool names (preview_markdown, open_file)
+- [x] Listed: official MCP registry + Smithery + Glama
+- [x] Distribution drafts written: r/ClaudeAI, r/MacApps, awesome-claude-code issue, awesome-mcp-servers PR line → docs/personal/distribution-drafts-2026-03-01.md
+- [x] 382 tests (unit + fuzz + differential + e2e)
 - [x] CI green (6/6 jobs)
 
 ---
 
-## Tier 1: Launch Morning (all at once, ~30 min)
+## Tier 1: Launch Morning — Tuesday 3/3, 9-11AM ET
+
+**Schedule**: Mon 3/2 review drafts → Tue 3/3 9-11AM ET post r/ClaudeAI + r/MacApps + awesome lists
+**Drafts**: `docs/personal/distribution-drafts-2026-03-01.md`
+
+**New channels added 3/1 (post these first — highest ROI):**
+
+### 0. awesome-claude-code GitHub Issue (mar-009, due 3/3)
+Open issue on `hesreallyhim/awesome-claude-code` (21.6K stars). Title + body in distribution drafts §1. Lead with: only markdown previewer with MCP server. Tools: `preview_markdown`, `open_file`.
+
+### 0b. awesome-mcp-servers PR (mar-011, due 3/3)
+Fork `punkpeye/awesome-mcp-servers`, add one line under Markdown category. Line in distribution drafts §2. Auto-cascades to Glama + mcp.so + mcpservers.org.
+
+**Original Tier 1 channels (still valid, updated copy in drafts):**
+
+### 1. r/ClaudeAI (NEW — highest priority, mar-012, due 3/3)
+Use draft in distribution-drafts §3. Lead with MCP angle — this audience is already running Claude Code. Do NOT lead with "No Electron" here.
+
+### 2. r/MacApps (mar-014, due 3/3)
+Use draft in distribution-drafts §4. Lead with native/free/Swift. Zero MCP jargon.
+
+**Defer to week 2:**
+- Show HN: Sunday 3/8 7-9AM ET (low-competition window) or Tuesday 3/10 9AM ET
 
 **Best time**: Weekday, 8-10am ET. Tuesday-Thursday optimal for HN.
 
@@ -244,12 +269,14 @@ Only if HN/Reddit generate interest. PH audience skews toward GUI/consumer — l
 
 | Audience | Lead with | Avoid |
 |----------|-----------|-------|
+| r/ClaudeAI | MCP server, `preview_markdown` tool, AI-native workflow | "No Electron" (irrelevant to this audience) |
+| awesome-claude-code | Only previewer with MCP server, tool names, install command | Generic features |
 | HN/programmers | No Electron, fast, well-tested, open source | AI, Claude, development process |
-| Mac users | Native, Finder integration, lightweight, notarized | SPM, architecture details |
+| r/MacApps | Native, Finder integration, lightweight, notarized | MCP, SPM, architecture details |
 | Swift devs | Pure SPM, no Xcode, plugin protocol, testability | User-facing features |
-| Markdown users | GFM fidelity, linting, syntax highlighting | Implementation details |
+| Markdown users | GFM fidelity, Mermaid, linting, syntax highlighting | Implementation details |
 
-**Never mention**: Claude Code, AI-assisted development, LOOP/Flow, development timeline, cost.
+**Never mention in public**: Claude Code, AI-assisted development, LOOP/Flow, development timeline, cost.
 
 ---
 
