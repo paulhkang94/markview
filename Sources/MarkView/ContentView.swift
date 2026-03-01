@@ -130,7 +130,11 @@ struct ContentView: View {
                 )
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportPDF)) { _ in
-                guard viewModel.isLoaded else { return }
+                AppLogger.export.info("exportPDF notification received — isLoaded=\(viewModel.isLoaded) hasWebView=\(viewModel.previewWebView != nil)")
+                guard viewModel.isLoaded else {
+                    errorPresenter.show("PDF export failed", detail: "No file loaded — open a markdown file first")
+                    return
+                }
                 // Prefer direct reference stored at view creation; fall back to hierarchy search.
                 let resolvedWebView: WKWebView? = viewModel.previewWebView ?? findPreviewWebView()
                 guard let webView = resolvedWebView else {
