@@ -3709,6 +3709,49 @@ runner.test("injectMermaid handles DOMContentLoaded for initial load timing") {
         "Mermaid bridge must handle DOMContentLoaded for pages where DOM isn't ready yet")
 }
 
+runner.test("injectMermaid removes SVG width attribute for zoom scaling — regression for fixed-size diagrams") {
+    // Mermaid outputs SVG with fixed width="N" height="N" attributes.
+    // Removing BOTH allows the SVG to respect CSS max-width:100% and scale correctly
+    // when the user zooms or resizes the preview pane.
+    // REGRESSION GUARD: if only height is removed (old bug), width stays fixed and
+    // diagrams don't scale. Both removeAttribute calls are required.
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("removeAttribute('width')"),
+        "injectMermaid must remove SVG width attribute — fixed width prevents zoom scaling")
+    try expect(source.contains("removeAttribute('height')"),
+        "injectMermaid must remove SVG height attribute — fixed height breaks aspect ratio")
+    // Verify viewBox is preserved/added so the SVG knows its intrinsic dimensions
+    try expect(source.contains("setAttribute('viewBox'"),
+        "injectMermaid must set viewBox before removing dimensions — otherwise SVG loses its aspect ratio")
+}
+
+runner.test("injectMermaid sets SVG width:100% for fluid layout") {
+    // After removing fixed dimensions, the SVG needs an explicit CSS width so it fills
+    // its container rather than collapsing to 0. max-width:100% alone is insufficient
+    // when the SVG has no width attribute — width:100% is also required.
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("style.width = '100%'"),
+        "injectMermaid must set svg.style.width = '100%' after removing the width attribute")
+    try expect(source.contains("style.height = 'auto'"),
+        "injectMermaid must set svg.style.height = 'auto' for proportional scaling")
+}
+
+runner.test("template.html .mermaid svg CSS specifies explicit width for fluid scaling") {
+    // CSS must also specify width:100% on .mermaid svg so the rule applies even
+    // when JS post-processing hasn't fired yet (e.g. slow Mermaid init).
+    let templatePath = "Sources/MarkViewCore/Resources/template.html"
+    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
+    // Find the .mermaid svg rule
+    guard let svgRuleStart = template.range(of: ".mermaid svg") else {
+        throw TestError.assertionFailed("No .mermaid svg rule in template.html")
+    }
+    let afterRule = String(template[svgRuleStart.upperBound...].prefix(150))
+    try expect(afterRule.contains("width: 100%"),
+        ".mermaid svg CSS must include width: 100% so diagrams fill the pane before JS fires")
+    try expect(afterRule.contains("height: auto"),
+        ".mermaid svg CSS must include height: auto for proportional scaling")
+}
+
 runner.test("template.html has mermaid CSS") {
     let templatePath = "Sources/MarkViewCore/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)
