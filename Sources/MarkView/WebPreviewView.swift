@@ -307,10 +307,12 @@ struct WebPreviewView: NSViewRepresentable {
                 AppLogger.render.error("Failed to write temp preview file: \(error.localizedDescription)")
                 AppLogger.captureError(error, category: "render", message: "Temp file write failed")
             }
-            // Security: Restrict WKWebView file access to the narrowest directory that
-            // covers both the temp HTML file and the markdown file's directory (for images).
-            // Never grant access to "/" — that would expose the entire filesystem to XSS.
-            let accessURL = Self.restrictedAccessURL(tempFile: tempFile, baseDirectory: baseDirectoryURL)
+            // Security: Grant WKWebView read access to the markdown file's directory so
+            // relative images load. <base href> handles URL resolution; allowingReadAccessTo
+            // controls what the WebView can actually fetch from disk.
+            // Using baseDirectoryURL directly is safe — it's the markdown's own folder,
+            // not a broad path. Falls back to tempDir if no file is open (e.g. MCP preview).
+            let accessURL = baseDirectoryURL ?? tempFile.deletingLastPathComponent()
             webView.loadFileURL(tempFile, allowingReadAccessTo: accessURL)
             // Install scroll listener after page loads
             installScrollListenerAfterLoad(in: webView)
@@ -535,43 +537,5 @@ struct WebPreviewView: NSViewRepresentable {
             return str
         }
 
-        /// Compute the narrowest directory that covers both the temp HTML file and the
-        /// markdown file's base directory. Falls back to the temp directory when no base
-        /// directory is provided (inline content). Never returns "/".
-        static func restrictedAccessURL(tempFile: URL, baseDirectory: URL?) -> URL {
-            let tempDir = tempFile.deletingLastPathComponent()
-            guard let baseDir = baseDirectory else {
-                return tempDir
-            }
-
-            // Find the deepest common ancestor of tempDir and baseDir
-            let tempComponents = tempDir.standardizedFileURL.pathComponents
-            let baseComponents = baseDir.standardizedFileURL.pathComponents
-            let minCount = min(tempComponents.count, baseComponents.count)
-
-            var commonComponents: [String] = []
-            for i in 0..<minCount {
-                if tempComponents[i] == baseComponents[i] {
-                    commonComponents.append(tempComponents[i])
-                } else {
-                    break
-                }
-            }
-
-            // Safety: never return root "/" — require at least /Users or /private or similar
-            if commonComponents.count <= 1 {
-                // Paths diverge at root; fall back to just the temp directory.
-                // Images from the base directory won't load, but the preview is still safe.
-                AppLogger.render.warning("Base directory and temp directory share no common ancestor beyond /; restricting to temp directory only")
-                return tempDir
-            }
-
-            var ancestorPath = commonComponents.joined(separator: "/")
-            // pathComponents splits "/" into ["/"], so joining gives "//Users/..." — fix this
-            if ancestorPath.hasPrefix("//") {
-                ancestorPath = String(ancestorPath.dropFirst())
-            }
-            return URL(fileURLWithPath: ancestorPath, isDirectory: true)
-        }
     }
 }

@@ -3486,32 +3486,15 @@ runner.test("WebPreviewView does NOT grant read access to root filesystem") {
         "allowingReadAccessTo must NOT be root '/' — restricts to narrowest necessary directory")
 }
 
-runner.test("restrictedAccessURL helper exists with correct signature") {
+runner.test("loadViaFileURL grants access to baseDirectoryURL for local images") {
     let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("static func restrictedAccessURL(tempFile: URL, baseDirectory: URL?) -> URL"),
-        "restrictedAccessURL helper must exist as a static method")
-    try expect(source.contains("guard let baseDir = baseDirectory else"),
-        "restrictedAccessURL must return tempDir when baseDirectory is nil")
-}
-
-runner.test("restrictedAccessURL computes common ancestor") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("commonComponents"),
-        "restrictedAccessURL must compute the common ancestor of temp and base directories")
-}
-
-runner.test("restrictedAccessURL rejects root as common ancestor") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("commonComponents.count <= 1"),
-        "restrictedAccessURL must reject root '/' as a common ancestor (safety check)")
-}
-
-runner.test("loadViaFileURL uses restrictedAccessURL for access scope") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("Self.restrictedAccessURL(tempFile: tempFile, baseDirectory: baseDirectoryURL)"),
-        "loadViaFileURL must call restrictedAccessURL to compute the access scope")
+    // allowingReadAccessTo must use baseDirectoryURL (or tempDir fallback), not a computed ancestor.
+    // The common-ancestor approach broke images when temp dir (/var/folders) and base dir (/Users)
+    // share no ancestor beyond "/", causing WKWebView to fall back to tempDir-only access.
+    try expect(source.contains("baseDirectoryURL ?? tempFile.deletingLastPathComponent()"),
+        "loadViaFileURL must grant read access to baseDirectoryURL so relative images resolve")
     try expect(source.contains("allowingReadAccessTo: accessURL"),
-        "loadFileURL must use the computed accessURL, not a hardcoded path")
+        "loadFileURL must use accessURL derived from baseDirectoryURL")
 }
 
 // =============================================================================
