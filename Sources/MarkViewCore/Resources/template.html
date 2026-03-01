@@ -137,7 +137,8 @@
 
         /* Mermaid diagrams */
         .mermaid { text-align: center; margin-bottom: 16px; overflow-x: auto; }
-        .mermaid svg { max-width: 100%; height: auto; }
+        /* width/height attrs removed by JS post-processing so viewBox scales with zoom */
+        .mermaid svg { width: 100%; max-width: 100%; height: auto; display: block; margin: 0 auto; }
 
         /* Print */
         @media print {

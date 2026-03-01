@@ -448,14 +448,19 @@ struct WebPreviewView: NSViewRepresentable {
                     });
                     mermaid.run().then(function() {
                         document.querySelectorAll('.mermaid svg').forEach(function(svg) {
-                            // 1. Responsive sizing: add viewBox so max-width:100% scales correctly
+                            // 1. Responsive sizing: viewBox preserves aspect ratio; removing
+                            //    fixed width+height lets the SVG scale with zoom and container.
+                            //    Without this, Mermaid outputs e.g. width="800" height="400" which
+                            //    clips or overflows instead of scaling when the user zooms.
                             var w = parseFloat(svg.getAttribute('width') || '0');
                             var h = parseFloat(svg.getAttribute('height') || '0');
                             if (w > 0 && h > 0 && !svg.getAttribute('viewBox')) {
                                 svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
                             }
+                            svg.removeAttribute('width');
                             svg.removeAttribute('height');
                             svg.style.maxWidth = '100%';
+                            svg.style.width = '100%';
                             svg.style.height = 'auto';
                             svg.style.display = 'block';
 
