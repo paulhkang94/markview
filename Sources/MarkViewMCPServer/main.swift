@@ -76,8 +76,14 @@ struct MarkViewMCPServer {
         let safeName = filename.replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "..", with: "_")
 
-        let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("markview-mcp", isDirectory: true)
+        // Use a persistent cache directory instead of NSTemporaryDirectory.
+        // macOS cleans /tmp aggressively; the file can vanish between write and
+        // MarkView's FileWatcher initializing, causing NSCocoaErrorDomain Code 260.
+        // ~/.cache/markview/previews/ persists across app launches and is safe to
+        // rewrite on every preview_markdown call.
+        let cacheDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache/markview/previews", isDirectory: true)
+        let tmpDir = cacheDir
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
 
         let fileURL = tmpDir.appendingPathComponent(safeName)
