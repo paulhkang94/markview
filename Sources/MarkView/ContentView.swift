@@ -1,5 +1,6 @@
 import SwiftUI
 import MarkViewCore
+import WebKit
 
 struct ContentView: View {
     let initialFilePath: String?
@@ -118,6 +119,26 @@ struct ContentView: View {
                     AppLogger.captureError(error, category: "file", message: "Manual save failed")
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
+                guard viewModel.isLoaded else { return }
+                ExportManager.exportHTML(
+                    html: viewModel.renderedHTML,
+                    suggestedName: viewModel.fileName,
+                    errorPresenter: errorPresenter
+                )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportPDF)) { _ in
+                guard viewModel.isLoaded else { return }
+                guard let webView = findPreviewWebView() else {
+                    errorPresenter.show("PDF export failed", detail: "Preview not loaded")
+                    return
+                }
+                ExportManager.exportPDF(
+                    from: webView,
+                    suggestedName: viewModel.fileName,
+                    errorPresenter: errorPresenter
+                )
+            }
 
             .onReceive(viewModel.$lastError) { error in
                 if let error = error {
@@ -134,6 +155,20 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: errorPresenter.currentNotification?.id)
+    }
+
+    /// Find the WKWebView in the key window's view hierarchy.
+    /// Used to pass the live webView to ExportManager at export time.
+    private func findPreviewWebView() -> WKWebView? {
+        func search(in view: NSView) -> WKWebView? {
+            if let wk = view as? WKWebView { return wk }
+            for sub in view.subviews {
+                if let found = search(in: sub) { return found }
+            }
+            return nil
+        }
+        guard let contentView = NSApp.keyWindow?.contentView else { return nil }
+        return search(in: contentView)
     }
 
     /// Register the current file path with the window tracker.

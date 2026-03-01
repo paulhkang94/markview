@@ -3861,6 +3861,44 @@ runner.test("suppresFileWatcher resets after 250ms — external changes not perm
         "suppressFileWatcher reset must happen after 250ms delay — matches FileWatcher debounce+atomic-save timing")
 }
 
+// =============================================================================
+// MARK: - Export functionality regression tests
+// =============================================================================
+// Both exportHTML and exportPDF notifications must be wired in ContentView.
+// Previously exportPDF notification was posted but never received — clicking
+// "Export PDF..." in the menu did nothing.
+
+runner.test("ContentView handles .exportPDF notification — regression for silent no-op") {
+    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(source.contains(".exportPDF"),
+        "ContentView must subscribe to .exportPDF notification (was missing — menu item did nothing)")
+    try expect(source.contains("ExportManager.exportPDF"),
+        "ContentView must call ExportManager.exportPDF when notification received")
+    try expect(source.contains("findPreviewWebView"),
+        "ContentView must find the WKWebView at export time to pass to ExportManager")
+}
+
+runner.test("ContentView handles .exportHTML notification") {
+    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(source.contains(".exportHTML"),
+        "ContentView must subscribe to .exportHTML notification")
+    try expect(source.contains("ExportManager.exportHTML"),
+        "ContentView must call ExportManager.exportHTML when notification received")
+}
+
+runner.test("Export menu items post correct notification names") {
+    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(appSource.contains("name: .exportPDF"),
+        "Export PDF menu item must post .exportPDF notification")
+    try expect(appSource.contains("name: .exportHTML"),
+        "Export HTML menu item must post .exportHTML notification")
+    // Both notification names must be declared
+    try expect(appSource.contains("exportHTML = Notification.Name"),
+        "exportHTML notification name must be declared")
+    try expect(appSource.contains("exportPDF = Notification.Name"),
+        "exportPDF notification name must be declared")
+}
+
 runner.test("mermaid CSS positions diagrams correctly") {
     let templatePath = "Sources/MarkViewCore/Resources/template.html"
     let template = try String(contentsOfFile: templatePath, encoding: .utf8)
