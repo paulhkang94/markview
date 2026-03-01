@@ -15,6 +15,9 @@ struct WebPreviewView: NSViewRepresentable {
     var theme: AppTheme = .system
     /// Direct reference to the scroll sync controller (not a SwiftUI binding).
     var syncController: ScrollSyncController?
+    /// Called once when the WKWebView is created. Use to store the reference for export.
+    /// Prefer this over view-hierarchy search at export time.
+    var onWebViewCreated: ((WKWebView) -> Void)? = nil
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -35,6 +38,9 @@ struct WebPreviewView: NSViewRepresentable {
 
         // Register coordinator with the sync controller for direct calls
         syncController?.previewCoordinator = context.coordinator
+
+        // Notify caller so it can store a direct reference (used for PDF export).
+        onWebViewCreated?(webView)
 
         return webView
     }

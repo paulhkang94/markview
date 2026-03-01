@@ -37,7 +37,8 @@ struct ContentView: View {
                                     previewFontSize: settings.previewFontSize,
                                     previewWidth: settings.previewWidth.cssValue,
                                     theme: settings.theme,
-                                    syncController: syncController
+                                    syncController: syncController,
+                                    onWebViewCreated: { webView in viewModel.previewWebView = webView }
                                 )
                                 .id(viewModel.currentFilePath ?? "")
                                 .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
@@ -51,7 +52,8 @@ struct ContentView: View {
                                 previewFontSize: settings.previewFontSize,
                                 previewWidth: settings.previewWidth.cssValue,
                                 theme: settings.theme,
-                                syncController: syncController
+                                syncController: syncController,
+                                onWebViewCreated: { webView in viewModel.previewWebView = webView }
                             )
                             .id(viewModel.currentFilePath ?? "")
                         }
@@ -129,7 +131,9 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportPDF)) { _ in
                 guard viewModel.isLoaded else { return }
-                guard let webView = findPreviewWebView() else {
+                // Prefer direct reference stored at view creation; fall back to hierarchy search.
+                let resolvedWebView: WKWebView? = viewModel.previewWebView ?? findPreviewWebView()
+                guard let webView = resolvedWebView else {
                     errorPresenter.show("PDF export failed", detail: "Preview not loaded")
                     return
                 }

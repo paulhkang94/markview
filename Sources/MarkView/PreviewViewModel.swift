@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import WebKit
 import MarkViewCore
 
 @MainActor
@@ -22,6 +23,10 @@ final class PreviewViewModel: ObservableObject {
         guard let path = currentFilePath else { return nil }
         return URL(fileURLWithPath: path).deletingLastPathComponent()
     }
+
+    /// Direct reference to the live WKWebView, set via WebPreviewView.onWebViewCreated.
+    /// Used for PDF export — avoids fragile view-hierarchy search at export time.
+    weak var previewWebView: WKWebView?
 
     private var fileWatcher: FileWatcher?
     private var renderTask: Task<Void, Never>?

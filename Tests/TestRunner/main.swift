@@ -3868,14 +3868,20 @@ runner.test("suppresFileWatcher resets after 250ms — external changes not perm
 // Previously exportPDF notification was posted but never received — clicking
 // "Export PDF..." in the menu did nothing.
 
+// Tier 1 (source): notification wiring + direct webView reference strategy
+// Tier 2 (behavioral): requires WKWebView rendering engine — tested in MarkViewE2ETester
+// TODO(mar-E2E): open fixture .md, trigger Export PDF, assert non-empty .pdf file created on disk
 runner.test("ContentView handles .exportPDF notification — regression for silent no-op") {
     let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
     try expect(source.contains(".exportPDF"),
         "ContentView must subscribe to .exportPDF notification (was missing — menu item did nothing)")
     try expect(source.contains("ExportManager.exportPDF"),
         "ContentView must call ExportManager.exportPDF when notification received")
-    try expect(source.contains("findPreviewWebView"),
-        "ContentView must find the WKWebView at export time to pass to ExportManager")
+    // Direct ViewModel reference: avoids view-hierarchy search that returns nil in some SwiftUI layouts
+    try expect(source.contains("viewModel.previewWebView"),
+        "ContentView must use viewModel.previewWebView for PDF export (direct ref, not only hierarchy search)")
+    try expect(source.contains("onWebViewCreated"),
+        "WebPreviewView must register WKWebView with viewModel via onWebViewCreated so previewWebView is set")
 }
 
 runner.test("ContentView handles .exportHTML notification") {
