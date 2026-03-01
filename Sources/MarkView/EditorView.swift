@@ -49,6 +49,12 @@ struct EditorView: NSViewRepresentable {
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
+        // Non-contiguous layout: allows the layout manager to skip unneeded regions
+        // of large documents. Without this, frame resizes trigger a full layout pass
+        // from glyph 0 to the last visible glyph, causing getLineStart:forRange: to
+        // be called with an out-of-bounds range on large files (1000+ lines).
+        textView.layoutManager?.allowsNonContiguousLayout = true
+
         // Initial content
         textView.string = text
 
@@ -85,16 +91,25 @@ struct EditorView: NSViewRepresentable {
         // externally (file reload, programmatic edit, etc.).
         if !context.coordinator.isUserEditing, textView.string != text {
             let textLength = (text as NSString).length
-            // Clamp saved selection ranges to the new text length to avoid out-of-bounds crashes
-            let clampedRanges: [NSValue] = textView.selectedRanges.map { rangeValue in
+            // Clamp saved selection ranges to the new text length to avoid out-of-bounds crashes.
+            // On file-watcher reloads this preserves cursor position; on initial load the old
+            // selectedRanges will be empty so we fall through to the default.
+            let clampedRanges: [NSValue] = textView.selectedRanges.compactMap { rangeValue in
                 let range = rangeValue.rangeValue
-                let loc = min(range.location, textLength)
+                guard range.location <= textLength else { return nil }
+                let loc = range.location
                 let len = min(range.length, textLength - loc)
                 return NSValue(range: NSRange(location: loc, length: len))
             }
             textView.string = text
+            // Default cursor: beginning of document, NOT end-of-file.
+            // Placing cursor at textLength forced the layout manager to compute layout for the
+            // entire large document immediately. On frame resize, sizeToFit then calls
+            // getLineStart:forRange: with an out-of-bounds range → SIGTRAP on 1000+ line files.
+            // allowsNonContiguousLayout (set in makeNSView) is the primary fix; cursor-at-0
+            // ensures new file opens start at the top rather than forcing full layout upfront.
             textView.selectedRanges = clampedRanges.isEmpty
-                ? [NSValue(range: NSRange(location: textLength, length: 0))]
+                ? [NSValue(range: NSRange(location: 0, length: 0))]
                 : clampedRanges
             context.coordinator.rebuildLineOffsets(from: text)
         }
