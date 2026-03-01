@@ -6,7 +6,7 @@ struct MarkViewMCPServer {
     static func main() async throws {
         let server = Server(
             name: "markview",
-            version: "1.2.2",
+            version: "1.2.3",
             capabilities: .init(
                 tools: .init(listChanged: false)
             )

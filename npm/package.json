@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-markview",
-  "version": "1.1.3",
+  "version": "1.2.3",
   "description": "MCP server for MarkView — preview Markdown files in a native macOS viewer",
   "license": "MIT",
   "author": "Paul Kang <contact@paulkang.dev>",
