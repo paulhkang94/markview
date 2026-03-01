@@ -166,6 +166,65 @@ For sandbox-safe rendering without WKWebView, use `NSAttributedString(html:baseU
 
 **Dark mode caveat:** `NSAttributedString(html:)` bakes in CSS colors at parse time — it doesn't evaluate `@media (prefers-color-scheme: dark)`. You must post-process the attributed string: remap dark foreground colors to light, strip light background colors.
 
+---
+
+## Session 4 — 2026-03-01
+
+### App Sandbox blocks BOTH main process and WKWebView WebContent process
+
+`com.apple.security.app-sandbox` creates two independent restriction layers:
+1. **Main process**: `Data(contentsOf: imageURL)` returns nil for files the user didn't explicitly select via an open panel — even with `allowingReadAccessTo` set.
+2. **WKWebView WebContent process**: sandboxed independently; `allowingReadAccessTo` doesn't propagate app-level access to this subprocess.
+
+For a Developer ID markdown previewer that needs to read arbitrary local files (images, links), remove `com.apple.security.app-sandbox` from the entitlements. Hardened Runtime (required for notarization) is independent of App Sandbox.
+
+**Do not**: Try `allowingReadAccessTo: baseDirectoryURL` — doesn't bypass sandbox.
+**Do not**: Embed images as data URIs — same root cause, `Data(contentsOf:)` also fails under sandbox.
+**Do**: Remove `app-sandbox` from `.entitlements`. Keep `cs.allow-unsigned-executable-memory` for WKWebView JIT.
+
+### Swift raw string `#"..."#` terminates at first `"#` inside the content
+
+In `#"..."#` raw string literals, any `"#` sequence inside the string body prematurely ends it. This is silent: `swift run` on a different target compiles fine, but `xcodebuild` on the target that actually includes the file fails.
+
+```swift
+// WRONG: [^"#] contains "# which ends the raw string early
+let pattern = #"src="([^"#][^"]*\.(png|gif))""#
+
+// CORRECT: use escaped string, or ##"..."## (requires "## to end)
+let pattern = "src=\"([^\"]*\\.(png|gif))\""
+let pattern = ##"src="([^"#][^"]*\.(png|gif))""##
+```
+
+### WKWebView full-width layout — match GitHub not arbitrary max-width
+
+GitHub renders README content fluid to viewport width. Don't add `max-width: 900px; margin: 0 auto` — it creates a dead zone on wide screens and clips tables/images on narrow panes. Match GitHub:
+```css
+body { max-width: 100%; margin: 0; padding: 16px 32px; box-sizing: border-box; }
+```
+The `previewWidth` setting overrides this for users who want a constrained reading width.
+
+### GitHub Actions `env:` scope is per-step — secrets don't inherit downstream
+
+Secrets/env vars defined in one step's `env:` block are NOT available to subsequent steps:
+```yaml
+- name: Store credentials
+  env:
+    SECRET: ${{ secrets.MY_SECRET }}  # only in THIS step
+  run: ...
+
+- name: Use credentials
+  run: echo $SECRET  # EMPTY — not inherited
+  # Fix: repeat env: block in every step that needs it
+```
+
+### CI release workflow pre-flight checklist (learned from 4 failed v1.2.3 tags)
+
+Before pushing a release tag, verify:
+1. All required secrets set in repo Settings → Secrets
+2. Each step that needs a secret has its own `env:` block with that secret
+3. Job has `permissions: contents: write` if creating releases or uploading assets
+4. Runner caches are clean — stale SPM binary artifacts cause exit code 74 (`rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts/` before xcodebuild)
+
 ### NSTextView spell/grammar checking crashes in QL extension sandbox
 
 `NSTextView` enables spell checking by default, which triggers XPC service lookups (`com.apple.TextInput`) blocked by the QL extension sandbox. Always set `isContinuousSpellCheckingEnabled = false` and `isGrammarCheckingEnabled = false` in extension contexts.
