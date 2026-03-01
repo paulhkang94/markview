@@ -86,6 +86,8 @@ jobs:
         run: bash scripts/bundle.sh --notarize
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
+          NOTARIZE_KEY_ID: ${{ secrets.NOTARIZE_KEY_ID }}
+          NOTARIZE_ISSUER_ID: ${{ secrets.NOTARIZE_ISSUER_ID }}
 
       - name: Create release zip
         run: |
