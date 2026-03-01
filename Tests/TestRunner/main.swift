@@ -3885,13 +3885,14 @@ runner.test("ContentView handles .exportPDF notification — regression for sile
         "WebPreviewView must register WKWebView with viewModel via onWebViewCreated")
 }
 
-runner.test("ExportManager uses createPDF with JS-resolved height — not NSPrintOperation") {
+runner.test("ExportManager: exportPDF uses Print dialog, generatePDF uses createPDF for tests") {
     let source = try String(contentsOfFile: "Sources/MarkView/ExportManager.swift", encoding: .utf8)
-    // NSPrintOperation: 16M+ objects for complex HTML → 50MB corrupt files
+    // exportPDF: Print dialog → macOS PDF subsystem handles pagination correctly
+    // generatePDF (test-only): bounded viewport createPDF
     try expect(!source.contains("NSPrintOperation("),
         "ExportManager must NOT instantiate NSPrintOperation() — produces corrupt 50MB+ files for complex HTML")
-    try expect(source.contains("scrollHeight"),
-        "ExportManager must use JS scrollHeight to capture full document height")
+    try expect(source.contains("printOperation"),
+        "ExportManager.exportPDF must use printOperation for correct paginated output")
     try expect(source.contains("createPDF"),
         "ExportManager must use WKWebView.createPDF for efficient PDF output")
 }
