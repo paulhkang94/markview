@@ -121,6 +121,21 @@ else
     exit 1
 fi
 
+# PDF behavioral tests — validates actual PDF output (not source inspection)
+# Catches: viewport-only capture, NSPrintOperation object explosion, corrupt output
+echo ""
+echo "--- PDF Behavioral Tests ---"
+PDF_OUTPUT=$(swift run MarkViewPDFTester 2>&1)
+echo "$PDF_OUTPUT" | grep -v "^Building\|^Build of\|^\[" | grep -v "^$"
+PDF_RESULT=$(echo "$PDF_OUTPUT" | tail -2)
+if echo "$PDF_RESULT" | grep -q "0 failed"; then
+    true
+else
+    echo ""
+    echo "=== PDF tests failed ==="
+    exit 1
+fi
+
 # Golden baseline drift check — catches the same issue CI catches
 echo ""
 echo "--- Golden Drift Check ---"

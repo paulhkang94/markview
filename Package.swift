@@ -62,6 +62,12 @@ let package = Package(
             name: "MarkViewE2ETester",
             path: "Tests/E2ETester"
         ),
+        // PDF tester — behavioral validation: real WKWebView + PDFKit assertions
+        // Catches: viewport-only capture, NSPrintOperation object explosion, corrupt output
+        .executableTarget(
+            name: "MarkViewPDFTester",
+            path: "Tests/PDFTester"
+        ),
         // Visual regression tester — screenshot comparison via offscreen WKWebView
         .executableTarget(
             name: "MarkViewVisualTester",
