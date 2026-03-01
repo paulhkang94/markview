@@ -73,7 +73,7 @@ final class AppSettings: ObservableObject {
 
     // New settings
     @AppStorage("theme") var themeRaw: String = AppTheme.system.rawValue
-    @AppStorage("previewWidth") var previewWidthRaw: String = PreviewWidth.medium.rawValue
+    @AppStorage("previewWidth") var previewWidthRaw: String = PreviewWidth.full.rawValue
     @AppStorage("editorFontFamily") var editorFontFamily: String = "SF Mono"
     @AppStorage("tabBehavior") var tabBehaviorRaw: String = TabBehavior.fourSpaces.rawValue
     @AppStorage("spellCheck") var spellCheck: Bool = true
