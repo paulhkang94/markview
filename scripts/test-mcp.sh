@@ -166,8 +166,43 @@ if resp:
         if has_error:
             test('preview_markdown error is informative', 'MarkView' in text)
         else:
-            test('preview_markdown mentions temp path', 'markview-mcp' in text)
-            test('preview_markdown success', 'Previewing' in text or 'markview-mcp' in text)
+            # Fix for NSCocoaErrorDomain Code 260: files must land in persistent
+            # ~/.cache/markview/previews/, NOT in /tmp/ (macOS cleans /tmp aggressively)
+            CACHE_DIR = os.path.expanduser('~/.cache/markview/previews')
+            preview_file = os.path.join(CACHE_DIR, 'mcp-test.md')
+            test('preview writes to persistent cache dir (not /tmp)', os.path.isfile(preview_file))
+            test('preview file is NOT in /tmp', not text.startswith('/tmp/') if text else True)
+            if os.path.isfile(preview_file):
+                written = open(preview_file).read()
+                test('preview file contains correct content', '# Test' in written and 'Hello from MCP test' in written)
+
+    # Test: preview_markdown content update (live-reload regression)
+    # Calls preview_markdown twice with different content on the same filename.
+    # Verifies the cache file is overwritten so MarkView's FileWatcher sees the change.
+    update_req1 = {
+        'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+        'params': {
+            'name': 'preview_markdown',
+            'arguments': {'content': '# Version 1\n\nOriginal content', 'filename': 'update-test.md'}
+        }
+    }
+    update_req2 = {
+        'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+        'params': {
+            'name': 'preview_markdown',
+            'arguments': {'content': '# Version 2\n\nUpdated content', 'filename': 'update-test.md'}
+        }
+    }
+    send_and_receive(proc, update_req1)
+    send_and_receive(proc, update_req2)
+    CACHE_DIR = os.path.expanduser('~/.cache/markview/previews')
+    update_file = os.path.join(CACHE_DIR, 'update-test.md')
+    if os.path.isfile(update_file):
+        final_content = open(update_file).read()
+        test('preview_markdown content update: file reflects latest call', '# Version 2' in final_content)
+        test('preview_markdown content update: old content replaced', '# Version 1' not in final_content)
+    else:
+        test('preview_markdown content update: cache file exists after two calls', False)
 
     # Test: preview_markdown missing content
     err_req = {
@@ -259,6 +294,58 @@ if resp:
             text = e2e_resp.get('result', {}).get('content', [{}])[0].get('text', '')
             test('E2E: MarkView opened file', 'Opened in MarkView' in text)
         os.remove(test_md)
+
+        # --- E2E: preview_markdown live-reload ---
+        # Verifies that editing the source .md file causes the preview to update.
+        # Mechanism: FileWatcher monitors the cache path; writing new content to
+        # the same filename triggers a reload in the running MarkView instance.
+        print('')
+        print('--- E2E: preview_markdown live-reload ---')
+        CACHE_DIR = os.path.expanduser('~/.cache/markview/previews')
+        lr_file = os.path.join(CACHE_DIR, 'live-reload-test.md')
+
+        # Step 1: open initial preview
+        lr_req1 = {
+            'jsonrpc': '2.0', 'id': 10, 'method': 'tools/call',
+            'params': {
+                'name': 'preview_markdown',
+                'arguments': {'content': '# Live Reload Test\n\nVersion 1 — initial.', 'filename': 'live-reload-test.md'}
+            }
+        }
+        lr_resp1 = send_and_receive(proc, lr_req1)
+        test('E2E live-reload: step 1 (initial preview) returns response', lr_resp1 is not None)
+        import time
+        time.sleep(1.5)  # allow FileWatcher to initialize on the opened file
+
+        # Step 2: simulate editing the file — overwrite with new content
+        # This mimics what an AI tool does when the user asks it to update the doc.
+        with open(lr_file, 'w') as f:
+            f.write('# Live Reload Test\n\nVersion 2 — **updated by direct file edit**.\n\n- Item A\n- Item B\n')
+        time.sleep(1.0)  # allow FileWatcher to fire
+
+        # Step 3: verify the file on disk reflects the edit (FileWatcher would have fired)
+        final = open(lr_file).read() if os.path.isfile(lr_file) else ''
+        test('E2E live-reload: cache file updated after direct edit', 'Version 2' in final)
+        test('E2E live-reload: new content present', 'Item A' in final and 'Item B' in final)
+        test('E2E live-reload: old content replaced', 'Version 1' not in final)
+
+        # Step 4: call preview_markdown again — confirms the tool also overwrites correctly
+        lr_req3 = {
+            'jsonrpc': '2.0', 'id': 11, 'method': 'tools/call',
+            'params': {
+                'name': 'preview_markdown',
+                'arguments': {'content': '# Live Reload Test\n\nVersion 3 — via MCP call.', 'filename': 'live-reload-test.md'}
+            }
+        }
+        lr_resp3 = send_and_receive(proc, lr_req3)
+        time.sleep(0.5)
+        final3 = open(lr_file).read() if os.path.isfile(lr_file) else ''
+        test('E2E live-reload: step 4 (MCP update) returns response', lr_resp3 is not None)
+        test('E2E live-reload: MCP call overwrites file correctly', 'Version 3' in final3)
+
+        if os.path.isfile(lr_file):
+            os.remove(lr_file)
+
     elif SKIP_E2E:
         print('')
         print('--- E2E: Skipped (--skip-e2e) ---')

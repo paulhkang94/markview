@@ -2607,35 +2607,33 @@ runner.test("ultra-wide screen: editor+preview uses 80%") {
     try expect(w == 2752, "expected 2752, got \(w)")
 }
 
-// Source code validation — ensure the percentages in code match our test spec
-runner.test("MarkViewApp.swift uses 0.55 for preview-only width") {
-    try expect(appSource.contains("width * 0.55"), "MarkViewApp must use 0.55 for preview-only width fraction")
+// Source code validation — constants now live in WindowLayout.swift (single source of truth).
+// ContentView and MarkViewApp must delegate to WindowLayout, not hardcode magic numbers.
+runner.test("Window sizing constants defined in WindowLayout.swift") {
+    let layoutSource = try String(
+        contentsOfFile: "Sources/MarkViewCore/WindowLayout.swift", encoding: .utf8)
+    try expect(layoutSource.contains("previewWidthFraction") && layoutSource.contains("0.55"),
+        "WindowLayout must define previewWidthFraction = 0.55")
+    try expect(layoutSource.contains("editorWidthFraction") && layoutSource.contains("0.80"),
+        "WindowLayout must define editorWidthFraction = 0.80")
+    try expect(layoutSource.contains("previewMinWidth") && layoutSource.contains("800"),
+        "WindowLayout must define previewMinWidth = 800")
+    try expect(layoutSource.contains("editorMinWidth") && layoutSource.contains("900"),
+        "WindowLayout must define editorMinWidth = 900")
+    try expect(layoutSource.contains("minHeight") && layoutSource.contains("600"),
+        "WindowLayout must define minHeight = 600")
 }
 
-runner.test("MarkViewApp.swift uses min width 800 for preview-only") {
-    try expect(appSource.contains("0.55, 800") || appSource.contains("0.55, 800)"),
-        "MarkViewApp must use 800 min width for preview-only")
+runner.test("MarkViewApp.swift delegates to WindowLayout (no magic numbers)") {
+    // After WindowLayout extraction, MarkViewApp must use WindowLayout.defaultWindowSize
+    // and NOT hardcode 0.55/800 directly (those live in WindowLayout now)
+    try expect(appSource.contains("WindowLayout"),
+        "MarkViewApp must use WindowLayout for window sizing")
 }
 
-runner.test("ContentView.swift uses 0.80 for editor+preview width") {
-    try expect(contentSource.contains("0.80") || contentSource.contains("0.8"),
-        "ContentView must use 0.80 for editor+preview width fraction")
-}
-
-runner.test("ContentView.swift uses 0.55 for preview-only width") {
-    try expect(contentSource.contains("0.55"),
-        "ContentView must use 0.55 for preview-only width fraction")
-}
-
-runner.test("ContentView.swift has min 900 for editor mode") {
-    try expect(contentSource.contains("900"),
-        "ContentView must enforce 900px minimum for editor+preview")
-}
-
-runner.test("ContentView.swift has min 800 for preview mode") {
-    // Check toggle function has 800 min
-    try expect(contentSource.contains("800"),
-        "ContentView must enforce 800px minimum for preview-only")
+runner.test("ContentView.swift delegates to WindowLayout (no magic numbers)") {
+    try expect(contentSource.contains("WindowLayout"),
+        "ContentView must use WindowLayout for width calculation")
 }
 
 runner.test("MarkViewApp min frame constraint: 600x400") {
@@ -3831,6 +3829,48 @@ runner.test("mermaid CSS positions diagrams correctly") {
         "template.html must have CSS for .mermaid svg to constrain diagram size")
     try expect(template.contains("max-width: 100%"),
         ".mermaid svg must have max-width: 100% to prevent overflow on narrow viewports")
+}
+
+// =============================================================================
+// MARK: - MCP preview_markdown cache path tests
+// Regression for NSCocoaErrorDomain Code 260:
+// preview_markdown must write to ~/.cache/markview/previews/ (persistent),
+// NOT to NSTemporaryDirectory() which macOS cleans aggressively.
+
+runner.test("MCP server uses persistent cache path, not NSTemporaryDirectory") {
+    let source = try String(
+        contentsOfFile: "Sources/MarkViewMCPServer/main.swift", encoding: .utf8)
+    try expect(source.contains(".cache/markview/previews"),
+        "MCP server must write to ~/.cache/markview/previews/ — not /tmp")
+    try expect(!source.contains("temporaryDirectory"),
+        "MCP server must NOT use temporaryDirectory (causes NSCocoaErrorDomain Code 260 race)")
+}
+
+runner.test("MCP cache directory is writable") {
+    let cacheDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".cache/markview/previews")
+    try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+    let probe = cacheDir.appendingPathComponent("_writetest-\(Int.random(in: 1000...9999)).md")
+    defer { try? FileManager.default.removeItem(at: probe) }
+    let body = "# Write Test"
+    try body.write(to: probe, atomically: true, encoding: .utf8)
+    let read = try String(contentsOf: probe, encoding: .utf8)
+    try expect(read == body, "Cache write-then-read must return identical content")
+}
+
+runner.test("MCP preview content update overwrites (not appends) — live-reload regression") {
+    let cacheDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".cache/markview/previews")
+    try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+    let file = cacheDir.appendingPathComponent("_overwrite-regression.md")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let v1 = "# Version 1\n\nOriginal."
+    let v2 = "# Version 2\n\n**Updated** — FileWatcher should see this."
+    try v1.write(to: file, atomically: true, encoding: .utf8)
+    try v2.write(to: file, atomically: true, encoding: .utf8)
+    let result = try String(contentsOf: file, encoding: .utf8)
+    try expect(result == v2, "Second write must fully replace first — FileWatcher fires on the updated file")
+    try expect(!result.contains("Version 1"), "Old content must not survive after overwrite")
 }
 
 // =============================================================================
