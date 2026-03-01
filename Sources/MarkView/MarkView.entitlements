@@ -2,12 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- App Store requires sandbox -->
-	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<!-- File access via Open/Save panels (user-granted) -->
-	<key>com.apple.security.files.user-selected.read-write</key>
-	<true/>
 	<!-- Network access for Sentry error reporting -->
 	<key>com.apple.security.network.client</key>
 	<true/>
