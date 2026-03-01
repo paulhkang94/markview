@@ -49,7 +49,9 @@ final class ExportManager {
         op.showsPrintPanel = true
         op.showsProgressPanel = true
 
-        op.runModal(for: NSApp.keyWindow ?? NSApp.mainWindow!, delegate: nil, didRun: nil, contextInfo: nil)
+        // Use run() not runModal(for:window) — keyWindow goes nil when menu is active,
+        // causing a force-unwrap crash or silent no-op.
+        op.run()
     }
 
     /// Generate PDF to a URL without a save panel — used by MarkViewPDFTester only.

@@ -6,8 +6,8 @@ enum Strings {
     // MARK: - Menu Items
     static let openFile = "Open..."
     static let closeWindow = "Close Window"
-    static let exportHTML = "Export HTML..."
-    static let exportPDF = "Export PDF..."
+    static let exportHTML = "Export as HTML..."
+    static let exportPDF = "Print / Save as PDF..."
     static let increaseFontSize = "Increase Font Size"
     static let decreaseFontSize = "Decrease Font Size"
     static let resetFontSize = "Reset Font Size"
