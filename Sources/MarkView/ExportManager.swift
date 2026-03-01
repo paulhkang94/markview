@@ -23,7 +23,11 @@ final class ExportManager {
         }
     }
 
-    /// Export via WKWebView's createPDF — produces high-quality output.
+    /// Export full document as PDF using NSPrintOperation — paginates correctly across all content.
+    ///
+    /// WKPDFConfiguration.rect (the previous approach) only captures a fixed viewport rectangle —
+    /// it does not paginate. NSPrintOperation uses WebKit's own layout engine to flow the full
+    /// document across pages, producing correct multi-page output for long documents.
     @MainActor static func exportPDF(from webView: WKWebView, suggestedName: String, errorPresenter: ErrorPresenter) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
@@ -32,28 +36,33 @@ final class ExportManager {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        let config = WKPDFConfiguration()
-        // A4 size in points
-        config.rect = CGRect(x: 0, y: 0, width: 595.28, height: 841.89)
+        let printInfo = NSPrintInfo()
+        // A4 in points (72 pt/inch): 8.27" × 11.69"
+        printInfo.paperSize = NSSize(width: 595.28, height: 841.89)
+        printInfo.leftMargin = 36    // 0.5 inch
+        printInfo.rightMargin = 36
+        printInfo.topMargin = 36
+        printInfo.bottomMargin = 36
+        printInfo.isHorizontallyCentered = false
+        printInfo.isVerticallyCentered = false
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .automatic
+        printInfo.jobDisposition = .save
+        printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
 
-        webView.createPDF(configuration: config) { result in
-            switch result {
-            case .success(let data):
-                do {
-                    try data.write(to: url)
-                    AppLogger.export.info("PDF exported to \(url.path)")
-                } catch {
-                    Task { @MainActor in
-                        errorPresenter.show("PDF export failed", detail: error.localizedDescription)
-                    }
-                    AppLogger.captureError(error, category: "export", message: "PDF export write failed")
-                }
-            case .failure(let error):
-                Task { @MainActor in
-                    errorPresenter.show("PDF export failed", detail: error.localizedDescription)
-                }
-                AppLogger.captureError(error, category: "export", message: "PDF createPDF failed")
-            }
+        let op = webView.printOperation(with: printInfo)
+        op.showsPrintPanel = false
+        op.showsProgressPanel = false
+
+        if !op.run() {
+            errorPresenter.show("PDF export failed", detail: "Print operation failed")
+            AppLogger.captureError(
+                CocoaError(.fileWriteUnknown),
+                category: "export",
+                message: "NSPrintOperation failed for PDF export"
+            )
+        } else {
+            AppLogger.export.info("PDF exported to \(url.path)")
         }
     }
 }
