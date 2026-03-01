@@ -3486,15 +3486,23 @@ runner.test("WebPreviewView does NOT grant read access to root filesystem") {
         "allowingReadAccessTo must NOT be root '/' — restricts to narrowest necessary directory")
 }
 
-runner.test("loadViaFileURL grants access to baseDirectoryURL for local images") {
+runner.test("loadViaFileURL inlines local images as data URIs") {
     let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    // allowingReadAccessTo must use baseDirectoryURL (or tempDir fallback), not a computed ancestor.
-    // The common-ancestor approach broke images when temp dir (/var/folders) and base dir (/Users)
-    // share no ancestor beyond "/", causing WKWebView to fall back to tempDir-only access.
-    try expect(source.contains("baseDirectoryURL ?? tempFile.deletingLastPathComponent()"),
-        "loadViaFileURL must grant read access to baseDirectoryURL so relative images resolve")
-    try expect(source.contains("allowingReadAccessTo: accessURL"),
-        "loadFileURL must use accessURL derived from baseDirectoryURL")
+    // App Sandbox blocks WKWebView WebContent process from accessing files outside the container
+    // even with allowingReadAccessTo. Fix: inline images as data URIs in the main app process
+    // (which has user-selected file access) before handing HTML to WKWebView.
+    try expect(source.contains("inlineLocalImages(in: finalHTML, baseDirectory: dir)"),
+        "loadViaFileURL must inline local images as data URIs before writing temp HTML file")
+    try expect(source.contains(";base64,"),
+        "inlineLocalImages must produce data URIs")
+}
+
+runner.test("inlineLocalImages skips absolute URLs and data URIs") {
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(source.contains("hasPrefix(\"http://\")"),
+        "inlineLocalImages must skip http:// URLs")
+    try expect(source.contains("hasPrefix(\"data:\")"),
+        "inlineLocalImages must skip existing data: URIs to avoid double-encoding")
 }
 
 // =============================================================================

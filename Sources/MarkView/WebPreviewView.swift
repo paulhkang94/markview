@@ -292,13 +292,58 @@ struct WebPreviewView: NSViewRepresentable {
             }
         }
 
+        /// Inline relative images as data URIs so the sandboxed WKWebView WebContent process
+        /// doesn't need file system access to images. The main app process (which has user-selected
+        /// file access) reads the image bytes and embeds them as `data:TYPE;base64,...`.
+        private static func inlineLocalImages(in html: String, baseDirectory: URL) -> String {
+            // Match src="..." attributes — replace relative paths only
+            let pattern = "src=\"([^\"]*\\.(png|jpg|jpeg|gif|svg|webp|ico|bmp|tiff?))\""
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+                return html
+            }
+            var result = html
+            // Process matches in reverse order so string offsets stay valid
+            let nsHTML = html as NSString
+            let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHTML.length))
+            for match in matches.reversed() {
+                guard match.numberOfRanges > 1,
+                      let srcRange = Range(match.range(at: 1), in: html) else { continue }
+                let src = String(html[srcRange])
+                // Skip URLs and data URIs — only process relative paths
+                guard !src.hasPrefix("http://"), !src.hasPrefix("https://"),
+                      !src.hasPrefix("data:"), !src.hasPrefix("file://"),
+                      !src.hasPrefix("/") else { continue }
+                let imageURL = baseDirectory.appendingPathComponent(src)
+                guard let data = try? Data(contentsOf: imageURL) else { continue }
+                let ext = imageURL.pathExtension.lowercased()
+                let mime: String
+                switch ext {
+                case "png":        mime = "image/png"
+                case "jpg","jpeg": mime = "image/jpeg"
+                case "gif":        mime = "image/gif"
+                case "svg":        mime = "image/svg+xml"
+                case "webp":       mime = "image/webp"
+                case "ico":        mime = "image/x-icon"
+                case "bmp":        mime = "image/bmp"
+                case "tif","tiff": mime = "image/tiff"
+                default:           mime = "image/\(ext)"
+                }
+                let dataURI = "data:\(mime);base64,\(data.base64EncodedString())"
+                if let attrRange = Range(match.range(at: 0), in: result) {
+                    result.replaceSubrange(attrRange, with: "src=\"\(dataURI)\"")
+                }
+            }
+            return result
+        }
+
         /// Write HTML to a temp file and load via loadFileURL so WKWebView can access local images.
         private func loadViaFileURL(_ html: String, in webView: WKWebView) {
             var finalHTML = html
-            // Inject <base> tag so relative paths (images, links) resolve from the markdown file's directory
+            // Inline local images as data URIs: the sandboxed WKWebView WebContent process can't
+            // access files outside the app container even with allowingReadAccessTo. Embedding images
+            // in the HTML string eliminates the file access requirement entirely.
             if let dir = baseDirectoryURL {
-                let baseTag = "<base href=\"\(dir.absoluteString)\">"
-                finalHTML = finalHTML.replacingOccurrences(of: "<head>", with: "<head>\(baseTag)")
+                finalHTML = Self.inlineLocalImages(in: finalHTML, baseDirectory: dir)
             }
             let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview-\(UUID().uuidString).html")
             do {
@@ -307,13 +352,9 @@ struct WebPreviewView: NSViewRepresentable {
                 AppLogger.render.error("Failed to write temp preview file: \(error.localizedDescription)")
                 AppLogger.captureError(error, category: "render", message: "Temp file write failed")
             }
-            // Security: Grant WKWebView read access to the markdown file's directory so
-            // relative images load. <base href> handles URL resolution; allowingReadAccessTo
-            // controls what the WebView can actually fetch from disk.
-            // Using baseDirectoryURL directly is safe — it's the markdown's own folder,
-            // not a broad path. Falls back to tempDir if no file is open (e.g. MCP preview).
-            let accessURL = baseDirectoryURL ?? tempFile.deletingLastPathComponent()
-            webView.loadFileURL(tempFile, allowingReadAccessTo: accessURL)
+            // Images are already inlined as data URIs, so WKWebView only needs access to the
+            // temp directory. Never grant access to "/" or user home — least-privilege scope.
+            webView.loadFileURL(tempFile, allowingReadAccessTo: tempFile.deletingLastPathComponent())
             // Install scroll listener after page loads
             installScrollListenerAfterLoad(in: webView)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
