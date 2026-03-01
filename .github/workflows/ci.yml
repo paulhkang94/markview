@@ -166,6 +166,7 @@ jobs:
 
       - name: Create Sentry release
         uses: getsentry/action-release@v3
+        continue-on-error: true
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: paulkang
