@@ -188,7 +188,7 @@ These are ordered by ROI-per-minute.
 **Win 1 — Update server.json description (5 min)**
 The official MCP registry description is 62 characters. Agents doing tool selection read this. Rewrite to include tool names and key capabilities. This is the highest-ROI change because it affects every Claude Code user who discovers MarkView through the registry.
 
-File to edit: `/Users/pkang/repos/markview/npm/server.json`
+File to edit: `npm/server.json`
 New description: `"Native macOS Markdown preview. MCP tools: preview_markdown (render content) and open_file (open .md file). GFM tables/task lists, syntax highlighting (18 languages), Quick Look extension, live reload. Swift, no Electron."`
 
 **Win 2 — Submit to awesome-claude-code via GitHub issue (10 min)**
@@ -245,5 +245,5 @@ Total time for all five: under 52 minutes.
 - [How to launch a developer tool on PH 2026](https://hackmamba.io/developer-marketing/how-to-launch-on-product-hunt/) — developer tool specifics
 - [7 MCP Registries Worth Checking Out](https://nordicapis.com/7-mcp-registries-worth-checking-out/) — registry landscape overview
 - [builder.io: Best MCP Servers 2026](https://www.builder.io/blog/best-mcp-servers-2026) — ecosystem context
-- Prior audit: `/Users/pkang/repos/markview/docs/research/markview-registry-audit-2026-02-21.md`
-- Prior plan: `/Users/pkang/repos/markview/docs/LAUNCH-PLAN-V2.md`
+- Prior audit: `docs/research/markview-registry-audit-2026-02-21.md`
+- Prior plan: `docs/LAUNCH.md` (consolidated)

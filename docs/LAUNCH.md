@@ -200,7 +200,7 @@ Check engagement by platform:
 | HN | https://hn.algolia.com/?q=markview |
 | Reddit | Check your post history |
 | GitHub | `bash scripts/check-traction.sh` |
-| Cloudflare Analytics | https://dash.cloudflare.com → paulkang.dev |
+| Cloudflare Analytics | https://dash.cloudflare.com (paulkang.dev zone) |
 
 ---
 
