@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write   # required to create GitHub Releases and upload assets
+      id-token: write   # required for mcp-publisher github-oidc login
 
     steps:
       - uses: actions/checkout@v4
@@ -106,7 +107,9 @@ jobs:
           mkdir -p "${_tmp_pkg}/MarkView.app/Contents/MacOS"
           cp "${{ github.workspace }}/MarkView.app/Contents/MacOS/markview-mcp-server" \
              "${_tmp_pkg}/MarkView.app/Contents/MacOS/"
-          tar -czf "/tmp/MarkView-${VERSION}.tar.gz" -C "${_tmp_pkg}" .
+          # IMPORTANT: do NOT use `-C dir .` — adds ./ prefix breaking postinstall --strip-components=3
+          tar -czf "/tmp/MarkView-${VERSION}.tar.gz" \
+            -C "${_tmp_pkg}" MarkView.app/Contents/MacOS/markview-mcp-server
           rm -rf "${_tmp_pkg}"
           echo "NPM_TARBALL=/tmp/MarkView-${VERSION}.tar.gz" >> $GITHUB_ENV
 
@@ -150,6 +153,21 @@ jobs:
           npm publish --access public
           echo "Published mcp-server-markview@${{ steps.version.outputs.VERSION }} to npm"
 
+      - name: Publish to Official MCP Registry
+        # Uses GitHub OIDC (no stored secret needed) to authenticate with registry.modelcontextprotocol.io
+        # OIDC requires id-token: write permission (set on the job above)
+        run: |
+          if command -v mcp-publisher &>/dev/null; then
+            cd npm
+            mcp-publisher login github-oidc
+            mcp-publisher publish
+            echo "Published io.github.paulhkang94/markview@${{ steps.version.outputs.VERSION }} to MCP registry"
+          else
+            echo "mcp-publisher not found — install: brew install modelcontextprotocol/tap/mcp-publisher"
+            echo "Then manually: cd npm && mcp-publisher login github && mcp-publisher publish"
+          fi
+        continue-on-error: true  # registry publish failure should not block the release
+
       - name: Update Homebrew tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -174,3 +192,25 @@ jobs:
           git add Casks/markview.rb
           git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap"
           git push
+
+  verify-deployment:
+    name: Verify Deployment (clean-room)
+    runs-on: macos-15
+    needs: release
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Wait for npm propagation (60s)
+        run: sleep 60
+
+      - name: Run verify-release.sh (clean-room)
+        run: |
+          # This runner has no MarkView installed — pure clean-room environment.
+          # npm postinstall must download + extract the binary from GitHub releases.
+          bash scripts/verify-release.sh "${{ steps.version.outputs.VERSION }}"

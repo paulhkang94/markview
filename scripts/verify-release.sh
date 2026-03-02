@@ -107,28 +107,29 @@ echo ""
 # ─── 6. Official MCP registry ────────────────────────────────────────────────
 echo "6. Official MCP registry"
 MCP_ENTRY=$(curl -sf \
-    "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.paulhkang94/markview" \
+    "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.paulhkang94%2Fmarkview" \
     2>/dev/null || echo "")
-if echo "$MCP_ENTRY" | python3 -c "
+MCP_STATUS=$(echo "$MCP_ENTRY" | python3 -c "
 import json, sys
-data = json.load(sys.stdin)
-servers = data.get('servers', [])
-for s in servers:
+try:
+    data = json.load(sys.stdin)
+except:
+    print('api_error'); sys.exit(0)
+for item in data.get('servers', []):
+    s = item.get('server', item)  # handle both nested and flat formats
     if s.get('name') == 'io.github.paulhkang94/markview':
-        reg_ver = s.get('version_detail', {}).get('version', '?')
-        if reg_ver == '${VERSION}':
-            print(f'  ✓ MCP registry = {reg_ver}')
-            sys.exit(0)
-        else:
-            print(f'  ⚠ MCP registry = {reg_ver} (expected ${VERSION}) — may not have synced yet')
-            sys.exit(2)
-print('  ⚠ Not found in MCP registry results')
-sys.exit(2)
-" 2>/dev/null; then
-    : # pass/warn already printed by python
-else
-    check_warn "MCP registry status unknown (API may be slow to sync)"
-fi
+        reg_ver = s.get('version', '?')
+        print(reg_ver)
+        sys.exit(0)
+print('not_found')
+" 2>/dev/null || echo "api_error")
+
+case "$MCP_STATUS" in
+    "${VERSION}")    check_pass "MCP registry = ${MCP_STATUS}" ;;
+    "not_found")     check_warn "Not found in MCP registry — publish: cd npm && mcp-publisher publish" ;;
+    "api_error")     check_warn "MCP registry API unreachable" ;;
+    *)               check_warn "MCP registry = ${MCP_STATUS} (expected ${VERSION}) — update with: cd npm && mcp-publisher publish" ;;
+esac
 echo ""
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
