@@ -91,12 +91,24 @@ jobs:
           NOTARIZE_KEY_ID: ${{ secrets.NOTARIZE_KEY_ID }}
           NOTARIZE_ISSUER_ID: ${{ secrets.NOTARIZE_ISSUER_ID }}
 
-      - name: Create release zip
+      - name: Create release artifacts (zip + tar.gz for npm)
         run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+
+          # zip: full app bundle for direct download / Homebrew
           cd /tmp
-          zip -r "MarkView-${{ steps.version.outputs.VERSION }}.zip" \
-            "${{ github.workspace }}/MarkView.app"
-          echo "ARTIFACT=/tmp/MarkView-${{ steps.version.outputs.VERSION }}.zip" >> $GITHUB_ENV
+          zip -r "MarkView-${VERSION}.zip" "${{ github.workspace }}/MarkView.app"
+          echo "ARTIFACT=/tmp/MarkView-${VERSION}.zip" >> $GITHUB_ENV
+
+          # tar.gz: MCP server binary only — consumed by npm postinstall.js
+          # Structure: ./MarkView.app/Contents/MacOS/markview-mcp-server
+          _tmp_pkg="$(mktemp -d)"
+          mkdir -p "${_tmp_pkg}/MarkView.app/Contents/MacOS"
+          cp "${{ github.workspace }}/MarkView.app/Contents/MacOS/markview-mcp-server" \
+             "${_tmp_pkg}/MarkView.app/Contents/MacOS/"
+          tar -czf "/tmp/MarkView-${VERSION}.tar.gz" -C "${_tmp_pkg}" .
+          rm -rf "${_tmp_pkg}"
+          echo "NPM_TARBALL=/tmp/MarkView-${VERSION}.tar.gz" >> $GITHUB_ENV
 
       - name: Generate release notes
         id: notes
@@ -121,11 +133,22 @@ jobs:
             ${{ steps.notes.outputs.NOTES }}
 
             **Installation**: Download `MarkView-${{ steps.version.outputs.VERSION }}.zip`, extract, move to `/Applications`.
-          files: ${{ env.ARTIFACT }}
+          files: |
+            ${{ env.ARTIFACT }}
+            ${{ env.NPM_TARBALL }}
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish npm package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          cd npm
+          npm publish --access public
+          echo "Published mcp-server-markview@${{ steps.version.outputs.VERSION }} to npm"
 
       - name: Update Homebrew tap
         env:
