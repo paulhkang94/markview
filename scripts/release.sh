@@ -82,6 +82,35 @@ if [ -f "$MCP_MAIN" ]; then
     echo "Updated MCP server version"
 fi
 
+# npm package — all three files must be kept in sync
+NPM_PKG="$PROJECT_DIR/npm/package.json"
+NPM_SERVER="$PROJECT_DIR/npm/server.json"
+NPM_POSTINSTALL="$PROJECT_DIR/npm/scripts/postinstall.js"
+if [ -f "$NPM_PKG" ]; then
+    # package.json: use node -e to avoid jq dependency
+    node -e "
+const fs = require('fs');
+const p = JSON.parse(fs.readFileSync('$NPM_PKG', 'utf8'));
+p.version = '$NEW_VERSION';
+fs.writeFileSync('$NPM_PKG', JSON.stringify(p, null, 2) + '\n');
+"
+    echo "Updated npm/package.json"
+fi
+if [ -f "$NPM_SERVER" ]; then
+    node -e "
+const fs = require('fs');
+const p = JSON.parse(fs.readFileSync('$NPM_SERVER', 'utf8'));
+p.version = '$NEW_VERSION';
+p.packages[0].version = '$NEW_VERSION';
+fs.writeFileSync('$NPM_SERVER', JSON.stringify(p, null, 2) + '\n');
+"
+    echo "Updated npm/server.json"
+fi
+if [ -f "$NPM_POSTINSTALL" ]; then
+    sed -i '' "s/const VERSION = \"[0-9]*\.[0-9]*\.[0-9]*\";/const VERSION = \"$NEW_VERSION\";/" "$NPM_POSTINSTALL"
+    echo "Updated npm/scripts/postinstall.js"
+fi
+
 # Step 5: Run tests (unless --skip-tests)
 if [ "$SKIP_TESTS" = false ]; then
     echo ""
@@ -148,7 +177,44 @@ else
     echo "WARNING: Dark mode CSS NOT found in binary"
 fi
 
-# Step 11: Summary
+# Step 11: npm — create tar.gz artifact, upload to GitHub release, publish to npm
+# The tar.gz is needed by postinstall.js to extract the MCP server binary.
+# Structure: ./MarkView.app/Contents/MacOS/markview-mcp-server
+if [ -f "$NPM_PKG" ]; then
+    NPM_BINARY="/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+    NPM_ARCHIVE="/tmp/MarkView-${NEW_VERSION}.tar.gz"
+
+    if [ -f "$NPM_BINARY" ]; then
+        echo ""
+        echo "--- Building npm release artifact ---"
+        _tmp_pkg="$(mktemp -d)"
+        mkdir -p "$_tmp_pkg/MarkView.app/Contents/MacOS"
+        cp "$NPM_BINARY" "$_tmp_pkg/MarkView.app/Contents/MacOS/"
+        tar -czf "$NPM_ARCHIVE" -C "$_tmp_pkg" .
+        rm -rf "$_tmp_pkg"
+        echo "Created: $NPM_ARCHIVE ($(du -sh "$NPM_ARCHIVE" | cut -f1))"
+
+        # Upload to GitHub release if tag exists
+        if git tag --list "v$NEW_VERSION" | grep -q "v$NEW_VERSION"; then
+            echo "Uploading to GitHub release v$NEW_VERSION..."
+            gh release upload "v$NEW_VERSION" "$NPM_ARCHIVE" --repo paulhkang94/markview 2>&1 || \
+                echo "  ⚠ Upload failed — upload manually: gh release upload v$NEW_VERSION $NPM_ARCHIVE"
+        else
+            echo "  ⚠ Tag v$NEW_VERSION not found — create tag first, then run: gh release upload v$NEW_VERSION $NPM_ARCHIVE"
+        fi
+
+        # Publish to npm
+        echo "Publishing mcp-server-markview@$NEW_VERSION to npm..."
+        cd "$PROJECT_DIR/npm" && npm publish --access public 2>&1
+        cd "$PROJECT_DIR"
+        echo "Published to npm ✓"
+    else
+        echo "  ⚠ MCP server binary not found at $NPM_BINARY — skipping npm publish"
+        echo "    Build the app first with: bash scripts/bundle.sh --install"
+    fi
+fi
+
+# Step 12: Summary
 echo ""
 echo "=== Released MarkView v$NEW_VERSION (build $BUILD_NUMBER) ==="
 echo ""

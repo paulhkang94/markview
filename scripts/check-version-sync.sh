@@ -88,6 +88,40 @@ if [ -f "$MCP_MAIN" ]; then
     fi
 fi
 
+# npm/package.json, server.json, postinstall.js — all three must match
+NPM_PKG="$PROJECT_DIR/npm/package.json"
+if [ -f "$NPM_PKG" ]; then
+    NPM_VER=$(python3 -c "import json; print(json.load(open('$NPM_PKG'))['version'])" 2>/dev/null || echo "?")
+    if [ "$NPM_VER" = "$CANONICAL" ]; then
+        echo "  ✓ npm/package.json: $NPM_VER"
+    else
+        echo "  ✗ npm/package.json: $NPM_VER (expected $CANONICAL)"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
+NPM_SERVER="$PROJECT_DIR/npm/server.json"
+if [ -f "$NPM_SERVER" ]; then
+    SERVER_VER=$(python3 -c "import json; print(json.load(open('$NPM_SERVER'))['version'])" 2>/dev/null || echo "?")
+    if [ "$SERVER_VER" = "$CANONICAL" ]; then
+        echo "  ✓ npm/server.json: $SERVER_VER"
+    else
+        echo "  ✗ npm/server.json: $SERVER_VER (expected $CANONICAL)"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
+NPM_POSTINSTALL="$PROJECT_DIR/npm/scripts/postinstall.js"
+if [ -f "$NPM_POSTINSTALL" ]; then
+    POST_VER=$(grep -oE 'const VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' "$NPM_POSTINSTALL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+    if [ "$POST_VER" = "$CANONICAL" ]; then
+        echo "  ✓ npm/scripts/postinstall.js: $POST_VER"
+    else
+        echo "  ✗ npm/scripts/postinstall.js: $POST_VER (expected $CANONICAL)"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
 # Installed app (advisory only — not an error if not installed)
 INSTALLED_PLIST="/Applications/MarkView.app/Contents/Info.plist"
 if [ -f "$INSTALLED_PLIST" ]; then
