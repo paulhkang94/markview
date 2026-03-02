@@ -43,3 +43,9 @@ docs/personal/
 *.provisionprofile
 npm/.mcpregistry_github_token
 npm/.mcpregistry_registry_token
+
+# Release build artifacts (local only)
+*.zip
+*.tar.gz
+docs/*.mov
+docs/*.mp4

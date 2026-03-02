@@ -190,7 +190,7 @@ if [ -f "$NPM_PKG" ]; then
         _tmp_pkg="$(mktemp -d)"
         mkdir -p "$_tmp_pkg/MarkView.app/Contents/MacOS"
         cp "$NPM_BINARY" "$_tmp_pkg/MarkView.app/Contents/MacOS/"
-        tar -czf "$NPM_ARCHIVE" -C "$_tmp_pkg" .
+        tar -czf "$NPM_ARCHIVE" -C "$_tmp_pkg" MarkView.app/Contents/MacOS/markview-mcp-server
         rm -rf "$_tmp_pkg"
         echo "Created: $NPM_ARCHIVE ($(du -sh "$NPM_ARCHIVE" | cut -f1))"
 
