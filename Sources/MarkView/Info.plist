@@ -44,7 +44,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.2.3</string>
 	<key>CFBundleVersion</key>
-	<string>154</string>
+	<string>180</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
