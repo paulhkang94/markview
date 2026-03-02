@@ -115,13 +115,18 @@ try:
     data = json.load(sys.stdin)
 except:
     print('api_error'); sys.exit(0)
+# Collect all versions for this server; pick the highest (registry may have multiple entries)
+from packaging.version import Version
+versions = []
 for item in data.get('servers', []):
-    s = item.get('server', item)  # handle both nested and flat formats
+    s = item.get('server', item)
     if s.get('name') == 'io.github.paulhkang94/markview':
-        reg_ver = s.get('version', '?')
-        print(reg_ver)
-        sys.exit(0)
-print('not_found')
+        versions.append(s.get('version', '0'))
+if versions:
+    try: print(str(max(versions, key=Version)))
+    except: print(sorted(versions)[-1])
+else:
+    print('not_found')
 " 2>/dev/null || echo "api_error")
 
 case "$MCP_STATUS" in
