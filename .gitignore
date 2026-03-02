@@ -32,11 +32,17 @@ scripts/cl-*.sh
 docs/LAUNCH-PLAN.md
 docs/MARKET-ANALYSIS.md
 
-# Release artifacts
-*.tar.gz
-
 # Personal/private docs
 docs/personal/
+
+# Research docs — safelist model: ignore everything, whitelist approved technical docs.
+# Do NOT add strategy, adoption, competitive, financial, or business docs here.
+# Approved docs must be explicitly force-tracked; any other research doc is private by default.
+docs/research/*
+!docs/research/e2e-perf-testing-approaches.md
+!docs/research/editor-bug-analysis.md
+!docs/research/ql-webview-sandbox-analysis.md
+!docs/research/quicklook-extension-spm.md
 
 # Apple signing credentials
 *.p8
