@@ -184,6 +184,54 @@ jobs:
             echo "::warning::Visual smoke tests did not pass — WKWebView may need a display context in CI. Not blocking."
           fi
 
+  docs-audit:
+    name: Public Docs Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify no private docs in public repo
+        run: |
+          # Approved docs/research/ files — update when adding new public technical docs.
+          # Do NOT add strategy, adoption, competitive, financial, or personal docs here.
+          APPROVED=(
+            "docs/research/e2e-perf-testing-approaches.md"
+            "docs/research/editor-bug-analysis.md"
+            "docs/research/ql-webview-sandbox-analysis.md"
+            "docs/research/quicklook-extension-spm.md"
+          )
+          PRIVATE_SIGNALS="strategy|competitive|adoption|financial|revenue|investor|confidential|internal|personal|launch|market|positioning|audit|metrics|roadmap|pricing"
+
+          failed=0
+
+          # Check for unapproved docs/research/ files
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            approved=false
+            for a in "${APPROVED[@]}"; do [[ "$f" == "$a" ]] && approved=true && break; done
+            if [[ "$approved" == "false" ]]; then
+              echo "::error file=$f::Unapproved docs/research/ file in public repo. Run: git rm --cached $f"
+              failed=1
+            fi
+          done < <(git ls-files docs/research/ 2>/dev/null || true)
+
+          # Check for private-signal filenames anywhere in tracked docs/
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            base=$(basename "$f" .md)
+            if echo "$base" | grep -qiE "$PRIVATE_SIGNALS"; then
+              echo "::error file=$f::Private-signal filename in public docs. Run: git rm --cached $f"
+              failed=1
+            fi
+          done < <(git ls-files docs/ 2>/dev/null || true)
+
+          if [[ $failed -eq 1 ]]; then
+            echo ""
+            echo "Private or unapproved docs detected. See errors above."
+            exit 1
+          fi
+          echo "Docs audit passed."
+
   sentry-release:
     name: Sentry Release
     runs-on: ubuntu-latest
