@@ -1,6 +1,10 @@
 name: Repo Guard
 on: [push, pull_request]
 
+concurrency:
+  group: guard-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-private-files:
     runs-on: ubuntu-latest
