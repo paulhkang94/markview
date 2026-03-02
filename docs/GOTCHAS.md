@@ -228,3 +228,37 @@ Before pushing a release tag, verify:
 ### NSTextView spell/grammar checking crashes in QL extension sandbox
 
 `NSTextView` enables spell checking by default, which triggers XPC service lookups (`com.apple.TextInput`) blocked by the QL extension sandbox. Always set `isContinuousSpellCheckingEnabled = false` and `isGrammarCheckingEnabled = false` in extension contexts.
+
+---
+
+## MCP Server Learnings (Session 2026-03-01)
+
+### MCP Protocol is Foundation-backed and rapidly adopting
+
+As of early 2026, MCP (Model Context Protocol) is donated to the Agentic AI Foundation (co-founded by Anthropic, Block, OpenAI, with backing from Google, Microsoft, AWS, Cloudflare, Bloomberg). This is NOT a Anthropic-only initiative — it's an open standard with thousands of MCP servers built across Node.js, Python, Go, and Swift. Safe to invest in long-term.
+
+### No existing markdown MCP server offers native UI + live preview
+
+Competitive analysis shows: Markdownify (PDF/HTML→MD conversion, no preview), MarkItDown (file format conversion, no UI), Feishu Markdown (platform-specific export), Library MCP (knowledge base search, text-only), Notes MCP (CRUD operations, no rendering). **Clear market gap: MarkView is the only native macOS markdown preview MCP server.**
+
+### MCP servers should be separate binaries, not embedded in UI apps
+
+The recommended architecture is a standalone CLI tool (`markview-mcp-server`) using the `MarkViewCore` library via the official Swift MCP SDK. This provides:
+- Stateless server (correct MCP design)
+- Easy testing (server runs independently)
+- Faster iteration (no app rebuild on server changes)
+- Standard pattern (most MCP servers are CLI tools)
+
+**Not recommended**: Embedding MCP directly in MarkView.app violates separation of concerns and creates security/debugging issues.
+
+### Swift MCP SDK is mature and macOS-first
+
+The official Swift MCP SDK (github.com/modelcontextprotocol/swift-sdk) supports macOS 13+, uses async/await, includes JSON-RPC stdio transport out of the box, and is actively maintained by Anthropic. No need for Node.js wrapper layers.
+
+### MVP scope is 2-3 days with just 2 tools
+
+Starting with `preview_markdown(content)` and `open_file(path)` covers the core use case: "Claude writes markdown → MarkView opens automatically." Full feature set (resources, export tools, linting) can follow in Phase 2 based on user feedback.
+
+### Auto-open workflow ("AI generates → app launches") is the killer differentiator
+
+The most compelling UX: Claude Desktop user writes markdown → calls `preview_markdown` tool → temp file created → `open -a MarkView` launches app with live preview in ~200ms. Zero user interaction, instant results. This workflow doesn't exist in any other markdown preview tool.
