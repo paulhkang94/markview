@@ -53,12 +53,20 @@ if not rules:
 failures = []
 passes = []
 
+skipped = []
+
 for rule in rules:
     rule_id    = rule.get("id", "<no-id>")
     ci_files   = rule.get("ci_files", [])
     pattern    = rule.get("ci_pattern", "")
     source     = rule.get("source", "?")
     gate_type  = rule.get("gate_type", "")
+
+    # pre_push_only rules live in .git/hooks/ which is never committed or
+    # checked out in CI. Skip verification — the gate exists locally.
+    if gate_type == "pre_push_only":
+        skipped.append(rule_id)
+        continue
 
     if not ci_files:
         failures.append((rule_id, source, "no ci_files specified"))
@@ -94,8 +102,10 @@ for rule in rules:
         failures.append((rule_id, source,
             f"pattern '{pattern}' not found in: {', '.join(ci_files)}"))
 
-print(f"\ncheck-rule-gates: {len(rules)} rules checked, "
-      f"{len(passes)} passed, {len(failures)} failed\n")
+checked = len(rules) - len(skipped)
+print(f"\ncheck-rule-gates: {len(rules)} rules total, "
+      f"{checked} checked, {len(passes)} passed, "
+      f"{len(failures)} failed, {len(skipped)} skipped (pre_push_only)\n")
 
 if failures:
     for rule_id, source, reason in failures:
