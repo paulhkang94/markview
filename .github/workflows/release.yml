@@ -208,8 +208,15 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
           cd npm
-          npm publish --access public
-          echo "Published mcp-server-markview@${{ steps.version.outputs.VERSION }} to npm"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          # Check if this version is already published (local release.sh may have run first)
+          PUBLISHED=$(npm view "mcp-server-markview@${VERSION}" version 2>/dev/null || echo "")
+          if [[ "$PUBLISHED" == "$VERSION" ]]; then
+            echo "mcp-server-markview@${VERSION} already published — skipping"
+          else
+            npm publish --access public
+            echo "Published mcp-server-markview@${VERSION} to npm"
+          fi
 
       - name: Verify npm postinstall works
         # Install the just-published package in a temp dir and confirm the binary downloads.
