@@ -124,6 +124,53 @@ jobs:
           rm -rf "${_tmp_pkg}"
           echo "NPM_TARBALL=/tmp/MarkView-${VERSION}.tar.gz" >> $GITHUB_ENV
 
+      - name: Gatekeeper pre-publish check (extract zip → quarantine → spctl)
+        # Test the artifact BEFORE it goes public. If this fails, nothing ships.
+        # Tests: zip path structure, notarization staple ticket, spctl --assess.
+        # The zip is on disk at $ARTIFACT — no need to download from a live URL.
+        run: |
+          _gk_tmp="$(mktemp -d)"
+          unzip -qq "$ARTIFACT" -d "$_gk_tmp"
+          _extracted="${_gk_tmp}/MarkView.app"
+
+          # Verify zip structure — must extract to MarkView.app at root
+          if [ ! -d "$_extracted" ]; then
+            echo "ERROR: MarkView.app not at root of extracted zip"
+            ls "$_gk_tmp"
+            exit 1
+          fi
+          echo "✓ Zip extracts to MarkView.app/ at root"
+
+          # Apply quarantine (simulates what macOS adds to any download)
+          xattr -w com.apple.quarantine \
+            "0081;$(printf '%08x' $(date +%s));curl;test" \
+            "$_extracted" 2>/dev/null || true
+
+          # Gatekeeper — the exact check users fail if notarization is broken
+          if spctl --assess --type execute "$_extracted" 2>/dev/null; then
+            echo "✓ Gatekeeper ACCEPTS the artifact"
+          else
+            REASON=$(spctl --assess --type execute --verbose=4 "$_extracted" 2>&1 | grep -oE 'source=.*' | head -1 || echo "unknown")
+            echo "ERROR: Gatekeeper REJECTS the artifact (${REASON})"
+            echo "Users would see 'MarkView is damaged and can't be opened'"
+            echo "Fix before publishing — do NOT proceed with release."
+            rm -rf "$_gk_tmp"
+            exit 1
+          fi
+
+          # Staple ticket — required for offline Gatekeeper pass
+          if xcrun stapler validate "$_extracted" 2>/dev/null | grep -q "The validate action worked"; then
+            echo "✓ Notarization staple ticket present"
+          else
+            echo "ERROR: Notarization staple ticket MISSING"
+            echo "Offline users (strict Gatekeeper policy) will see 'damaged'."
+            rm -rf "$_gk_tmp"
+            exit 1
+          fi
+
+          rm -rf "$_gk_tmp"
+          echo "✓ Artifact verified — safe to publish"
+
       - name: Generate release notes
         id: notes
         run: |
@@ -188,15 +235,4 @@ jobs:
           git add Casks/markview.rb
           git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap"
           git push
-
-      - name: Gatekeeper smoke test (download → quarantine → spctl)
-        # Re-download the just-published zip and verify Gatekeeper accepts it.
-        # This catches: wrong zip paths, stripped staple ticket, ad-hoc inner binaries.
-        # If this step fails, the release is broken and users will see "damaged".
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          bash scripts/test-distribution.sh --zip \
-            "https://github.com/paulhkang94/markview/releases/download/v${VERSION}/MarkView-${VERSION}.zip"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

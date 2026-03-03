@@ -55,3 +55,4 @@ npm/.mcpregistry_registry_token
 *.tar.gz
 docs/*.mov
 docs/*.mp4
+.release-preflight-passed-*

@@ -105,13 +105,31 @@ if command -v bash &>/dev/null && [[ -f scripts/check-version-sync.sh ]]; then
   fi
 fi
 
+# ── 9. Distribution path test ─────────────────────────────────────────────────
+# Tests the user-facing install path, not the developer path (bundle.sh --install
+# strips quarantine and never hits Gatekeeper). This is the check that catches
+# signing failures before they reach users.
+echo ""
+echo "  Running distribution path test (--local)..."
+if bash scripts/test-distribution.sh --local 2>&1 | grep -q "Distribution test passed"; then
+  pass "Distribution path test passed (local install — quarantine + signature checks)"
+else
+  fail "Distribution path test FAILED — fix signing/bundle before tagging"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "=================================================="
 if [[ "$FAILURES" -eq 0 ]]; then
+  # Write sentinel consumed by the pre-push hook — proves this check ran.
+  VERSION=$(plutil -extract CFBundleShortVersionString raw \
+    "Sources/MarkView/Info.plist" 2>/dev/null || echo "unknown")
+  SENTINEL=".release-preflight-passed-${VERSION}"
+  touch "$SENTINEL"
   echo -e "${GREEN}Pre-flight passed. Safe to tag.${NC}"
   echo ""
-  echo "  Next: git tag vX.Y.Z && git push origin vX.Y.Z"
+  echo "  Sentinel written: ${SENTINEL}"
+  echo "  Next: git tag v${VERSION} && git push origin v${VERSION}"
   exit 0
 else
   echo -e "${RED}$FAILURES check(s) failed. Fix before tagging.${NC}"
