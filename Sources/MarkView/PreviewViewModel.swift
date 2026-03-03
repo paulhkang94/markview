@@ -71,9 +71,13 @@ final class PreviewViewModel: ObservableObject {
         runLint(fixed)
     }
 
-    func save() throws {
+    func save(applyFormat: Bool = true) throws {
         guard let path = currentFilePath else { return }
-        if AppSettings.shared.formatOnSave {
+        // Format only on explicit save (Cmd+S) — never during auto-save.
+        // Auto-save fires on a timer mid-typing; running autoFixLint() then rewrites
+        // editorContent with reformatted text, triggering updateNSView while the cursor
+        // is mid-word and the new (shorter) string makes the selection out-of-bounds.
+        if applyFormat && AppSettings.shared.formatOnSave {
             autoFixLint()
         }
         // Suppress file watcher during our own write to prevent it from reloading the file
@@ -99,7 +103,7 @@ final class PreviewViewModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self, self.isDirty else { return }
                 do {
-                    try self.save()
+                    try self.save(applyFormat: false)  // never auto-format during timer-based saves
                 } catch {
                     self.lastError = error
                     AppLogger.captureError(error, category: "file", message: "Auto-save failed")
