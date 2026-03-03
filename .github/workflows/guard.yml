@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify all documented rules have structural CI gates
         run: |
-          bash tests/test-rule-gates.sh
+          bash Tests/test-rule-gates.sh
           bash scripts/check-rule-gates.sh
 
   check-ci-deps:
