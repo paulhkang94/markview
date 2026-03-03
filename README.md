@@ -31,6 +31,11 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 - **Drag and drop** — drop any `.md` file onto the window to open
 - **Find & Replace** — Cmd+F to find, Cmd+Option+F to find and replace
 - **Format on save** — auto-applies markdown lint fixes when saving
+- **Auto-save** — configurable interval saves edits without manual Cmd+S
+- **Word count** — live word and character count in the status bar
+- **Scroll position preservation** — reopening a file restores your last scroll position
+- **Configurable tab size** — set 2, 4, or 8 spaces per tab in settings
+- **Line numbers** — toggle line numbers in the editor pane
 - **Window auto-resize** — smart resize when toggling editor/preview panes
 - **Export** to HTML and PDF
 - **Dark mode** support with system/light/dark theme options
