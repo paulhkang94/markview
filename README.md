@@ -120,32 +120,28 @@ npx mcp-server-markview
 
 ### Claude Code Setup
 
-Add to `~/.claude/settings.json`:
+The easiest way — run this once in your terminal:
+
+```bash
+claude mcp add --transport stdio --scope user markview -- npx mcp-server-markview
+```
+
+This adds MarkView to `~/.claude.json` (user scope — available in all projects).
+
+Or add it manually to `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "markview": {
       "command": "npx",
-      "args": ["mcp-server-markview"],
-      "type": "stdio"
+      "args": ["mcp-server-markview"]
     }
   }
 }
 ```
 
-Or use the built binary directly (faster startup, no Node.js required):
-
-```json
-{
-  "mcpServers": {
-    "markview": {
-      "command": "/path/to/markview/.build/release/MarkViewMCPServer",
-      "type": "stdio"
-    }
-  }
-}
-```
+> **Note:** MCP servers belong in `~/.claude.json`, not `~/.claude/settings.json`. The settings file is for permissions only.
 
 ### Claude Desktop Setup
 
