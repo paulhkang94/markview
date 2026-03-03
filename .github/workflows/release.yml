@@ -188,3 +188,15 @@ jobs:
           git add Casks/markview.rb
           git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap"
           git push
+
+      - name: Gatekeeper smoke test (download → quarantine → spctl)
+        # Re-download the just-published zip and verify Gatekeeper accepts it.
+        # This catches: wrong zip paths, stripped staple ticket, ad-hoc inner binaries.
+        # If this step fails, the release is broken and users will see "damaged".
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          bash scripts/test-distribution.sh --zip \
+            "https://github.com/paulhkang94/markview/releases/download/v${VERSION}/MarkView-${VERSION}.zip"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

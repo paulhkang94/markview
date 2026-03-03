@@ -5,11 +5,14 @@ set -euo pipefail
 # Tests the FULL install→launch→verify path that users experience.
 #
 # Modes:
-#   --local    Test bundle.sh --install path (default)
-#   --brew     Test Homebrew cask path (requires tap + release artifact)
-#   --tar      Test tar.gz extraction path (simulates GitHub Release download)
+#   --local       Test bundle.sh --install path (default)
+#   --brew        Test Homebrew cask path (requires tap + release artifact)
+#   --tar         Test tar.gz extraction path (simulates GitHub Release download)
+#   --zip [url]   Download release zip, apply quarantine, run Gatekeeper check.
+#                 url defaults to the latest GitHub Release zip if omitted.
+#                 This is the canonical user path for direct downloads.
 #
-# Usage: bash scripts/test-distribution.sh [--local|--brew|--tar]
+# Usage: bash scripts/test-distribution.sh [--local|--brew|--tar|--zip [url]]
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
@@ -160,6 +163,80 @@ test_tar_extraction() {
     rm -rf "$tmpdir"
 }
 
+test_zip_download() {
+    local zip_url="${1:-}"
+    echo ""
+    echo "=== Distribution Test: zip download (user path) ==="
+
+    # Resolve URL: explicit arg → latest GitHub Release
+    if [[ -z "$zip_url" ]]; then
+        zip_url=$(gh release view --repo paulhkang94/markview --json assets \
+            --jq '.assets[] | select(.name | endswith(".zip")) | .url' 2>/dev/null | head -1)
+    fi
+    if [[ -z "$zip_url" ]]; then
+        fail "No zip URL provided and no GitHub Release found"
+        return
+    fi
+    echo "URL: $zip_url"
+
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    local zip_path="${tmpdir}/MarkView-download.zip"
+
+    # Download
+    if ! curl -fsSL --output "$zip_path" "$zip_url" 2>/dev/null; then
+        fail "Download failed: $zip_url"
+        rm -rf "$tmpdir"
+        return
+    fi
+    pass "Downloaded zip ($(du -sh "$zip_path" | cut -f1))"
+
+    # Verify zip internal path — absolute runner paths break extraction
+    local first_entry
+    first_entry=$(unzip -l "$zip_path" | awk 'NR==4{print $4}')
+    if [[ "$first_entry" == "MarkView.app/" ]]; then
+        pass "Zip structure: MarkView.app/ at root"
+    else
+        fail "Zip structure: first entry is '$first_entry' — users get nested folder, not MarkView.app"
+    fi
+
+    # Extract (what a user does after downloading)
+    unzip -qq "$zip_path" -d "$tmpdir"
+    local extracted_app="${tmpdir}/MarkView.app"
+
+    if [ ! -d "$extracted_app" ]; then
+        fail "MarkView.app not found at top level after extraction"
+        rm -rf "$tmpdir"
+        return
+    fi
+
+    # Apply quarantine flag (macOS adds this to any internet download)
+    xattr -w com.apple.quarantine \
+        "0081;$(printf '%08x' $(date +%s));curl;$(uuidgen | tr '[:upper:]' '[:lower:]')" \
+        "$extracted_app" 2>/dev/null || true
+
+    # Gatekeeper — the actual user-facing gate
+    if spctl --assess --type execute "$extracted_app" 2>/dev/null; then
+        pass "Gatekeeper ACCEPTS downloaded app"
+    else
+        local reason
+        reason=$(spctl --assess --type execute --verbose=4 "$extracted_app" 2>&1 | grep -oE 'source=.*' | head -1 || echo "unknown reason")
+        fail "Gatekeeper REJECTS downloaded app (${reason}) — users see 'damaged' dialog"
+    fi
+
+    # Staple ticket
+    if xcrun stapler validate "$extracted_app" 2>/dev/null | grep -q "The validate action worked"; then
+        pass "Notarization staple ticket present"
+    else
+        fail "Notarization staple ticket MISSING — offline users see 'damaged' dialog"
+    fi
+
+    test_app_launches "$extracted_app" "zip download"
+
+    cleanup_test_app "$extracted_app"
+    rm -rf "$tmpdir"
+}
+
 # --- Main ---
 echo "=== MarkView Distribution E2E Test ==="
 echo "Mode: $MODE"
@@ -181,9 +258,14 @@ case "$MODE" in
     --tar)
         test_tar_extraction
         ;;
+    --zip)
+        # Optional second arg: explicit zip URL
+        ZIP_URL="${2:-}"
+        test_zip_download "$ZIP_URL"
+        ;;
     *)
         echo "Unknown mode: $MODE"
-        echo "Usage: bash scripts/test-distribution.sh [--local|--brew|--tar]"
+        echo "Usage: bash scripts/test-distribution.sh [--local|--brew|--tar|--zip [url]]"
         exit 1
         ;;
 esac

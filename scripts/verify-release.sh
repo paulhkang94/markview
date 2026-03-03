@@ -6,12 +6,14 @@ set -euo pipefail
 # If VERSION is omitted, reads from Info.plist.
 #
 # Checks:
-#   1. GitHub release has the expected assets (.zip + .tar.gz)
-#   2. npm registry shows the correct version as @latest
-#   3. npm postinstall actually works (downloads + extracts binary)
-#   4. Homebrew tap cask is at the correct version
-#   5. Official MCP registry shows updated version
-#   6. check-version-sync.sh passes (all sources in sync)
+#   1. Version sync (all local sources agree)
+#   2. GitHub release has the expected assets (.zip + .tar.gz)
+#   2b. Gatekeeper: downloads the zip, applies quarantine, runs spctl --assess
+#       This catches: wrong zip paths, stripped staple ticket, ad-hoc inner binaries.
+#   3. npm registry shows the correct version as @latest
+#   4. npm postinstall actually works (downloads + extracts binary)
+#   5. Homebrew tap cask is at the correct version
+#   6. Official MCP registry shows updated version
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -51,6 +53,8 @@ echo ""
 echo "2. GitHub Release assets"
 RELEASE_ASSETS=$(gh release view "v${VERSION}" --repo paulhkang94/markview --json assets \
     --jq '[.assets[] | .name]' 2>/dev/null || echo "[]")
+ZIP_URL=$(gh release view "v${VERSION}" --repo paulhkang94/markview --json assets \
+    --jq ".assets[] | select(.name == \"MarkView-${VERSION}.zip\") | .url" 2>/dev/null || echo "")
 
 if echo "$RELEASE_ASSETS" | python3 -c "import json,sys; a=json.load(sys.stdin); exit(0 if 'MarkView-${VERSION}.zip' in a else 1)" 2>/dev/null; then
     check_pass "GitHub release has MarkView-${VERSION}.zip"
@@ -62,6 +66,78 @@ if echo "$RELEASE_ASSETS" | python3 -c "import json,sys; a=json.load(sys.stdin);
     check_pass "GitHub release has MarkView-${VERSION}.tar.gz (npm artifact)"
 else
     check_fail "GitHub release MISSING MarkView-${VERSION}.tar.gz — npm postinstall will fail"
+fi
+echo ""
+
+# ─── 2b. Gatekeeper: download zip, extract, spctl --assess ───────────────────
+# This is the check that catches: wrong zip paths, stripped staple ticket,
+# ad-hoc inner binaries — the P0 class of bugs that broke v1.2.3.
+echo "2b. Gatekeeper check (download → extract → quarantine → spctl)"
+if [[ -z "$ZIP_URL" ]]; then
+    check_fail "Cannot run Gatekeeper check — zip URL not found in release"
+else
+    _gk_tmp="$(mktemp -d)"
+    _gk_zip="${_gk_tmp}/MarkView-${VERSION}.zip"
+
+    # Download the actual release artifact
+    if curl -fsSL --output "$_gk_zip" "$ZIP_URL" 2>/dev/null; then
+        check_pass "Downloaded MarkView-${VERSION}.zip ($(du -sh "$_gk_zip" | cut -f1))"
+
+        # Verify zip internal path — must be MarkView.app/ at root, not a runner absolute path
+        _first_entry=$(unzip -l "$_gk_zip" | awk 'NR==4{print $4}')
+        if [[ "$_first_entry" == "MarkView.app/" ]]; then
+            check_pass "Zip internal path: MarkView.app/ at root (not nested runner path)"
+        else
+            check_fail "Zip internal path: '$_first_entry' — users get nested folder, not MarkView.app"
+        fi
+
+        # Extract (simulate what user does after downloading)
+        unzip -qq "$_gk_zip" -d "$_gk_tmp"
+        _extracted="${_gk_tmp}/MarkView.app"
+
+        if [ -d "$_extracted" ]; then
+            # Apply quarantine flag (macOS adds this to any internet download)
+            xattr -w com.apple.quarantine \
+                "0081;$(printf '%08x' $(date +%s));curl;$(uuidgen | tr '[:upper:]' '[:lower:]')" \
+                "$_extracted" 2>/dev/null || true
+
+            # Gatekeeper assessment — this is the actual user-facing check
+            if spctl --assess --type execute "$_extracted" 2>/dev/null; then
+                check_pass "Gatekeeper ACCEPTS downloaded app (notarized + valid signature)"
+            else
+                _reason=$(spctl --assess --type execute --verbose=4 "$_extracted" 2>&1 | grep -oE 'source=.*' | head -1 || echo "unknown")
+                check_fail "Gatekeeper REJECTS downloaded app (${_reason}) — users see 'damaged' dialog"
+            fi
+
+            # Deep signature check
+            if codesign --verify --deep --strict "$_extracted" 2>/dev/null; then
+                check_pass "Deep code signature valid"
+            else
+                check_fail "Deep code signature invalid"
+            fi
+
+            # Staple ticket
+            if xcrun stapler validate "$_extracted" 2>/dev/null | grep -q "The validate action worked"; then
+                check_pass "Notarization staple ticket present"
+            else
+                check_fail "Notarization staple ticket MISSING — Gatekeeper requires online check; offline users see 'damaged'"
+            fi
+
+            # Main executable must be Developer ID signed (not ad-hoc)
+            _team=$(codesign -dv "$_extracted/Contents/MacOS/MarkView" 2>&1 | grep "^TeamIdentifier=" | cut -d= -f2)
+            if [[ -n "$_team" && "$_team" != "not set" ]]; then
+                check_pass "Main executable signed with TeamIdentifier=${_team}"
+            else
+                check_fail "Main executable has no TeamIdentifier (ad-hoc signed) — Gatekeeper rejects outer Developer ID bundle with ad-hoc inner binary"
+            fi
+        else
+            check_fail "MarkView.app not found after extraction — zip structure wrong"
+        fi
+    else
+        check_fail "Failed to download zip from release (curl failed)"
+    fi
+
+    rm -rf "$_gk_tmp"
 fi
 echo ""
 
