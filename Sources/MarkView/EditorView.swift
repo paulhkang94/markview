@@ -101,6 +101,15 @@ struct EditorView: NSViewRepresentable {
                 let len = min(range.length, textLength - loc)
                 return NSValue(range: NSRange(location: loc, length: len))
             }
+            // Reset selection to {0,0} BEFORE replacing content.
+            // During textView.string = text, NSTextView internally calls setSelectedRanges:
+            // with the current (old) selection to update cursor position after the replacement.
+            // If the old selection points past the end of the new (shorter) text, NSLayoutManager
+            // tries to compute the cursor blink rect for an out-of-bounds character range and
+            // NSBigMutableString.getCharacters:range: throws → EXC_BREAKPOINT.
+            // Resetting to {0,0} first ensures the internal setSelectedRanges: call uses a
+            // position that is valid in any non-empty string.
+            textView.selectedRanges = [NSValue(range: NSRange(location: 0, length: 0))]
             textView.string = text
             // Default cursor: beginning of document, NOT end-of-file.
             // Placing cursor at textLength forced the layout manager to compute layout for the
