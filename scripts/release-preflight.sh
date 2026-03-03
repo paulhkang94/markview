@@ -51,7 +51,7 @@ REQUIRED_SECRETS=(
 )
 
 for secret in "${REQUIRED_SECRETS[@]}"; do
-  if gh secret list 2>/dev/null | grep -q "^${secret}[[:space:]]"; then
+  if gh secret list 2>/dev/null | awk '{print $1}' | grep -q "^${secret}$"; then
     pass "Secret: $secret"
   else
     fail "Missing secret: $secret (set via: gh secret set $secret)"
