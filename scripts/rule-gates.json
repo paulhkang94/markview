@@ -67,6 +67,22 @@
       "tier": 1
     },
     {
+      "id": "npm-postinstall-verified-after-publish",
+      "description": "npm postinstall must be smoke-tested after publish — broken binary download is invisible otherwise.",
+      "ci_files": [".github/workflows/release.yml"],
+      "ci_pattern": "npm install.*mcp-server-markview|markview-mcp-server-binary",
+      "gate_type": "script_run",
+      "tier": 1
+    },
+    {
+      "id": "homebrew-tap-verified-after-update",
+      "description": "Homebrew tap version + SHA256 must be verified correct after the cask push.",
+      "ci_files": [".github/workflows/release.yml"],
+      "ci_pattern": "Verify Homebrew tap|TAP_VER.*VERSION",
+      "gate_type": "script_run",
+      "tier": 1
+    },
+    {
       "id": "rule-gate-checker-has-ci-gate",
       "description": "The rule-gate checker itself must be wired into a CI job. Self-referential: if this entry fails, the checker is unwired.",
       "ci_files": [".github/workflows/guard.yml"],

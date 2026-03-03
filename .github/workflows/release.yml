@@ -211,6 +211,30 @@ jobs:
           npm publish --access public
           echo "Published mcp-server-markview@${{ steps.version.outputs.VERSION }} to npm"
 
+      - name: Verify npm postinstall works
+        # Install the just-published package in a temp dir and confirm the binary downloads.
+        # Catches: wrong tarball URL, broken postinstall.js, missing GitHub Release asset.
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          _tmp=$(mktemp -d)
+          cd "$_tmp"
+          # Retry up to 3 times — npm registry propagation can take a few seconds
+          for i in 1 2 3; do
+            npm install "mcp-server-markview@${VERSION}" --prefer-offline=false 2>&1 | tail -5 && break
+            echo "Attempt $i failed, retrying in 5s..."
+            sleep 5
+          done
+          if [[ -f "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" ]]; then
+            SIZE=$(du -sh "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" | cut -f1)
+            echo "✓ npm postinstall: binary downloaded and extracted (${SIZE})"
+          else
+            echo "ERROR: npm postinstall did not produce bin/markview-mcp-server-binary"
+            echo "Users running: npx mcp-server-markview will get a broken install"
+            ls "$_tmp/node_modules/mcp-server-markview/" 2>/dev/null || true
+            exit 1
+          fi
+          rm -rf "$_tmp"
+
       - name: Update Homebrew tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -235,4 +259,38 @@ jobs:
           git add Casks/markview.rb
           git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap"
           git push
+
+      - name: Verify Homebrew tap updated correctly
+        # Confirm the tap cask has the right version + SHA256 after the push.
+        # Catches: sed substitution failure, push failure, token expiry.
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping tap verification"
+            exit 0
+          fi
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          SHA256=$(shasum -a 256 "$ARTIFACT" | awk '{print $1}')
+          # Re-fetch the cask from GitHub to confirm the push landed
+          CASK=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://raw.githubusercontent.com/paulhkang94/homebrew-markview/main/Casks/markview.rb" \
+            2>/dev/null)
+          TAP_VER=$(echo "$CASK" | grep -oE 'version "[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+          TAP_SHA=$(echo "$CASK" | grep -oE 'sha256 "[a-f0-9]+"' | grep -oE '[a-f0-9]+' || echo "")
+          if [[ "$TAP_VER" == "$VERSION" ]]; then
+            echo "✓ Homebrew tap version: ${TAP_VER}"
+          else
+            echo "ERROR: Homebrew tap version is '${TAP_VER}' (expected '${VERSION}')"
+            exit 1
+          fi
+          if [[ "$TAP_SHA" == "$SHA256" ]]; then
+            echo "✓ Homebrew tap SHA256 matches"
+          else
+            echo "ERROR: Homebrew tap SHA256 mismatch"
+            echo "  tap:      ${TAP_SHA}"
+            echo "  expected: ${SHA256}"
+            exit 1
+          fi
 
