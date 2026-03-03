@@ -96,9 +96,23 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
 
           # zip: full app bundle for direct download / Homebrew
-          cd /tmp
-          zip -r "MarkView-${VERSION}.zip" "${{ github.workspace }}/MarkView.app"
+          # Use ditto (not zip) — ditto preserves the notarization staple ticket
+          # stored in the resource fork / extended attributes. Plain `zip` strips it.
+          # ditto also creates a relative path inside the zip (MarkView.app/),
+          # whereas `zip /abs/path/MarkView.app` embeds the full runner path.
+          ditto -c -k --keepParent \
+            "${{ github.workspace }}/MarkView.app" \
+            "/tmp/MarkView-${VERSION}.zip"
           echo "ARTIFACT=/tmp/MarkView-${VERSION}.zip" >> $GITHUB_ENV
+
+          # Sanity check: first entry in zip must be MarkView.app/, not a runner path
+          first_entry=$(unzip -l "/tmp/MarkView-${VERSION}.zip" | awk 'NR==4{print $4}')
+          if [[ "$first_entry" != "MarkView.app/" ]]; then
+            echo "ERROR: zip internal path is '$first_entry' (expected 'MarkView.app/')"
+            echo "The zip will produce a nested folder structure, not a drag-and-drop app."
+            exit 1
+          fi
+          echo "✓ Zip structure verified: first entry = $first_entry"
 
           # tar.gz: MCP server binary only — consumed by npm postinstall.js
           # Structure: ./MarkView.app/Contents/MacOS/markview-mcp-server

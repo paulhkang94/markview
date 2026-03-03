@@ -130,6 +130,14 @@ find "$APP_DIR/Contents/Resources" -name "*.bundle" -maxdepth 1 2>/dev/null | wh
     codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$bundle" 2>/dev/null && echo "  ✓ Re-signed: $(basename "$bundle")" || true
 done
 
+# Re-sign main executable — xcodebuild may sign it ad-hoc when CODE_SIGN_STYLE=Manual
+# even when CODE_SIGN_IDENTITY is set to Developer ID Application.
+# Gatekeeper rejects "Developer ID outer + ad-hoc inner main executable".
+MAIN_BIN="$APP_DIR/Contents/MacOS/$APP_NAME"
+if [ -f "$MAIN_BIN" ]; then
+    codesign -s "$SIGN_IDENTITY" -f "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" "$MAIN_BIN" 2>/dev/null && echo "  ✓ Re-signed: $APP_NAME (main executable)" || true
+fi
+
 # Re-sign Quick Look extension with entitlements + timestamp
 QL_APPEX="$APP_DIR/Contents/PlugIns/MarkViewQuickLook.appex"
 if [ -d "$QL_APPEX" ]; then
@@ -189,11 +197,14 @@ else
     echo "  ⚠ Quick Look extension missing (non-fatal)"
 fi
 
-# Verify code signature
+# Verify code signature — hard failure for Developer ID builds, warning for ad-hoc
 if codesign --verify --deep --strict "$APP_DIR" 2>/dev/null; then
     echo "  ✓ Code signature valid"
+elif [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "  ⚠ Ad-hoc signature (expected — no Developer ID cert found)"
 else
-    echo "  ⚠ Code signature verification failed (non-fatal for ad-hoc)"
+    echo "  ✗ Code signature invalid with Developer ID — bundle will be rejected by Gatekeeper"
+    VALID=false
 fi
 
 if [ "$VALID" = true ]; then
