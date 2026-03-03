@@ -83,6 +83,14 @@
       "tier": 1
     },
     {
+      "id": "mcp-config-file-path-correct-in-docs",
+      "description": "README and npm/README must reference ~/.claude.json (not ~/.claude/settings.json) for MCP setup. Wrong path was shipped and caught only by an end-user on launch day — this gate makes any future regression a CI failure before it reaches users.",
+      "ci_files": [".github/workflows/guard.yml"],
+      "ci_pattern": "verify-mcp-docs\\.sh",
+      "gate_type": "script_run",
+      "tier": 1
+    },
+    {
       "id": "rule-gate-checker-has-ci-gate",
       "description": "The rule-gate checker itself must be wired into a CI job. Self-referential: if this entry fails, the checker is unwired.",
       "ci_files": [".github/workflows/guard.yml"],

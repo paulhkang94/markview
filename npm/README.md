@@ -29,35 +29,25 @@ The binary is downloaded automatically during installation. If the download fail
 
 ## Claude Code Configuration
 
-Add to your Claude Code MCP config (usually `~/.claude/mcp.json` or via `claude mcp add`):
+The easiest way — run once in your terminal:
+
+```bash
+claude mcp add --transport stdio --scope user markview -- npx mcp-server-markview
+```
+
+This writes to `~/.claude.json` (user scope — works across all projects). Restart Claude Code after adding.
+
+Or add manually to `~/.claude.json` (permissions go in settings.json — MCP config goes here):
 
 ```json
 {
   "mcpServers": {
     "markview": {
       "command": "npx",
-      "args": ["-y", "mcp-server-markview"]
+      "args": ["mcp-server-markview"]
     }
   }
 }
-```
-
-Or if you have installed it globally:
-
-```json
-{
-  "mcpServers": {
-    "markview": {
-      "command": "mcp-server-markview"
-    }
-  }
-}
-```
-
-### Using `claude mcp add`
-
-```bash
-claude mcp add markview -- npx -y mcp-server-markview
 ```
 
 ## Available Tools

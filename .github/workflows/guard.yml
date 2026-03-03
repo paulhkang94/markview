@@ -34,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify MCP config file references in docs are correct
+        run: bash scripts/verify-mcp-docs.sh
       - name: Verify all documented rules have structural CI gates
         run: |
           bash Tests/test-rule-gates.sh
