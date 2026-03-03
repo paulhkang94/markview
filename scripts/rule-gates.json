@@ -1,0 +1,78 @@
+{
+  "_schema": "1",
+  "_doc": "Maps documented rules to the CI patterns that enforce them. 'ci_pattern' is a regex matched against ci_files content. A missing match fails guard.yml on every push. Add entries here when promoting a rule from T4 (docs) to T1 (CI gate).",
+  "rules": [
+    {
+      "id": "new-build-deps-same-commit",
+      "description": "New build tool deps must be verified present in CI in the same commit as the build script change.",
+      "ci_files": [".github/workflows/guard.yml"],
+      "ci_pattern": "check-ci-deps\\.sh",
+      "gate_type": "script_run",
+      "tier": 1
+    },
+    {
+      "id": "version-sync-all-callsites",
+      "description": "Version strings must be verified in sync across plist, git tag, QL, MCP, npm in CI.",
+      "ci_files": [".github/workflows/guard.yml"],
+      "ci_pattern": "check-version-sync\\.sh",
+      "gate_type": "script_run",
+      "tier": 1
+    },
+    {
+      "id": "private-files-not-committed",
+      "description": "Private config files (.claude/, hooks/, scripts/claude-*) must not be committed to the public repo.",
+      "ci_files": [".github/workflows/guard.yml"],
+      "ci_pattern": "check-private-files|Ensure no private",
+      "gate_type": "job",
+      "tier": 1
+    },
+    {
+      "id": "gatekeeper-check-before-publish",
+      "description": "Gatekeeper must accept the release zip (spctl --assess) BEFORE GitHub Release is published, not after.",
+      "ci_files": [".github/workflows/release.yml"],
+      "ci_pattern": "spctl.*--assess|Gatekeeper pre-publish",
+      "gate_type": "job",
+      "tier": 1
+    },
+    {
+      "id": "notarization-staple-verified-before-publish",
+      "description": "Notarization staple ticket must be verified present before the release zip is published.",
+      "ci_files": [".github/workflows/release.yml"],
+      "ci_pattern": "xcrun stapler validate|staple.*validate",
+      "gate_type": "job",
+      "tier": 1
+    },
+    {
+      "id": "zip-path-structure-correct",
+      "description": "Release zip must contain MarkView.app/ at root — not a nested runner absolute path.",
+      "ci_files": [".github/workflows/release.yml"],
+      "ci_pattern": "MarkView\\.app/.*root|first_entry.*MarkView|unzip.*MarkView",
+      "gate_type": "inline_check",
+      "tier": 1
+    },
+    {
+      "id": "tag-push-requires-preflight",
+      "description": "Tag pushes must be blocked by pre-push hook unless release-preflight.sh sentinel is present.",
+      "ci_files": [".git/hooks/pre-push"],
+      "ci_pattern": "release-preflight-passed",
+      "gate_type": "pre_push_only",
+      "tier": 1
+    },
+    {
+      "id": "private-docs-not-in-public-repo",
+      "description": "Strategy/competitive/personal docs must not be committed to the public markview repo.",
+      "ci_files": [".github/workflows/ci.yml"],
+      "ci_pattern": "docs-audit|Private Docs Audit|APPROVED_RESEARCH",
+      "gate_type": "job",
+      "tier": 1
+    },
+    {
+      "id": "rule-gate-checker-has-ci-gate",
+      "description": "The rule-gate checker itself must be wired into a CI job. Self-referential: if this entry fails, the checker is unwired.",
+      "ci_files": [".github/workflows/guard.yml"],
+      "ci_pattern": "check-rule-gates\\.sh",
+      "gate_type": "script_run",
+      "tier": 1
+    }
+  ]
+}

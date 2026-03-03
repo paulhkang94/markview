@@ -29,3 +29,19 @@ jobs:
           fetch-depth: 0  # full history needed for git tag checks
       - name: Version strings in sync (plist ↔ git tag ↔ QL ↔ MCP)
         run: bash scripts/check-version-sync.sh
+
+  check-rule-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify all documented rules have structural CI gates
+        run: |
+          bash tests/test-rule-gates.sh
+          bash scripts/check-rule-gates.sh
+
+  check-ci-deps:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify all build tool deps used in scripts are installed in CI
+        run: bash scripts/check-ci-deps.sh
