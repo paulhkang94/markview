@@ -6,10 +6,6 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 
 ![MarkView demo](docs/markview_demo.gif)
 
-<a href="https://glama.ai/mcp/servers/@paulhkang94/markview">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@paulhkang94/markview/badge" alt="markview MCP server" />
-</a>
-
 ## Screenshots
 
 | Preview only | Editor + Preview |
