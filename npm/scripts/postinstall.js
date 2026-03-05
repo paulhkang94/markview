@@ -22,7 +22,7 @@ const { execFileSync } = require("child_process");
 
 const GITHUB_OWNER = "paulhkang94";
 const GITHUB_REPO = "markview";
-const VERSION = "1.2.5";
+const VERSION = "1.2.6";
 const ARCHIVE_NAME = `MarkView-${VERSION}.tar.gz`;
 const DOWNLOAD_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}`;
 
