@@ -1288,6 +1288,95 @@ runner.test("Complex mermaid (sequence + pie) → app stable after render") {
 
 print("")
 
+// ========== Tier 7: Crash Regression Tests ==========
+// These tests exercise the exact real-world crash paths from Sentry reports.
+// Unit tests cover the pure logic; these confirm no crash in the live NSTextView layer.
+
+print("--- Tier 7: Crash Regressions ---")
+
+runner.test("Cursor-at-EOF then external reload → no crash (Bug #20 regression)") {
+    // REAL CRASH PATH: user edits to end of file, then MarkView reloads the file externally.
+    // updateNSView receives new (shorter) text while selectedRanges has cursor at textLength.
+    // Bug #20: location == textLength passed the <= guard, then AppKit called
+    // characterAtIndex(textLength) which is OOB → NSRangeException.
+    // This E2E test exercises the full NSTextView layer that unit tests cannot reach.
+    let content = "# Crash Test\n\nLine one.\nLine two."
+    try withAppAndFile(content, name: "cursor-eof") { window, path in
+        // Enable editor
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Move cursor to end of document (Cmd+End = kVK_End = 0x77)
+        let w = try app.mainWindow()
+        AXHelper.keyPress(0x77, modifiers: .maskCommand)  // Cmd+End
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Verify app is running before the dangerous operation
+        try expect(app.isRunning(), "App must be running before external reload")
+
+        // Write SHORTER content externally — cursor position will now be past end
+        let shorter = "# Short"
+        try shorter.write(toFile: path, atomically: true, encoding: .utf8)
+
+        // Wait for file watcher to reload
+        Thread.sleep(forTimeInterval: Timing.externalFileChange + 0.5)
+
+        // App must still be running — Bug #20 would crash here
+        try expect(app.isRunning(),
+            "App must survive external reload when cursor was past new content end (Bug #20)")
+
+        // Editor should show the new shorter content
+        let editorText = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(editorText.contains("Short"),
+            "Editor must show reloaded content (got: \(editorText.prefix(50)))")
+    }
+}
+
+runner.test("Large file (500 lines) opens without hang (<5s)") {
+    // REAL HANG PATH: NSLayoutManager.setSelectedRanges → _invalidateDisplayForChangeOfSelection
+    // → _NSFastFillAllGlyphHolesForCharacterRange forces synchronous glyph generation for
+    // the entire document. On 5000+ line files this blocks 2000ms+ (Sentry APPLE-MACOS-A/B).
+    // Fix: defer setSelectedRanges async so glyph fill doesn't block the initial load.
+    // This E2E test verifies the app opens a large file without triggering a detectable hang.
+    let lines = (1...500).map { i in
+        "## Section \(i)\n\nThis is paragraph \(i) with some **bold** and `code` content.\n"
+    }.joined(separator: "\n")
+    let largeContent = "# Large File Test\n\n" + lines
+
+    let start = Date()
+    try withAppAndFile(largeContent, name: "large-file") { window, _ in
+        let elapsed = Date().timeIntervalSince(start)
+        try expect(app.isRunning(), "App must be running after large file load")
+        try expect(elapsed < 5.0,
+            "Large file (500 lines) must open in <5s — took \(String(format: "%.2f", elapsed))s (NSLayoutManager glyph-fill hang)")
+    }
+}
+
+runner.test("Large file → toggle editor → no hang (<3s for editor to appear)") {
+    // The glyph-fill hang also occurs when switching from preview-only to editor mode
+    // on a large file already loaded, because setSelectedRanges runs during updateNSView.
+    let lines = (1...300).map { i in "Line \(i): content here.\n" }.joined()
+    let content = "# Editor Toggle Large File\n\n" + lines
+
+    try withAppAndFile(content, name: "large-toggle") { window, _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        let toggleStart = Date()
+        AXHelper.cmdE()  // Toggle editor on
+        // Wait up to 3s for editor to appear
+        // Wait up to 3s for editor to appear (or timeout)
+        for _ in 0..<30 {
+            Thread.sleep(forTimeInterval: 0.1)
+            if let w = try? app.mainWindow(), helpers.findEditor(in: w) != nil { break }
+        }
+        let elapsed = Date().timeIntervalSince(toggleStart)
+        try expect(app.isRunning(), "App must survive editor toggle on large file")
+        try expect(elapsed < 3.0,
+            "Editor toggle on large file must complete in <3s — took \(String(format: "%.2f", elapsed))s")
+    }
+}
+
+print("")
+
 // ========== Summary ==========
 
 helpers.cleanupTempFiles()
