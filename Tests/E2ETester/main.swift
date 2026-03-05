@@ -1200,6 +1200,94 @@ if qlFixtureExists {
 
 print("")
 
+// ========== Tier 5: Mermaid Rendering ==========
+// Mermaid diagrams are rendered by mermaid.min.js injected into the WKWebView.
+// AX can't inspect WKWebView JS execution directly, so tests verify:
+//   (1) app doesn't crash on mermaid syntax
+//   (2) editor content is preserved (binding pipeline works)
+//   (3) complex diagram with multiple block types stays stable
+
+print("--- Tier 5: Mermaid Rendering ---")
+
+let mermaidSimple = """
+# Mermaid Test
+
+A diagram:
+
+```mermaid
+graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Do thing]
+    B -->|No| D[Skip]
+    C --> E[End]
+    D --> E
+```
+
+Done.
+"""
+
+let mermaidComplex = """
+# Complex Mermaid
+
+```mermaid
+sequenceDiagram
+    Alice->>Bob: Hello
+    Bob-->>Alice: Hi there
+    Alice->>Bob: How are you?
+    Bob-->>Alice: Fine, thanks
+```
+
+```mermaid
+pie title Pet Adoption
+    "Dogs" : 386
+    "Cats" : 85
+    "Fish" : 15
+```
+"""
+
+runner.test("Mermaid diagram → app doesn't crash on open") {
+    try withAppAndFile(mermaidSimple, name: "mermaid-simple") { window, _ in
+        Thread.sleep(forTimeInterval: Timing.fileLoadRender + 0.5)
+        try expect(app.isRunning(), "App must stay running after opening mermaid file")
+    }
+}
+
+runner.test("Mermaid syntax → editor content preserved after typing") {
+    try withAppAndFile("# Mermaid Edit Test\n\n", name: "mermaid-edit") { window, _ in
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let mermaidBlock = "```mermaid\ngraph LR\n    A --> B --> C\n```"
+        let w = try app.mainWindow()
+        try helpers.typeInEditor(mermaidBlock, window: w)
+        Thread.sleep(forTimeInterval: Timing.typePreviewUpdate + 0.5)
+
+        let editorText = helpers.editorContent(try app.mainWindow()) ?? ""
+        try expect(editorText.contains("mermaid"),
+            "Editor must preserve mermaid block (got: \(editorText.prefix(100)))")
+        try expect(editorText.contains("graph LR"),
+            "Editor must preserve diagram source (got: \(editorText.prefix(100)))")
+        try expect(app.isRunning(), "App must stay running after mermaid typing")
+    }
+}
+
+runner.test("Complex mermaid (sequence + pie) → app stable after render") {
+    try withAppAndFile(mermaidComplex, name: "mermaid-complex") { window, _ in
+        Thread.sleep(forTimeInterval: Timing.fileLoadRender + 1.0)
+        try expect(app.isRunning(), "App must stay running after complex mermaid render")
+
+        // Verify the file can also be edited without crashing
+        AXHelper.cmdE()
+        Thread.sleep(forTimeInterval: 0.5)
+        let w = try app.mainWindow()
+        let editorText = helpers.editorContent(w) ?? ""
+        try expect(editorText.contains("sequenceDiagram") || editorText.contains("mermaid"),
+            "Complex mermaid content must be readable in editor")
+    }
+}
+
+print("")
+
 // ========== Summary ==========
 
 helpers.cleanupTempFiles()

@@ -44,6 +44,28 @@ if [ -d "$PROJECT_DIR/MarkView.app" ]; then
         BUNDLE_OK=false
     fi
 
+    # Resource integrity check — catches xcodegen-not-rerun after adding resource files
+    BUNDLE_RSRC="$PROJECT_DIR/MarkView.app/Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources"
+    for rsrc in mermaid.min.js prism-bundle.min.js template.html; do
+        if [ -f "$BUNDLE_RSRC/$rsrc" ]; then
+            echo "✓ Resource bundled: $rsrc"
+        else
+            echo "✗ Missing resource in bundle: $rsrc (run: xcodegen generate && bash scripts/bundle.sh)"
+            BUNDLE_OK=false
+        fi
+    done
+
+    # Same resources must also be in the QuickLook extension
+    APPEX_RSRC="$PROJECT_DIR/MarkView.app/Contents/PlugIns/MarkViewQuickLook.appex/Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources"
+    for rsrc in mermaid.min.js prism-bundle.min.js template.html; do
+        if [ -f "$APPEX_RSRC/$rsrc" ]; then
+            echo "✓ QL resource bundled: $rsrc"
+        else
+            echo "✗ Missing QL resource: $rsrc"
+            BUNDLE_OK=false
+        fi
+    done
+
     # Quick Look extension verification
     APPEX_DIR="$PROJECT_DIR/MarkView.app/Contents/PlugIns/MarkViewQuickLook.appex"
     if [ -d "$APPEX_DIR" ]; then
