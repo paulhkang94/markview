@@ -55,6 +55,17 @@ struct EditorView: NSViewRepresentable {
         // be called with an out-of-bounds range on large files (1000+ lines).
         textView.layoutManager?.allowsNonContiguousLayout = true
 
+        // Disable inline prediction and auto-correction.
+        // When these are active, macOS can hold "marked text" (a tentative inline suggestion)
+        // inside the NSTextView input context. If updateNSView replaces textView.string and
+        // then calls setSelectedRanges, AppKit's _NSClearMarkedRange fires to flush the pending
+        // suggestion. That triggers the undo system to snapshot the affected range against the
+        // OLD string — which has already been replaced — causing substringFromIndex: to receive
+        // an out-of-bounds index → EXC_BREAKPOINT. Disabling these features prevents marked
+        // text from accumulating in the first place.
+        textView.isAutomaticTextCompletionEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+
         // Initial content
         textView.string = text
 
@@ -101,6 +112,13 @@ struct EditorView: NSViewRepresentable {
                 let len = min(range.length, textLength - loc)
                 return NSValue(range: NSRange(location: loc, length: len))
             }
+            // Flush any pending marked (inline prediction) text BEFORE touching selectedRanges
+            // or replacing string content. If marked text is present when setSelectedRanges is
+            // called, AppKit's _NSClearMarkedRange will insert it via _insertText:replacementRange:,
+            // which triggers the undo system to snapshot a range against the already-replaced
+            // string → substringFromIndex: OOB → EXC_BREAKPOINT. unmarkText() clears the input
+            // context state synchronously with no undo side-effects.
+            textView.unmarkText()
             // Reset selection to {0,0} BEFORE replacing content.
             // During textView.string = text, NSTextView internally calls setSelectedRanges:
             // with the current (old) selection to update cursor position after the replacement.
