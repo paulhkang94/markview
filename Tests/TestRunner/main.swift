@@ -4082,6 +4082,167 @@ runner.test("MCP preview content update overwrites (not appends) — live-reload
 }
 
 // =============================================================================
+// MARK: - Performance Benchmarks (NSLayoutManager glyph-fill hang detection)
+// Regression for: rendering large markdown files (1000+ lines) causes 2000ms+ hangs
+// because MarkdownRenderer.renderHTML runs synchronously on the main thread.
+
+/// Generate a large markdown document with realistic content
+func generateLargeMarkdown(lineCount: Int) -> String {
+    var content = ""
+    let headers = (0..<(lineCount / 100)).map { "# Header \($0)\n\n" }
+    let paragraphs = (0..<(lineCount / 50)).map { i -> String in
+        return """
+        This is paragraph \(i) with some content.
+
+        """
+    }
+    let codeBlocks = (0..<(lineCount / 200)).map { i -> String in
+        return """
+        ```swift
+        // Code block \(i)
+        func example\(i)() {
+            let result = calculateSomething\(i)()
+            return result
+        }
+        ```
+
+        """
+    }
+    let tables = (0..<(lineCount / 300)).map { i -> String in
+        return """
+        | Column A | Column B | Column C |
+        |----------|----------|----------|
+        | Row \(i) A1 | Row \(i) B1 | Row \(i) C1 |
+        | Row \(i) A2 | Row \(i) B2 | Row \(i) C2 |
+
+        """
+    }
+    let mermaidDiagrams = (0..<(lineCount / 500)).map { i -> String in
+        return """
+        ```mermaid
+        graph TD
+            A[Node \(i)A] --> B[Node \(i)B]
+            B --> C[Node \(i)C]
+            C --> D[Node \(i)D]
+        ```
+
+        """
+    }
+
+    for header in headers { content += header }
+    for para in paragraphs { content += para }
+    for code in codeBlocks { content += code }
+    for table in tables { content += table }
+    for diagram in mermaidDiagrams { content += diagram }
+
+    return content
+}
+
+runner.test("Performance: 1000-line markdown renders in <500ms") {
+    let markdown = generateLargeMarkdown(lineCount: 1000)
+    let start = Date()
+    let html = MarkdownRenderer.renderHTML(from: markdown)
+    let elapsed = Date().timeIntervalSince(start) * 1000 // Convert to milliseconds
+
+    try expect(!html.isEmpty, "Large markdown must produce HTML output")
+    try expect(html.contains("<!DOCTYPE html>") || html.count > 0,
+        "Rendered HTML must be valid")
+
+    if elapsed > 500 {
+        throw TestError.assertionFailed(
+            "1000-line render took \(String(format: "%.2f", elapsed))ms, threshold is 500ms (ANR risk)")
+    }
+    print("    └─ Actual time: \(String(format: "%.2f", elapsed))ms")
+}
+
+runner.test("Performance: 5000-line markdown renders in <2000ms") {
+    let markdown = generateLargeMarkdown(lineCount: 5000)
+    let start = Date()
+    let html = MarkdownRenderer.renderHTML(from: markdown)
+    let elapsed = Date().timeIntervalSince(start) * 1000 // Convert to milliseconds
+
+    try expect(!html.isEmpty, "Large markdown must produce HTML output")
+    try expect(html.contains("<!DOCTYPE html>") || html.count > 0,
+        "Rendered HTML must be valid")
+
+    if elapsed > 2000 {
+        throw TestError.assertionFailed(
+            "5000-line render took \(String(format: "%.2f", elapsed))ms, threshold is 2000ms (Sentry ANR limit)")
+    }
+    print("    └─ Actual time: \(String(format: "%.2f", elapsed))ms")
+}
+
+runner.test("Performance: 10000-line markdown renders in <5000ms") {
+    let markdown = generateLargeMarkdown(lineCount: 10000)
+    let start = Date()
+    let html = MarkdownRenderer.renderHTML(from: markdown)
+    let elapsed = Date().timeIntervalSince(start) * 1000 // Convert to milliseconds
+
+    try expect(!html.isEmpty, "Large markdown must produce HTML output")
+    try expect(html.contains("<!DOCTYPE html>") || html.count > 0,
+        "Rendered HTML must be valid")
+
+    if elapsed > 5000 {
+        throw TestError.assertionFailed(
+            "10000-line render took \(String(format: "%.2f", elapsed))ms, threshold is 5000ms (degradation limit)")
+    }
+    print("    └─ Actual time: \(String(format: "%.2f", elapsed))ms")
+}
+
+runner.test("Performance: Markdown with many tables (100) renders in <1000ms") {
+    var content = ""
+    for i in 0..<100 {
+        content += """
+        ## Table \(i)
+        | A | B | C |
+        |-|-|-|
+        | 1\(i) | 2\(i) | 3\(i) |
+        | 4\(i) | 5\(i) | 6\(i) |
+
+        """
+    }
+
+    let start = Date()
+    let html = MarkdownRenderer.renderHTML(from: content)
+    let elapsed = Date().timeIntervalSince(start) * 1000
+
+    try expect(!html.isEmpty, "Table-heavy markdown must produce output")
+
+    if elapsed > 1000 {
+        throw TestError.assertionFailed(
+            "100-table render took \(String(format: "%.2f", elapsed))ms, threshold is 1000ms")
+    }
+    print("    └─ Actual time: \(String(format: "%.2f", elapsed))ms")
+}
+
+runner.test("Performance: Markdown with many code blocks (100) renders in <1000ms") {
+    var content = ""
+    for i in 0..<100 {
+        content += """
+        ## Block \(i)
+        ```swift
+        func example\(i)() -> Int {
+            return \(i)
+        }
+        ```
+
+        """
+    }
+
+    let start = Date()
+    let html = MarkdownRenderer.renderHTML(from: content)
+    let elapsed = Date().timeIntervalSince(start) * 1000
+
+    try expect(!html.isEmpty, "Code-block-heavy markdown must produce output")
+
+    if elapsed > 1000 {
+        throw TestError.assertionFailed(
+            "100-block render took \(String(format: "%.2f", elapsed))ms, threshold is 1000ms")
+    }
+    print("    └─ Actual time: \(String(format: "%.2f", elapsed))ms")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
