@@ -1,5 +1,8 @@
 name: markview
-description: Native macOS markdown previewer with MCP server
+description: >
+  Native macOS markdown previewer with MCP server for Claude Code.
+  Lets AI assistants preview markdown and open files in a native Swift app
+  with GFM rendering, Mermaid diagrams, syntax highlighting, and Quick Look integration.
 license: MIT
 homepage: https://github.com/paulhkang94/markview
 
@@ -15,6 +18,31 @@ startCommand:
 
 tools:
   - name: preview_markdown
-    description: Render markdown content in MarkView's native macOS preview window
+    description: >
+      Render a markdown string in MarkView's native macOS preview window.
+      Supports GFM, Mermaid diagrams, code syntax highlighting (Prism.js),
+      tables, task lists, and all CommonMark extensions.
+    inputSchema:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Markdown source text to preview
+        title:
+          type: string
+          description: Optional window title
+      required:
+        - content
+
   - name: open_file
-    description: Open a markdown file in MarkView for preview
+    description: >
+      Open an existing markdown file from disk in MarkView.
+      The file must exist and have a markdown extension (.md, .markdown).
+    inputSchema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: Absolute path to the .md file
+      required:
+        - path
