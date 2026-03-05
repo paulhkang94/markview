@@ -142,9 +142,24 @@ struct EditorView: NSViewRepresentable {
             // getLineStart:forRange: with an out-of-bounds range → SIGTRAP on 1000+ line files.
             // allowsNonContiguousLayout (set in makeNSView) is the primary fix; cursor-at-0
             // ensures new file opens start at the top rather than forcing full layout upfront.
-            textView.selectedRanges = clampedRanges.isEmpty
-                ? [NSValue(range: NSRange(location: 0, length: 0))]
-                : clampedRanges
+            //
+            // HANG FIX: Defer cursor restoration one runloop cycle.
+            // When setSelectedRanges is called with a non-zero position synchronously inside
+            // updateNSView, AppKit calls _invalidateDisplayForChangeOfSelection which forces
+            // NSLayoutManager to generate ALL glyphs up to the cursor position to correctly
+            // render the selection highlight. On large files this blocks the main thread 2s+
+            // (_NSFastFillAllGlyphHolesForCharacterRange). Deferring via async lets the current
+            // runloop cycle complete (string replacement + layout invalidation settle), then
+            // restores the cursor cheaply after AppKit has already processed the content change.
+            // The synchronous {0,0} reset above MUST remain synchronous to prevent the
+            // NSLayoutManager OOB crash (old selection pointing past end of new shorter string).
+            let capturedRanges = clampedRanges
+            DispatchQueue.main.async { [weak textView] in
+                guard let textView else { return }
+                textView.selectedRanges = capturedRanges.isEmpty
+                    ? [NSValue(range: NSRange(location: 0, length: 0))]
+                    : capturedRanges
+            }
             context.coordinator.rebuildLineOffsets(from: text)
         }
         // Reset the flag — the next updateNSView call from a non-typing source should apply
