@@ -107,8 +107,15 @@ struct EditorView: NSViewRepresentable {
             // selectedRanges will be empty so we fall through to the default.
             let clampedRanges: [NSValue] = textView.selectedRanges.compactMap { rangeValue in
                 let range = rangeValue.rangeValue
-                guard range.location <= textLength else { return nil }
+                // Bug #20: location == textLength is OOB. NSTextView calls characterAtIndex:location
+                // when positioning the cursor; valid indices are 0..<textLength (0-indexed). An
+                // insertion point at EOF must use location = textLength - 1 at most, or be dropped.
+                guard range.location < textLength else { return nil }
                 let loc = range.location
+                // Bug #21: A corrupted NSRange can carry a negative length (e.g., 18446744073709551613
+                // = -3 as Int64). Swift's min() is signed, so min(-3, textLength - loc) = -3, and
+                // NSRange(length: -3) is interpreted by AppKit as UInt.max - 2 → substringWithRange OOB.
+                guard range.length >= 0 else { return nil }
                 let len = min(range.length, textLength - loc)
                 return NSValue(range: NSRange(location: loc, length: len))
             }

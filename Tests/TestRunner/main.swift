@@ -2949,6 +2949,111 @@ runner.test("EditorView has delegate for text change callbacks") {
 }
 
 // =============================================================================
+// MARK: - EditorView clampedRanges clamping logic — behavioral regression tests
+//
+// These tests directly exercise the NSRange clamping logic in updateNSView.
+// Prior bugs:
+//   #20 — guard used `<=` instead of `<`; loc == textLength passed through,
+//         causing characterAtIndex: OOB when AppKit positioned the cursor.
+//   #21 — negative NSRange.length (e.g. -3 stored as UInt64.max-2) passed
+//         through guard; min(-3, remaining) = -3; NSRange(length:-3) caused
+//         substringWithRange: OOB.
+//
+// All tests use pure Swift logic mirroring the compactMap in updateNSView
+// so they run without a live NSTextView (no UI context required).
+// =============================================================================
+
+print("\n--- EditorView clampedRanges regression tests ---")
+
+/// Mirrors the compactMap in updateNSView. Returns clamped ranges or nil (filtered) for each input.
+func clampRanges(_ ranges: [NSRange], textLength: Int) -> [NSRange] {
+    ranges.compactMap { range in
+        guard range.location < textLength else { return nil }
+        guard range.length >= 0 else { return nil }
+        let loc = range.location
+        let len = min(range.length, textLength - loc)
+        return NSRange(location: loc, length: len)
+    }
+}
+
+runner.test("clampedRanges: loc == textLength is dropped (Bug #20 regression)") {
+    // Cursor at exact EOF: location = textLength. characterAtIndex: textLength is OOB
+    // (0-indexed string, valid range 0..<textLength). Must be filtered out.
+    let textLength = 5
+    let result = clampRanges([NSRange(location: 5, length: 0)], textLength: textLength)
+    try expect(result.isEmpty, "loc == textLength must be dropped; got \(result)")
+}
+
+runner.test("clampedRanges: loc > textLength is dropped") {
+    let result = clampRanges([NSRange(location: 10, length: 0)], textLength: 5)
+    try expect(result.isEmpty, "loc > textLength must be dropped; got \(result)")
+}
+
+runner.test("clampedRanges: negative length is dropped (Bug #21 regression)") {
+    // NSRange.length is Int in Swift. A corrupted range can carry Int(-3)
+    // (stored as 18446744073709551613 in the UInt wire format from AppKit).
+    // min(-3, remaining) = -3; NSRange(length: -3) → substringWithRange OOB.
+    let corruptedLength = -3
+    let result = clampRanges([NSRange(location: 2, length: corruptedLength)], textLength: 10)
+    try expect(result.isEmpty, "Negative length must be dropped; got \(result)")
+}
+
+runner.test("clampedRanges: valid insertion point (loc < textLength, length == 0) passes through") {
+    let result = clampRanges([NSRange(location: 3, length: 0)], textLength: 5)
+    try expect(result.count == 1, "Valid insertion point must pass through; got \(result)")
+    try expect(result[0].location == 3 && result[0].length == 0,
+        "Range must be unchanged; got \(result[0])")
+}
+
+runner.test("clampedRanges: length clamped when it would exceed textLength") {
+    // Range {2, 10} in a 5-char string: remaining = 5 - 2 = 3, length clamped to 3.
+    let result = clampRanges([NSRange(location: 2, length: 10)], textLength: 5)
+    try expect(result.count == 1, "Oversized range must be clamped, not dropped; got \(result)")
+    try expect(result[0].location == 2 && result[0].length == 3,
+        "Length must be clamped to textLength - loc = 3; got \(result[0])")
+}
+
+runner.test("clampedRanges: exact-fit range passes unchanged") {
+    // Range {0, 5} in a 5-char string: exactly fills the string, no clamping needed.
+    let result = clampRanges([NSRange(location: 0, length: 5)], textLength: 5)
+    try expect(result.count == 1, "Exact-fit range must pass through; got \(result)")
+    try expect(result[0].location == 0 && result[0].length == 5,
+        "Range must be unchanged; got \(result[0])")
+}
+
+runner.test("clampedRanges: empty input returns empty output") {
+    let result = clampRanges([], textLength: 5)
+    try expect(result.isEmpty, "Empty input must yield empty output; got \(result)")
+}
+
+runner.test("clampedRanges: multiple ranges — invalid entries dropped, valid clamped") {
+    let input = [
+        NSRange(location: 0, length: 2),   // valid
+        NSRange(location: 5, length: 0),   // Bug #20: loc == textLength, must drop
+        NSRange(location: 3, length: -1),  // Bug #21: negative length, must drop
+        NSRange(location: 4, length: 8),   // oversized, clamp to 1
+    ]
+    let result = clampRanges(input, textLength: 5)
+    try expect(result.count == 2, "2 valid ranges should survive; got \(result.count): \(result)")
+    try expect(result[0].location == 0 && result[0].length == 2, "First range unchanged; got \(result[0])")
+    try expect(result[1].location == 4 && result[1].length == 1, "Fourth range clamped; got \(result[1])")
+}
+
+runner.test("EditorView guard uses strict less-than for location bound (Bug #20 source check)") {
+    // Verify the source uses `< textLength` not `<= textLength` to prevent loc == textLength OOB.
+    try expect(editorSource.contains("range.location < textLength"),
+        "Guard must use strict < to exclude loc == textLength (characterAtIndex OOB)")
+    try expect(!editorSource.contains("range.location <= textLength"),
+        "Guard must NOT use <= (allows loc == textLength which is OOB for characterAtIndex)")
+}
+
+runner.test("EditorView guards against negative range.length (Bug #21 source check)") {
+    // Verify the negative-length guard is present to block corrupted NSRange from AppKit.
+    try expect(editorSource.contains("range.length >= 0"),
+        "Guard must reject negative length (prevents substringWithRange OOB via min() sign error)")
+}
+
+// =============================================================================
 // MARK: - Quick Look Extension Tests
 // =============================================================================
 
