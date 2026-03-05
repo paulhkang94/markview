@@ -4,7 +4,7 @@ description: >
   Lets AI assistants preview markdown and open files in a native Swift app
   with GFM rendering, Mermaid diagrams, syntax highlighting, and Quick Look integration.
 license: MIT
-homepage: https://github.com/paulhkang94/markview
+homepage: https://paulkang.dev
 
 build:
   dockerfile: null
