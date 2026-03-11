@@ -3054,6 +3054,70 @@ runner.test("EditorView guards against negative range.length (Bug #21 source che
 }
 
 // =============================================================================
+// MARK: - EditorView hang/crash mechanism source checks
+//
+// These source-inspection tests are regression guards for three NSTextView crash/hang
+// mechanisms that require specific API calls whose absence cannot be caught by unit tests
+// alone (they only manifest in the live AppKit layer):
+//
+//   Hang #7/#11/#22/#23/#24 — NSLayoutManager glyph-fill hang:
+//     setSelectedRanges with a non-zero position synchronously inside updateNSView forces
+//     NSLayoutManager to generate ALL glyphs up to the cursor → blocks main thread 2000ms+.
+//     Fix: defer cursor restoration via DispatchQueue.main.async.
+//
+//   EXC_BREAKPOINT (inline prediction) — _NSClearMarkedRange OOB:
+//     If marked text (inline prediction/autocorrect) is held when setSelectedRanges fires,
+//     AppKit flushes the suggestion against the already-replaced string → substringFromIndex OOB.
+//     Fix: (1) disable inline prediction/autocorrect in makeNSView, (2) call unmarkText()
+//     before any string or selectedRanges mutation in updateNSView.
+// =============================================================================
+
+print("\n--- EditorView hang/crash mechanism source checks ---")
+
+runner.test("EditorView disables inline prediction in makeNSView (EXC_BREAKPOINT regression guard)") {
+    // isAutomaticTextCompletionEnabled = false prevents macOS from holding "marked text"
+    // (a pending inline suggestion) inside the NSTextView input context. If marked text
+    // is present when updateNSView calls setSelectedRanges, _NSClearMarkedRange fires and
+    // flushes the suggestion against the already-replaced string → substringFromIndex: OOB.
+    try expect(editorSource.contains("isAutomaticTextCompletionEnabled = false"),
+        "makeNSView must disable inline prediction to prevent _NSClearMarkedRange OOB crash")
+}
+
+runner.test("EditorView disables autocorrect in makeNSView (EXC_BREAKPOINT regression guard)") {
+    // Autocorrect also accumulates marked text. Both completions and corrections must be
+    // disabled to fully prevent the _NSClearMarkedRange / substringFromIndex: OOB path.
+    try expect(editorSource.contains("isAutomaticSpellingCorrectionEnabled = false"),
+        "makeNSView must disable autocorrect to prevent marked-text OOB crash")
+}
+
+runner.test("EditorView calls unmarkText before string mutation in updateNSView (EXC_BREAKPOINT regression guard)") {
+    // Even with completions/corrections disabled, unmarkText() is a belt-and-suspenders
+    // guard: it synchronously clears the input context's marked range with no undo side-effects,
+    // ensuring no stale suggestion can fire during the subsequent string replacement.
+    // Must appear before `textView.string = text` or `selectedRanges =` assignment.
+    try expect(editorSource.contains("textView.unmarkText()"),
+        "updateNSView must call textView.unmarkText() before replacing string or setting selectedRanges")
+}
+
+runner.test("EditorView defers cursor restoration via DispatchQueue.main.async (hang regression guard)") {
+    // Synchronous setSelectedRanges with a non-zero position after textView.string = text
+    // triggers _invalidateDisplayForChangeOfSelection → NSLayoutManager generates ALL glyphs
+    // up to the cursor position synchronously → main thread hang 2000ms+ on large files.
+    // The fix defers the non-zero restoration one runloop cycle so glyph fill is non-blocking.
+    try expect(editorSource.contains("DispatchQueue.main.async"),
+        "updateNSView must defer cursor restoration via DispatchQueue.main.async to avoid NSLayoutManager glyph-fill hang")
+}
+
+runner.test("EditorView resets selectedRanges to {0,0} synchronously before string replacement (OOB regression guard)") {
+    // The synchronous reset MUST stay synchronous. During textView.string = text, AppKit
+    // internally calls setSelectedRanges with the old (pre-replacement) cursor position.
+    // If that position points past the end of the new (shorter) string, NSLayoutManager
+    // computes an OOB blink rect → EXC_BREAKPOINT. The {0,0} reset neutralises this.
+    try expect(editorSource.contains("NSValue(range: NSRange(location: 0, length: 0))"),
+        "updateNSView must synchronously reset selectedRanges to {0,0} before textView.string assignment")
+}
+
+// =============================================================================
 // MARK: - Quick Look Extension Tests
 // =============================================================================
 
