@@ -202,6 +202,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify npm postinstall works
+        # Verify BEFORE publishing to npm — catches broken postinstall.js before it reaches users.
+        #
+        # Why local pack instead of registry install:
+        #   postinstall.js only downloads from GitHub Releases (already uploaded above).
+        #   It never talks to npm during install. So `npm pack` → `npm install ./tgz` exercises
+        #   the identical code path users hit, with zero registry dependency.
+        #   This eliminates the registry propagation race entirely — no retries needed.
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          cd npm
+          # Pack locally — produces mcp-server-markview-${VERSION}.tgz
+          PACK_FILE=$(npm pack --pack-destination /tmp 2>/dev/null | tail -1)
+          echo "Packed: $PACK_FILE"
+
+          _tmp=$(mktemp -d)
+          cd "$_tmp"
+          npm install "/tmp/${PACK_FILE}" 2>&1 | tail -5
+          if [[ -f "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" ]]; then
+            SIZE=$(du -sh "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" | cut -f1)
+            echo "✓ npm postinstall: binary downloaded and extracted (${SIZE})"
+          else
+            echo "ERROR: npm postinstall did not produce bin/markview-mcp-server-binary"
+            echo "Likely cause: wrong tar.gz path in postinstall.js, or GitHub Release asset missing"
+            ls "$_tmp/node_modules/mcp-server-markview/" 2>/dev/null || true
+            rm -rf "$_tmp"
+            exit 1
+          fi
+          rm -rf "$_tmp"
+
       - name: Publish npm package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -217,30 +247,6 @@ jobs:
             npm publish --access public
             echo "Published mcp-server-markview@${VERSION} to npm"
           fi
-
-      - name: Verify npm postinstall works
-        # Install the just-published package in a temp dir and confirm the binary downloads.
-        # Catches: wrong tarball URL, broken postinstall.js, missing GitHub Release asset.
-        run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          _tmp=$(mktemp -d)
-          cd "$_tmp"
-          # Retry up to 6 times — npm registry propagation can take 30–60s
-          for i in 1 2 3 4 5 6; do
-            npm install "mcp-server-markview@${VERSION}" --prefer-offline=false 2>&1 | tail -5 && break
-            echo "Attempt $i failed, retrying in 15s..."
-            sleep 15
-          done
-          if [[ -f "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" ]]; then
-            SIZE=$(du -sh "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" | cut -f1)
-            echo "✓ npm postinstall: binary downloaded and extracted (${SIZE})"
-          else
-            echo "ERROR: npm postinstall did not produce bin/markview-mcp-server-binary"
-            echo "Users running: npx mcp-server-markview will get a broken install"
-            ls "$_tmp/node_modules/mcp-server-markview/" 2>/dev/null || true
-            exit 1
-          fi
-          rm -rf "$_tmp"
 
       - name: Update Homebrew tap
         env:
