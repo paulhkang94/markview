@@ -220,6 +220,26 @@ fi
 if [ "$DO_INSTALL" = true ]; then
     echo ""
     echo "--- Installing to /Applications ---"
+
+    LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+    BUNDLE_ID="com.markview.app"
+
+    # Kill any running MarkView instances before replacing the bundle
+    pkill -x MarkView 2>/dev/null || true
+    sleep 1
+
+    # Unregister all stale MarkView installations from Launch Services.
+    # mdfind finds every copy macOS knows about (DerivedData, old build dirs, etc.)
+    # so they stop appearing in "Open With" menus and Xcode run destinations.
+    if [ -x "$LSREGISTER" ]; then
+        while IFS= read -r stale_path; do
+            if [ "$stale_path" != "$INSTALL_DIR" ] && [ -d "$stale_path" ]; then
+                "$LSREGISTER" -u "$stale_path" 2>/dev/null || true
+                echo "✓ Unregistered stale copy: $stale_path"
+            fi
+        done < <(mdfind "kMDItemCFBundleIdentifier == '$BUNDLE_ID'" 2>/dev/null)
+    fi
+
     rm -rf "$INSTALL_DIR"
     cp -R "$APP_DIR" "$INSTALL_DIR"
 
@@ -228,7 +248,6 @@ if [ "$DO_INSTALL" = true ]; then
     xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null || true
 
     # Register with Launch Services
-    LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
     if [ -x "$LSREGISTER" ]; then
         "$LSREGISTER" -f "$INSTALL_DIR"
         echo "✓ Registered with Launch Services"
