@@ -225,11 +225,11 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           _tmp=$(mktemp -d)
           cd "$_tmp"
-          # Retry up to 3 times — npm registry propagation can take a few seconds
-          for i in 1 2 3; do
+          # Retry up to 6 times — npm registry propagation can take 30–60s
+          for i in 1 2 3 4 5 6; do
             npm install "mcp-server-markview@${VERSION}" --prefer-offline=false 2>&1 | tail -5 && break
-            echo "Attempt $i failed, retrying in 5s..."
-            sleep 5
+            echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
           done
           if [[ -f "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" ]]; then
             SIZE=$(du -sh "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" | cut -f1)
