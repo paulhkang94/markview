@@ -248,62 +248,6 @@ jobs:
             echo "Published mcp-server-markview@${VERSION} to npm"
           fi
 
-      - name: Update Homebrew tap
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          # Only update tap if HOMEBREW_TAP_TOKEN is set
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "HOMEBREW_TAP_TOKEN not set — skipping tap update"
-            exit 0
-          fi
-          # Compute SHA256 of the release zip
-          SHA256=$(shasum -a 256 "$ARTIFACT" | awk '{print $1}')
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          # Clone the tap, update the cask, push
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/paulhkang94/homebrew-markview.git" /tmp/tap
-          cd /tmp/tap
-          sed -i '' \
-            -e "s/version \".*\"/version \"${VERSION}\"/" \
-            -e "s/sha256 \".*\"/sha256 \"${SHA256}\"/" \
-            Casks/markview.rb
-          git config user.email "contact@paulkang.dev"
-          git config user.name "Paul Kang"
-          git add Casks/markview.rb
-          git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap"
-          git push
-
-      - name: Verify Homebrew tap updated correctly
-        # Confirm the tap cask has the right version + SHA256 after the push.
-        # Catches: sed substitution failure, push failure, token expiry.
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo "HOMEBREW_TAP_TOKEN not set — skipping tap verification"
-            exit 0
-          fi
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          SHA256=$(shasum -a 256 "$ARTIFACT" | awk '{print $1}')
-          # Re-fetch the cask from GitHub to confirm the push landed
-          CASK=$(curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://raw.githubusercontent.com/paulhkang94/homebrew-markview/main/Casks/markview.rb" \
-            2>/dev/null)
-          TAP_VER=$(echo "$CASK" | grep -oE 'version "[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
-          TAP_SHA=$(echo "$CASK" | grep -oE 'sha256 "[a-f0-9]+"' | grep -oE '[a-f0-9]+' || echo "")
-          if [[ "$TAP_VER" == "$VERSION" ]]; then
-            echo "✓ Homebrew tap version: ${TAP_VER}"
-          else
-            echo "ERROR: Homebrew tap version is '${TAP_VER}' (expected '${VERSION}')"
-            exit 1
-          fi
-          if [[ "$TAP_SHA" == "$SHA256" ]]; then
-            echo "✓ Homebrew tap SHA256 matches"
-          else
-            echo "ERROR: Homebrew tap SHA256 mismatch"
-            echo "  tap:      ${TAP_SHA}"
-            echo "  expected: ${SHA256}"
-            exit 1
-          fi
-
+      # Homebrew tap update is handled by tap-update.yml, triggered automatically
+      # by the GitHub "release: published" event above. No tap steps needed here.
+      # To manually re-run: gh workflow run tap-update.yml --field tag_name=vX.Y.Z

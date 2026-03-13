@@ -1,0 +1,111 @@
+name: Update Homebrew Tap
+
+# Fires when a GitHub Release is published (decoupled from the main release build).
+# Can also be triggered manually to recover from a failed tap update.
+#
+# Decoupling rationale:
+#   The main release.yml handles build/sign/notarize/publish — a heavy 90-min macOS job.
+#   Tap update only needs: download artifact → compute SHA → git push to homebrew-markview.
+#   Running it separately means: (1) tap update never blocks on a build failure, and
+#   (2) if tap update fails, you re-run THIS workflow without re-notarizing.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v1.2.6) — leave blank to use latest release'
+        required: false
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Resolve tag and version
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ -n "${{ inputs.tag_name }}" ]]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Updating Homebrew tap to ${TAG}"
+
+      - name: Download release artifact and compute SHA256
+        id: artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.TAG }}"
+          VERSION="${{ steps.tag.outputs.VERSION }}"
+          gh release download "$TAG" \
+            --repo ${{ github.repository }} \
+            --pattern "MarkView-${VERSION}.zip" \
+            --dir /tmp
+          SHA256=$(sha256sum "/tmp/MarkView-${VERSION}.zip" | awk '{print $1}')
+          echo "SHA256=${SHA256}" >> $GITHUB_OUTPUT
+          echo "✓ SHA256: ${SHA256}"
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping tap update"
+            exit 0
+          fi
+          VERSION="${{ steps.tag.outputs.VERSION }}"
+          SHA256="${{ steps.artifact.outputs.SHA256 }}"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/paulhkang94/homebrew-markview.git" /tmp/tap
+          cd /tmp/tap
+          # Linux sed: no empty string after -i
+          sed -i \
+            -e "s/version \".*\"/version \"${VERSION}\"/" \
+            -e "s/sha256 \".*\"/sha256 \"${SHA256}\"/" \
+            Casks/markview.rb
+          git config user.email "contact@paulkang.dev"
+          git config user.name "Paul Kang"
+          git add Casks/markview.rb
+          git commit -m "Update MarkView to ${VERSION}" || echo "No changes to tap (already up to date)"
+          git push
+
+      - name: Verify tap updated correctly
+        # Re-fetches the cask from GitHub with retries to handle eventual consistency.
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping tap verification"
+            exit 0
+          fi
+          VERSION="${{ steps.tag.outputs.VERSION }}"
+          SHA256="${{ steps.artifact.outputs.SHA256 }}"
+          # Retry 3× with 10s delay — GitHub raw content has eventual consistency
+          for i in 1 2 3; do
+            sleep 10
+            CASK=$(curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://raw.githubusercontent.com/paulhkang94/homebrew-markview/main/Casks/markview.rb" \
+              2>/dev/null || echo "")
+            TAP_VER=$(echo "$CASK" | grep -oE 'version "[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+            TAP_SHA=$(echo "$CASK" | grep -oE 'sha256 "[a-f0-9]+"' | grep -oE '[a-f0-9]+' || echo "")
+            if [[ "$TAP_VER" == "$VERSION" && "$TAP_SHA" == "$SHA256" ]]; then
+              echo "✓ Homebrew tap verified: v${VERSION} (attempt ${i})"
+              exit 0
+            fi
+            echo "Attempt ${i}/3: tap shows v${TAP_VER} (expected v${VERSION}) — retrying in 10s"
+          done
+          echo "ERROR: tap verification failed after 3 attempts"
+          echo "  expected version: ${VERSION}"
+          echo "  expected sha256:  ${SHA256}"
+          echo "  got version:      ${TAP_VER}"
+          echo "  got sha256:       ${TAP_SHA}"
+          exit 1

@@ -77,8 +77,8 @@
     {
       "id": "homebrew-tap-verified-after-update",
       "description": "Homebrew tap version + SHA256 must be verified correct after the cask push.",
-      "ci_files": [".github/workflows/release.yml"],
-      "ci_pattern": "Verify Homebrew tap|TAP_VER.*VERSION",
+      "ci_files": [".github/workflows/tap-update.yml"],
+      "ci_pattern": "Verify tap updated|TAP_VER.*VERSION",
       "gate_type": "script_run",
       "tier": 1
     },
