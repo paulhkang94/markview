@@ -24,35 +24,44 @@ To enable Claude Code to directly preview and manipulate markdown through MarkVi
 
 **1. Add MarkView MCP to your config:**
 
-Global setup (affects all projects) — add to `~/.claude/mcp.json`:
+One-line setup (recommended):
+```bash
+claude mcp add markview --transport stdio -- npx -y mcp-server-markview
+```
+
+This writes to `~/.claude.json` (user scope — available in all Claude Code projects automatically).
+
+Or add manually to `~/.claude.json`:
 ```json
 {
   "mcpServers": {
     "markview": {
-      "command": "/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+      "command": "npx",
+      "args": ["-y", "mcp-server-markview"]
     }
   }
 }
 ```
 
-Or project-level setup (affects only current repo) — add to `.claude/mcp.json`:
+> **Note:** MCP servers belong in `~/.claude.json`, not `~/.claude/settings.json`. The settings file is for permissions only and silently ignores `mcpServers`.
+
+For project-level setup (current repo only), add to `.mcp.json` at the project root:
 ```json
 {
   "mcpServers": {
     "markview": {
-      "command": "/Applications/MarkView.app/Contents/MacOS/markview-mcp-server"
+      "command": "npx",
+      "args": ["-y", "mcp-server-markview"]
     }
   }
 }
 ```
-
-If you already have an `mcp.json` with other servers, merge the `markview` key into the existing `mcpServers` object.
 
 **2. Verify installation:**
 
-Test that the MCP server binary exists:
+Restart Claude Code and check tools are available:
 ```bash
-/Applications/MarkView.app/Contents/MacOS/markview-mcp-server --version
+claude mcp list
 ```
 
 After restarting Claude Code, you should see two new tools in conversations:
