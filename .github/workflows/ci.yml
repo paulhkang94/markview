@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 # Cancel in-progress runs for the same branch/PR to save runner minutes
 concurrency:
   group: ci-${{ github.ref }}
@@ -174,7 +177,7 @@ jobs:
 
       - name: Run visual smoke tests (non-blank render gate)
         run: |
-          OUTPUT=$(swift run MarkViewVisualTester --smoke 2>&1)
+          OUTPUT=$(swift run MarkViewVisualTester --smoke 2>&1) || true
           echo "$OUTPUT"
           if echo "$OUTPUT" | grep -q " 0 failed"; then
             echo "Visual smoke tests passed."

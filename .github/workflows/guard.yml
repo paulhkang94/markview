@@ -1,6 +1,9 @@
 name: Repo Guard
 on: [push, pull_request]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 concurrency:
   group: guard-${{ github.ref }}
   cancel-in-progress: true
