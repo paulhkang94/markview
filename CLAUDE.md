@@ -2,7 +2,7 @@
 
 ## Quick Reference
 - **Build**: `swift build`
-- **Test**: `swift run MarkViewTestRunner` (276 tests)
+- **Test**: `swift run MarkViewTestRunner` (403 tests)
 - **Verify all**: `bash verify.sh`
 - **App bundle**: `bash scripts/bundle.sh --install`
 - **MCP tests**: `bash scripts/test-mcp.sh`
@@ -54,7 +54,7 @@ Opens the file in MarkView. File must exist and have a markdown extension.
 
 ## Testing
 ```bash
-swift run MarkViewTestRunner          # Unit + integration (276 tests)
+swift run MarkViewTestRunner          # Unit + integration (403 tests)
 swift run MarkViewFuzzTester          # 10K random inputs
 swift run MarkViewDiffTester          # Compare vs cmark-gfm CLI
 swift run MarkViewE2ETester           # UI tests (requires .app + AX permissions)

@@ -1,5 +1,7 @@
 # MarkView
 
+[![Glama](https://glama.ai/mcp/servers/@paulhkang94/markview/badges/score.svg)](https://glama.ai/mcp/servers/@paulhkang94/markview)
+
 A native macOS markdown preview app built with Swift and SwiftUI. No Electron, no web server — just a fast, lightweight previewer that renders GitHub Flavored Markdown.
 
 ## Demo
@@ -16,7 +18,8 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 
 - **Live preview** with split-pane editor and WKWebView rendering
 - **GitHub Flavored Markdown** via Apple's swift-cmark (tables, strikethrough, autolinks, task lists)
-- **Syntax highlighting** for 18 languages via Prism.js
+- **Syntax highlighting** for 20+ languages via Prism.js
+- **Quick Look integration** — preview `.md` files in Finder without opening the app
 - **Markdown linting** with 9 built-in rules and status bar diagnostics
 - **File watching** with DispatchSource (works with VS Code, Vim, and other editors)
 - **Multi-format support** via plugin architecture (Markdown, CSV, HTML)
@@ -181,7 +184,7 @@ Sources/MarkView/               # SwiftUI app (macOS 14+)
 Sources/MarkViewMCPServer/      # MCP server for AI tool integration
   main.swift                    # stdio JSON-RPC server (preview_markdown, open_file)
 
-Tests/TestRunner/               # 382 standalone tests (no XCTest)
+Tests/TestRunner/               # 403 standalone tests (no XCTest)
 Tests/VisualTester/             # 5 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
@@ -193,7 +196,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (382 tests)
+# Run all tests (403 tests)
 swift run MarkViewTestRunner
 
 # Full verification (build + tests)
