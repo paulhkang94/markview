@@ -15,73 +15,75 @@ done
 # ─── POST CONTENT ──────────────────────────────────────────────────────────────
 
 read -r -d '' HN_TITLE <<'EOF' || true
-Show HN: MarkView – native macOS markdown preview with MCP server (Swift, no Electron)
+Show HN: MarkView – native macOS markdown preview + MCP server for Claude Code
 EOF
 HN_TITLE="${HN_TITLE%$'\n'}"
 
 read -r -d '' HN_BODY <<'EOF' || true
-I built MarkView because every markdown preview tool I tried was either Electron
-(heavy, slow) or a web server (friction to launch). MarkView is a native Swift/
-SwiftUI app — instant launch, zero runtime dependencies, Quick Look integration
-out of the box.
+I use Claude Code heavily for writing docs, READMEs, and architecture notes. The
+feedback loop was broken: Claude would generate markdown, I'd have to open a
+browser or VS Code to see it rendered. I built MarkView to close that loop.
 
-The part I'm most excited about: it ships an MCP server, so Claude Code can
-render markdown in a native macOS window while it edits your files. When Claude
-generates a Mermaid diagram or a structured doc, you see it live without leaving
-your terminal workflow.
+MarkView is a native Swift/SwiftUI markdown previewer with an MCP server. Add it
+to Claude Code in one line:
 
-One-line install:
   claude mcp add markview --transport stdio -- npx -y mcp-server-markview
 
-Features:
-- GitHub Flavored Markdown with Mermaid diagram rendering
-- Syntax highlighting for 20+ languages
-- Live file watching (edits reflect instantly)
-- Split-pane editor with bidirectional scroll sync
-- Quick Look plugin — preview .md files in Finder with spacebar
-- Zero config, no web server, no Electron
+After that, when Claude generates a doc or diagram, it can call open_file and
+you see it rendered in a native macOS window — no browser, no web server, no
+context switch. Edit the file and the preview updates instantly via DispatchSource
+file watching.
 
-It's MIT licensed. The npm package (mcp-server-markview) has ~750 downloads.
-Happy to answer questions on the MCP integration or the Swift rendering approach.
+What I haven't seen anywhere else: every other macOS markdown tool (Marked 2,
+MarkEdit, MacDown, Typora) has no AI integration path at all. The MCP server
+angle genuinely seems unoccupied.
+
+Other things it does:
+- Quick Look extension — spacebar previews .md files in Finder without opening
+  the app
+- Mermaid diagram rendering (flowchart, sequence, Gantt, ER)
+- Syntax highlighting for 20+ languages via Prism.js
+- Markdown linting with 9 built-in rules + format-on-save
+- Split-pane editor with CADisplayLink 60Hz scroll sync
+- 403 tests including 10K fuzz runs and differential testing vs cmark-gfm
+
+MIT licensed, ~750 npm downloads so far.
 
 GitHub: https://github.com/paulhkang94/markview
 EOF
 
 read -r -d '' REDDIT_CLAUDEAI_TITLE <<'EOF' || true
-I built a native macOS MCP server so Claude Code can render markdown in a real window while it writes
+Built a native MCP server so Claude Code can open live markdown previews while it writes — no browser, no Electron
 EOF
 REDDIT_CLAUDEAI_TITLE="${REDDIT_CLAUDEAI_TITLE%$'\n'}"
 
 read -r -d '' REDDIT_CLAUDEAI_BODY <<'EOF' || true
-Every markdown preview option for Claude Code was either browser-based or Electron.
-I wanted something that felt native, so I built MarkView — a Swift/SwiftUI app
-with an MCP server that lets Claude open a preview window directly.
+When I'm using Claude Code to write docs or architecture notes, the feedback loop
+was always broken. Claude generates the markdown, I context-switch to a browser or
+VS Code to see it rendered. Built MarkView to fix that.
 
-**What it actually enables:**
-
-When Claude Code generates a Mermaid diagram, a structured README, or a doc with
-tables — you get a live rendered preview in a native macOS window without switching
-apps or running a separate server. Edit the file, the window updates instantly.
-
-**Install (one line):**
+**One-line setup:**
 ```
 claude mcp add markview --transport stdio -- npx -y mcp-server-markview
 ```
 
-After that, Claude Code can call `open_preview` to pop open a native window for
-any markdown file.
+After that, Claude can call `open_file` to pop a native macOS preview window for
+any markdown file it's editing. The window live-reloads on every save via
+kernel-level file watching (DispatchSource, not polling).
 
-**Why native matters:**
-- Instant launch, no warm-up
-- Quick Look integration (spacebar preview in Finder)
-- No web server running in the background
-- Split-pane editor with bidirectional scroll sync
-- Mermaid + syntax highlighting (20+ languages)
+**The thing I noticed while building this:** Marked 2, MarkEdit, Typora, MacDown
+— none of them have any MCP integration. If you're writing docs with Claude Code,
+there's genuinely nothing else in this category.
 
-It's MIT, ~750 npm downloads so far. GitHub: https://github.com/paulhkang94/markview
+**What else it does:**
+- Quick Look extension — spacebar in Finder previews .md without launching the app
+- Mermaid diagrams (flowchart, sequence, Gantt, ER)
+- 20+ language syntax highlighting
+- Markdown linting + format-on-save
 
-Curious whether others have set up similar preview workflows with Claude Code —
-what's your current setup?
+MIT, ~750 npm downloads. https://github.com/paulhkang94/markview
+
+What's your current markdown preview setup with Claude Code?
 EOF
 
 read -r -d '' REDDIT_CURSOR_TITLE <<'EOF' || true
