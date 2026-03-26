@@ -59,3 +59,7 @@ npm/.mcpregistry_registry_token
 docs/*.mov
 docs/*.mp4
 .release-preflight-passed-*
+node_modules/
+npm/node_modules/
+npm/package-lock.json
+npm/bin/
