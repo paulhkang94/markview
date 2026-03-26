@@ -18,7 +18,7 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 
 - **Live preview** with split-pane editor and WKWebView rendering
 - **GitHub Flavored Markdown** via Apple's swift-cmark (tables, strikethrough, autolinks, task lists)
-- **Syntax highlighting** for 20+ languages via Prism.js
+- **Syntax highlighting** via Prism.js
 - **Quick Look integration** — preview `.md` files in Finder without opening the app
 - **Markdown linting** with 9 built-in rules and status bar diagnostics
 - **File watching** with DispatchSource (works with VS Code, Vim, and other editors)

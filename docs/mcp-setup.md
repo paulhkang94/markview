@@ -100,10 +100,10 @@ open_file("docs/API.md")  # MarkView auto-refreshes as you save
 
 ## MarkView Features (for Reference)
 
-- **Live preview** — Editor + preview split-pane (15 configurable width options)
+- **Live preview** — Editor + preview split-pane (4 width presets: narrow/medium/wide/full)
 - **File watching** — Auto-refreshes when files change from external editors
 - **GitHub Flavored Markdown** — Tables, strikethrough, autolinks, task lists via swift-cmark
-- **Syntax highlighting** — 18 languages via Prism.js
+- **Syntax highlighting** — via Prism.js
 - **Markdown linting** — 9 built-in rules with real-time diagnostics
 - **Dark mode** — System/light/dark theme support
 - **Export** — HTML and PDF export
