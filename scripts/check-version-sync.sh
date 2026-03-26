@@ -88,36 +88,37 @@ if [ -f "$MCP_MAIN" ]; then
     fi
 fi
 
-# npm/package.json, server.json, postinstall.js — all three must match
+# npm/package.json and server.json: must match each other.
+# npm version may be ahead of the Swift canonical version for JS-only patches.
 NPM_PKG="$PROJECT_DIR/npm/package.json"
+NPM_SERVER="$PROJECT_DIR/npm/server.json"
+NPM_VER=""
+SERVER_VER=""
 if [ -f "$NPM_PKG" ]; then
     NPM_VER=$(python3 -c "import json; print(json.load(open('$NPM_PKG'))['version'])" 2>/dev/null || echo "?")
-    if [ "$NPM_VER" = "$CANONICAL" ]; then
-        echo "  ✓ npm/package.json: $NPM_VER"
-    else
-        echo "  ✗ npm/package.json: $NPM_VER (expected $CANONICAL)"
-        ERRORS=$((ERRORS + 1))
-    fi
+    echo "  ✓ npm/package.json: $NPM_VER"
 fi
-
-NPM_SERVER="$PROJECT_DIR/npm/server.json"
 if [ -f "$NPM_SERVER" ]; then
     SERVER_VER=$(python3 -c "import json; print(json.load(open('$NPM_SERVER'))['version'])" 2>/dev/null || echo "?")
-    if [ "$SERVER_VER" = "$CANONICAL" ]; then
+    if [ "$SERVER_VER" = "$NPM_VER" ]; then
         echo "  ✓ npm/server.json: $SERVER_VER"
     else
-        echo "  ✗ npm/server.json: $SERVER_VER (expected $CANONICAL)"
+        echo "  ✗ npm/server.json: $SERVER_VER (expected $NPM_VER — must match npm/package.json)"
         ERRORS=$((ERRORS + 1))
     fi
 fi
 
 NPM_POSTINSTALL="$PROJECT_DIR/npm/scripts/postinstall.js"
 if [ -f "$NPM_POSTINSTALL" ]; then
-    POST_VER=$(grep -oE 'const VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' "$NPM_POSTINSTALL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
-    if [ "$POST_VER" = "$CANONICAL" ]; then
-        echo "  ✓ npm/scripts/postinstall.js: $POST_VER"
+    # postinstall.js uses BINARY_VERSION (the macOS release to download), which is
+    # intentionally decoupled from the npm package version — JS-only npm patches
+    # don't require a new macOS binary release. Only verify it references a real tag.
+    BINARY_VER=$(grep -oE 'const BINARY_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"' "$NPM_POSTINSTALL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+    BINARY_TAG_EXISTS=$(git -C "$PROJECT_DIR" tag --list "v$BINARY_VER" 2>/dev/null || true)
+    if [ -n "$BINARY_TAG_EXISTS" ]; then
+        echo "  ✓ npm/scripts/postinstall.js BINARY_VERSION: $BINARY_VER (tag v$BINARY_VER exists)"
     else
-        echo "  ✗ npm/scripts/postinstall.js: $POST_VER (expected $CANONICAL)"
+        echo "  ✗ npm/scripts/postinstall.js BINARY_VERSION: $BINARY_VER (no tag v$BINARY_VER — binary download will fail)"
         ERRORS=$((ERRORS + 1))
     fi
 fi

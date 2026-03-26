@@ -22,9 +22,12 @@ const { execFileSync } = require("child_process");
 
 const GITHUB_OWNER = "paulhkang94";
 const GITHUB_REPO = "markview";
-const VERSION = "1.2.6";
-const ARCHIVE_NAME = `MarkView-${VERSION}.tar.gz`;
-const DOWNLOAD_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${VERSION}/${ARCHIVE_NAME}`;
+// BINARY_VERSION pins the macOS app release to download.
+// This is intentionally decoupled from the npm package version —
+// npm patches (JS-only changes) don't require a new macOS binary release.
+const BINARY_VERSION = "1.2.6";
+const ARCHIVE_NAME = `MarkView-${BINARY_VERSION}.tar.gz`;
+const DOWNLOAD_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${BINARY_VERSION}/${ARCHIVE_NAME}`;
 
 // Path inside the tar.gz where the MCP server binary lives
 const BINARY_IN_ARCHIVE = `MarkView.app/Contents/MacOS/markview-mcp-server`;
@@ -148,7 +151,9 @@ async function main() {
   const archivePath = path.join(tmpDir, ARCHIVE_NAME);
 
   try {
-    console.log(`[mcp-server-markview] Downloading MarkView v${VERSION}...`);
+    console.log(
+      `[mcp-server-markview] Downloading MarkView v${BINARY_VERSION}...`,
+    );
     console.log(`  ${DOWNLOAD_URL}`);
 
     await downloadFile(DOWNLOAD_URL, archivePath);

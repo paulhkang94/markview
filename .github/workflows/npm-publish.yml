@@ -1,0 +1,124 @@
+name: Publish npm
+
+# Lightweight npm-only publish — skips Swift build/notarize.
+# Use when only npm/ changes (JS module, package.json) and no new app binary is needed.
+# The postinstall continues to download the existing binary from the latest GitHub Release.
+#
+# Trigger: workflow_dispatch (manual) or automatic when npm/package.json changes on main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (pack + verify, skip publish)'
+        required: false
+        default: 'false'
+  push:
+    branches:
+      - main
+    paths:
+      - 'npm/package.json'
+      - 'npm/index.js'
+      - 'npm/scripts/**'
+      - 'npm/bin/**'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get npm version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./npm/package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing mcp-server-markview@$VERSION"
+
+      - name: Check if already published
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PUBLISHED=$(npm view "mcp-server-markview@${VERSION}" version 2>/dev/null || echo "")
+          if [[ "$PUBLISHED" == "$VERSION" ]]; then
+            echo "SKIP=true" >> $GITHUB_OUTPUT
+            echo "mcp-server-markview@${VERSION} already published — nothing to do"
+          else
+            echo "SKIP=false" >> $GITHUB_OUTPUT
+            echo "mcp-server-markview@${VERSION} not yet published — proceeding"
+          fi
+
+      - name: Install npm dependencies
+        if: steps.check.outputs.SKIP == 'false'
+        run: cd npm && npm install
+
+      - name: Verify createSandboxServer is importable
+        if: steps.check.outputs.SKIP == 'false'
+        run: |
+          cd npm
+          node -e "
+            const { createSandboxServer } = require('.');
+            if (typeof createSandboxServer !== 'function') {
+              console.error('ERROR: createSandboxServer is not a function');
+              process.exit(1);
+            }
+            const server = createSandboxServer();
+            if (!server) {
+              console.error('ERROR: createSandboxServer() returned null');
+              process.exit(1);
+            }
+            console.log('✓ createSandboxServer() works — Smithery capability scanning will succeed');
+          "
+
+      - name: Pack and verify postinstall
+        if: steps.check.outputs.SKIP == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          cd npm
+          PACK_FILE=$(npm pack --pack-destination /tmp 2>/dev/null | tail -1)
+          echo "Packed: $PACK_FILE"
+
+          _tmp=$(mktemp -d)
+          cd "$_tmp"
+          # Install from local pack — same code path as real npm install
+          npm install "/tmp/${PACK_FILE}" 2>&1 | tail -5
+
+          # Verify index.js is present and importable from the pack
+          node -e "
+            const pkg = require('./node_modules/mcp-server-markview');
+            if (typeof pkg.createSandboxServer !== 'function') {
+              console.error('ERROR: createSandboxServer not exported from packed module');
+              process.exit(1);
+            }
+            console.log('✓ Packed module exports createSandboxServer correctly');
+          "
+
+          # Verify binary was downloaded (macOS postinstall)
+          if [[ -f "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" ]]; then
+            SIZE=$(du -sh "$_tmp/node_modules/mcp-server-markview/bin/markview-mcp-server-binary" | cut -f1)
+            echo "✓ Postinstall: binary downloaded (${SIZE})"
+          else
+            echo "⚠ Binary not found — postinstall may have failed (non-blocking)"
+          fi
+          rm -rf "$_tmp"
+
+      - name: Publish to npm
+        if: steps.check.outputs.SKIP == 'false' && github.event.inputs.dry_run != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          cd npm
+          npm publish --access public
+          echo "✓ Published mcp-server-markview@${{ steps.version.outputs.VERSION }}"
+
+      - name: Dry run summary
+        if: github.event.inputs.dry_run == 'true'
+        run: echo "Dry run complete — skipped publish. Set dry_run=false to publish."

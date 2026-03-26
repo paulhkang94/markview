@@ -1,6 +1,6 @@
 {
   "name": "mcp-server-markview",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "MCP server for MarkView — preview Markdown files in a native macOS viewer",
   "license": "MIT",
   "author": "Paul Kang <contact@paulkang.dev>",
@@ -13,6 +13,7 @@
   "bugs": {
     "url": "https://github.com/paulhkang94/markview/issues"
   },
+  "main": "index.js",
   "bin": {
     "mcp-server-markview": "bin/mcp-server-markview"
   },
@@ -21,6 +22,7 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "files": [
+    "index.js",
     "bin/",
     "scripts/",
     "README.md"
@@ -38,15 +40,7 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "arm64",
-    "x64"
-  ],
-  "module": "src/index.ts",
-  "devDependencies": {
+  "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"
   }
 }
