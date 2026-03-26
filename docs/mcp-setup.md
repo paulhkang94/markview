@@ -141,19 +141,25 @@ open_file("docs/API.md")  # MarkView auto-refreshes as you save
 
 **MCP server not found:**
 ```bash
-# Verify MarkView is installed in /Applications
-ls -la /Applications/MarkView.app
+# The recommended setup uses npx — no binary path needed:
+npx -y mcp-server-markview --help
 
-# Check if MCP binary exists
+# If you're using the Homebrew Cask install, verify the bundle:
+ls -la /Applications/MarkView.app
 ls -la /Applications/MarkView.app/Contents/MacOS/markview-mcp-server
 
-# If missing, rebuild and reinstall
+# Cask binary missing? Reinstall:
 brew reinstall --cask paulhkang94/markview/markview
 ```
 
+> **Note:** `/Applications/MarkView.app/Contents/MacOS/markview-mcp-server` only exists in Homebrew Cask builds. If you installed via npm (`npx -y mcp-server-markview`), that path won't exist — use `npx` directly.
+
 **MCP server fails to start:**
 ```bash
-# Run directly to see error output
+# Run directly via npx to see error output
+npx -y mcp-server-markview
+
+# Or via the Cask binary (Homebrew Cask installs only):
 /Applications/MarkView.app/Contents/MacOS/markview-mcp-server --help
 
 # Check Claude Code logs
