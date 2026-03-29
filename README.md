@@ -14,6 +14,10 @@ A native macOS markdown preview app built with Swift and SwiftUI. No Electron, n
 |:---:|:---:|
 | ![Preview](docs/screenshots/preview-only.png) | ![Editor + Preview](docs/screenshots/editor-preview.png) |
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/paulhkang94-markview).
+
 ## Features
 
 - **Live preview** with split-pane editor and WKWebView rendering
