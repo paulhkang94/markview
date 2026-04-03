@@ -51,6 +51,14 @@ if [ -x "$USER_APP_BINARY" ]; then
   exec "$USER_APP_BINARY" "$@"
 fi
 
+# --- Fallback: run capability-only sandbox server via Node.js ---
+# Used by Smithery's Linux scanner and other non-macOS environments.
+# index.js detects non-macOS and starts the sandbox MCP server over stdio.
+INDEX_JS="$(dirname "$SCRIPT_DIR")/index.js"
+if [ -f "$INDEX_JS" ] && command -v node >/dev/null 2>&1; then
+  exec node "$INDEX_JS" "$@"
+fi
+
 # --- Not found ---
 cat >&2 <<'EOF'
 mcp-server-markview: could not find the MarkView MCP server binary.
