@@ -1,0 +1,6 @@
+name            = "markview-mcp"
+main            = "src/index.ts"
+compatibility_date = "2025-03-26"
+
+[observability]
+enabled = true

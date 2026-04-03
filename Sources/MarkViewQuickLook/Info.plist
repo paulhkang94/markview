@@ -19,7 +19,7 @@
 		<string>MacOSX</string>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>216</string>
+	<string>226</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSExtension</key>

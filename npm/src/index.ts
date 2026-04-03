@@ -28,7 +28,10 @@ const TOOLS = [
           type: "string",
           description: "Markdown source text to preview",
         },
-        title: { type: "string", description: "Optional window title" },
+        filename: {
+          type: "string",
+          description: "Optional filename hint (default: preview.md)",
+        },
       },
       required: ["content"],
     },

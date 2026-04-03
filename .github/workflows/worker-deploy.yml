@@ -1,0 +1,49 @@
+name: Deploy MCP Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workers/mcp/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: workers/mcp/package-lock.json
+
+      - name: Install dependencies
+        working-directory: workers/mcp
+        run: npm ci
+
+      - name: Type check
+        working-directory: workers/mcp
+        run: npm run type-check
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/mcp
+          command: deploy --minify
