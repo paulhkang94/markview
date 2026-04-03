@@ -150,7 +150,7 @@ runner.test("Launch with no args → shows drop target") {
 runner.test("Launch with file → window title contains filename") {
     let content = "# Hello World\n\nThis is a test file."
     try withAppAndFile(content, name: "hello") { window, path in
-        let filename = URL(fileURLWithPath: path).lastPathComponent
+        let _ = URL(fileURLWithPath: path).lastPathComponent
         try AXHelper.waitFor(timeout: 2.0, description: "window title") {
             helpers.windowTitle(window)?.contains("hello") ?? false
         }
@@ -312,7 +312,7 @@ runner.test("Toggle editor twice → AXTextArea disappears") {
         Thread.sleep(forTimeInterval: 0.3)
         // Editor should be hidden again
         // Note: This might be flaky if SwiftUI animation hasn't completed
-        let editor = helpers.findEditor(in: newWindow)
+        let _ = helpers.findEditor(in: newWindow)
         // Accept both states — some SwiftUI configurations keep the text area accessible
         try expect(true, "Double toggle completed without crash")
     }
@@ -957,7 +957,6 @@ runner.test("Editor toggle changes window width") {
     let content = "# Width Test"
     try withAppAndFile(content) { window, _ in
         // Get initial width
-        var positionValue: AnyObject?
         var sizeValue: AnyObject?
         AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeValue)
 
@@ -1307,7 +1306,7 @@ runner.test("Cursor-at-EOF then external reload → no crash (Bug #20 regression
         Thread.sleep(forTimeInterval: 0.5)
 
         // Move cursor to end of document (Cmd+End = kVK_End = 0x77)
-        let w = try app.mainWindow()
+        let _ = try app.mainWindow()
         AXHelper.keyPress(0x77, modifiers: .maskCommand)  // Cmd+End
         Thread.sleep(forTimeInterval: 0.3)
 
@@ -1374,6 +1373,22 @@ runner.test("Large file → toggle editor → no hang (<3s for editor to appear)
             "Editor toggle on large file must complete in <3s — took \(String(format: "%.2f", elapsed))s")
     }
 }
+
+print("")
+
+// ========== PDF Export E2E (Skipped — Interactive Dialog Required) ==========
+// ⊘ skipped: PDF export menu → NSPrintPanel interaction requires interactive
+//   dialog automation. NSPrintPanel has no headless/accessibility API.
+//   What IS covered:
+//   - Source wiring: ContentView handles .exportPDF notification (TestRunner source.contains)
+//   - Output quality: PDFTester validates multi-page, correct size, valid %PDF- header
+//   - Menu item existence: E2E tester verifies "Export PDF" menu item is present
+//   What is NOT covered by automated tests (manual release checklist):
+//   - Click "File → Export PDF…" → Print dialog appears
+//   - Choose "Save as PDF" → file saved to disk
+//   - Resulting file opens in Preview.app correctly
+// ⊘ PDF export E2E skipped — see comment above
+print("  ⊘ PDF export menu interaction: skipped (requires interactive NSPrintPanel)")
 
 print("")
 

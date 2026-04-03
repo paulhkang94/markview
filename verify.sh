@@ -175,6 +175,22 @@ echo ""
 echo "--- CLI Check ---"
 if [ -x "$HOME/.local/bin/mdpreview" ] && file "$HOME/.local/bin/mdpreview" | grep -q "text"; then
     echo "✓ mdpreview CLI is installed (shell script)"
+    # Behavioral: verify it actually launches MarkView.app
+    if [ -d "/Applications/MarkView.app" ] || [ -d "$HOME/Applications/MarkView.app" ]; then
+        _CLI_TMP=$(mktemp /tmp/markview-cli-test-XXXXX.md)
+        echo "# CLI test" > "$_CLI_TMP"
+        "$HOME/.local/bin/mdpreview" "$_CLI_TMP" &
+        _CLI_PID=$!
+        sleep 3
+        if pgrep -x "MarkView" > /dev/null 2>&1; then
+            echo "✓ mdpreview CLI launches MarkView.app"
+        else
+            echo "✗ mdpreview CLI did not launch MarkView.app within 3s"
+        fi
+        kill "$_CLI_PID" 2>/dev/null; rm -f "$_CLI_TMP"
+    else
+        echo "  ⊘ mdpreview behavioral test skipped — MarkView.app not installed"
+    fi
 else
     echo "⚠ mdpreview not installed or is not a shell script (run: bash scripts/install-cli.sh)"
 fi

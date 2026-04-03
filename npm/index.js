@@ -75,7 +75,9 @@ module.exports.default = createSandboxServer;
 if (require.main === module) {
   const { resolve } = require("path");
   const fs = require("fs");
-  const binary = resolve(__dirname, "bin/mcp-server-markview");
+  // Downloaded binary path — written here by postinstall.js (different name from the
+  // shell bin script at bin/mcp-server-markview to avoid an infinite spawn loop).
+  const binary = resolve(__dirname, "bin/markview-mcp-server-binary");
 
   if (process.platform === "darwin" && fs.existsSync(binary)) {
     const { spawn } = require("child_process");

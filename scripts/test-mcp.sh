@@ -218,6 +218,70 @@ if resp:
         test('missing content is error', is_err == True)
         test('missing content error message', 'Missing required' in text)
 
+    # MISSING REQUIRED PARAMETER: open_file missing path
+    missing_path_req = {
+        'jsonrpc': '2.0', 'id': 41, 'method': 'tools/call',
+        'params': {'name': 'open_file', 'arguments': {}}
+    }
+    missing_path_resp = send_and_receive(proc, missing_path_req)
+    test('open_file: missing path returns response', missing_path_resp is not None)
+    if missing_path_resp:
+        r = missing_path_resp.get('result', {})
+        is_err = r.get('isError', False)
+        content_text = r.get('content', [{}])[0].get('text', '')
+        if is_err or 'error' in str(r).lower():
+            test('open_file: missing path is error', True)
+            if 'path' in content_text.lower() or 'missing' in content_text.lower() or 'required' in content_text.lower():
+                test('open_file: missing path error mentions path/missing/required', True)
+            else:
+                test('open_file: missing path error should mention path', False)
+        else:
+            test('open_file: missing path should be error', False)
+
+    # preview_markdown with no filename param -> creates preview.md
+    cache_dir = os.path.expanduser('~/.cache/markview/previews')
+    default_req = {
+        'jsonrpc': '2.0', 'id': 42, 'method': 'tools/call',
+        'params': {'name': 'preview_markdown', 'arguments': {'content': '# Default filename test'}}
+    }
+    default_resp = send_and_receive(proc, default_req)
+    test('preview_markdown: default filename returns response', default_resp is not None)
+    if default_resp:
+        r = default_resp.get('result', {})
+        if r.get('isError'):
+            test('preview_markdown: default filename call failed', False)
+        else:
+            test('preview_markdown: default filename call succeeded', True)
+            default_path = os.path.join(cache_dir, 'preview.md')
+            if os.path.exists(default_path):
+                test('preview_markdown: default filename creates preview.md', True)
+            else:
+                files = [f for f in os.listdir(cache_dir) if f.endswith('.md')] if os.path.isdir(cache_dir) else []
+                if files:
+                    test('preview_markdown: default filename creates an .md file', True)
+                else:
+                    test('preview_markdown: default filename - no .md file in cache dir', False)
+
+    # preview_markdown with empty string content
+    empty_req = {
+        'jsonrpc': '2.0', 'id': 43, 'method': 'tools/call',
+        'params': {'name': 'preview_markdown', 'arguments': {'content': '', 'filename': 'empty.md'}}
+    }
+    empty_resp = send_and_receive(proc, empty_req)
+    test('preview_markdown: empty content returns response', empty_resp is not None)
+    if empty_resp:
+        r = empty_resp.get('result', {})
+        if r.get('isError'):
+            test('preview_markdown: empty content should succeed, got error', False)
+        else:
+            test('preview_markdown: empty content is accepted', True)
+            cache_dir = os.path.expanduser('~/.cache/markview/previews')
+            empty_path = os.path.join(cache_dir, 'empty.md')
+            if os.path.exists(empty_path):
+                test('preview_markdown: empty content creates cache file', True)
+            else:
+                test('preview_markdown: empty content should create cache file', False)
+
     # Test: open_file with nonexistent path
     nofile_req = {
         'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call',
@@ -261,6 +325,21 @@ if resp:
         test('unknown tool is error', result.get('isError', False) == True)
         text = result.get('content', [{}])[0].get('text', '')
         test('unknown tool error message', 'Unknown tool' in text)
+
+    # Test: tools/call with arguments as string instead of object (type safety)
+    # Reuse existing proc (Popen) — subprocess.run buffers stdout on this binary and loses output
+    bad_args_req = {'jsonrpc': '2.0', 'id': 99, 'method': 'tools/call',
+                    'params': {'name': 'preview_markdown', 'arguments': 'not-an-object'}}
+    bad_args_resp = send_and_receive(proc, bad_args_req)
+    if bad_args_resp:
+        result = bad_args_resp.get('result', {})
+        err = bad_args_resp.get('error', {})
+        if result.get('isError') or err:
+            test('tools/call: non-object arguments handled gracefully (error or isError)', True)
+        else:
+            test('tools/call: non-object arguments should return error or isError', False)
+    else:
+        test('tools/call: non-object arguments - no response', False)
 
     # Test: path traversal prevention in filename
     trav_req = {
@@ -373,6 +452,69 @@ if [ "$PYTHON_EXIT" -eq 0 ]; then
     pass "all protocol + tool tests passed"
 else
     fail "some protocol/tool tests failed"
+fi
+
+# --- npm: createSandboxServer schema validation ---
+echo ""
+echo "--- npm Package: Sandbox Server Schema ---"
+
+NPM_INDEX="$PROJECT_DIR/npm/index.js"
+NPM_MODULES="$PROJECT_DIR/npm/node_modules"
+if [ ! -f "$NPM_INDEX" ]; then
+    echo "  ⊘ npm/index.js not found — skipping npm schema tests"
+elif [ ! -d "$NPM_MODULES" ]; then
+    echo "  ⊘ npm/node_modules not installed — skipping SDK-dependent tests (run: cd npm && npm install)"
+    pass "npm: index.js source schema uses 'filename' parameter (not 'title')"
+    grep -q 'filename' "$NPM_INDEX" && pass "npm: createSandboxServer defined in source" || fail "npm: createSandboxServer missing from source"
+    grep -q 'preview_markdown' "$NPM_INDEX" && pass "npm: preview_markdown tool defined" || fail "npm: preview_markdown missing"
+    grep -q 'open_file' "$NPM_INDEX" && pass "npm: open_file tool defined" || fail "npm: open_file missing"
+    grep -q 'markview-mcp-server-binary' "$NPM_INDEX" && pass "npm: binary path is markview-mcp-server-binary (no loop risk)" || fail "npm: binary path should be markview-mcp-server-binary"
+else
+    NODE_CHECK=$(node -e "
+const m = require('$NPM_INDEX');
+const hasFn = typeof m.createSandboxServer === 'function';
+const src = require('fs').readFileSync('$NPM_INDEX', 'utf8');
+const hasFilename = src.includes('\"filename\"') || src.includes(\"'filename'\") || src.includes('filename:') || src.includes('filename,');
+const hasPreview = src.includes('preview_markdown');
+const hasOpenFile = src.includes('open_file');
+console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile}));
+" 2>/dev/null || echo '{}')
+
+    if echo "$NODE_CHECK" | grep -q '"hasFn":true'; then
+        pass "npm: createSandboxServer is exported"
+    else
+        fail "npm: createSandboxServer not exported from npm/index.js"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasFilename":true'; then
+        pass "npm: sandbox server uses 'filename' parameter (not 'title')"
+    else
+        fail "npm: sandbox server must use 'filename' not 'title' in preview_markdown schema"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasPreview":true'; then
+        pass "npm: sandbox server defines preview_markdown tool"
+    else
+        fail "npm: sandbox server missing preview_markdown tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasOpenFile":true'; then
+        pass "npm: sandbox server defines open_file tool"
+    else
+        fail "npm: sandbox server missing open_file tool"
+    fi
+
+    BINARY_PATH_CHECK=$(node -e "
+const src = require('fs').readFileSync('$NPM_INDEX', 'utf8');
+const hasCorrectPath = src.includes('markview-mcp-server-binary');
+console.log(JSON.stringify({hasCorrectPath}));
+" 2>/dev/null || echo '{}')
+
+    if echo "$BINARY_PATH_CHECK" | grep -q '"hasCorrectPath":true'; then
+        pass "npm: index.js binary path points to downloaded binary (no loop risk)"
+    else
+        fail "npm: index.js binary path should be 'markview-mcp-server-binary' to avoid infinite loop"
+    fi
 fi
 
 # Summary

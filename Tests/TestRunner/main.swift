@@ -533,6 +533,46 @@ runner.test("edge-cases.md fixture renders") {
     try expect(html.contains("🚀"), "Missing emoji")
 }
 
+// MARK: - Footnote Rendering
+print("\n=== Footnote Rendering Tests ===")
+
+runner.test("footnote reference renders as superscript link") {
+    let md = "Hello world[^1].\n\n[^1]: This is the footnote."
+    let html = MarkdownRenderer.renderHTML(from: md)
+    // cmark-gfm with CMARK_OPT_FOOTNOTES wraps references as <sup><a href="#fn...">
+    try expect(html.contains("<sup>") || html.contains("fnref"),
+        "Footnote reference should render as superscript or fnref anchor, got: \(html.prefix(200))")
+    try expect(html.contains("fn") || html.contains("footnote"),
+        "Footnote HTML should contain 'fn' or 'footnote' marker, got: \(html.prefix(200))")
+}
+
+runner.test("footnote definition renders in footnotes section") {
+    let md = "Text[^note].\n\n[^note]: Footnote content here."
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("Footnote content here"),
+        "Footnote definition text should appear in rendered HTML")
+}
+
+runner.test("multiple footnotes render all definitions") {
+    let md = """
+    First[^a] and second[^b].
+
+    [^a]: First footnote.
+    [^b]: Second footnote.
+    """
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("First footnote"), "First footnote definition should appear")
+    try expect(html.contains("Second footnote"), "Second footnote definition should appear")
+}
+
+runner.test("footnote-free markdown is unaffected by footnote option") {
+    let md = "# Hello\n\nNo footnotes here. Just regular [links](https://example.com)."
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("<h1>") || html.contains("Hello"), "Normal heading should render")
+    try expect(html.contains("href=\"https://example.com\""), "Normal link should render")
+    try expect(!html.contains("<sup>"), "No superscripts without footnotes")
+}
+
 // MARK: - Performance
 
 print("\n=== Tier 2: Performance ===")
@@ -4305,6 +4345,31 @@ runner.test("Performance: Markdown with many code blocks (100) renders in <1000m
     }
     print("    └─ Actual time: \(String(format: "%.2f", elapsed))ms")
 }
+
+// MARK: - Known Gaps (documented, not silently missing)
+// These behaviors exist but cannot be unit-tested from MarkViewTestRunner
+// because they live in MarkViewApp (not MarkViewCore) or require a running UI.
+//
+// ⊘ inlineLocalImages (data URI conversion):
+//   Implemented in WebPreviewView.swift (MarkViewApp target).
+//   Cannot be imported by MarkViewTestRunner (SPM library boundary).
+//   Covered indirectly: E2E file-open tests exercise this path at runtime.
+//   To test directly: move inlineLocalImages to MarkViewCore in a future refactor.
+//
+// ⊘ PDF export menu → print dialog:
+//   Requires interactive NSPrintPanel automation (no headless API).
+//   Validated structurally by source.contains tests + PDFTester for output quality.
+//   Manual checklist item before each release.
+//
+// ⊘ Find panel in WKWebView preview:
+//   WKWebView find requires browser-level JS event simulation.
+//   Menu item wiring tested by E2E tester (Find bar appears on Cmd+F).
+//   Full find-and-highlight flow requires AX permission + UI automation.
+//
+// ⊘ Scroll position sync (editor ↔ preview):
+//   Bidirectional sync requires measuring live DOM scroll positions.
+//   No headless API for WKWebView scroll state inspection.
+//   Tested manually during development; regression requires E2E with AX.
 
 // =============================================================================
 
