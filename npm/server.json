@@ -7,12 +7,12 @@
     "url": "https://github.com/paulhkang94/markview",
     "source": "github"
   },
-  "version": "1.2.7",
+  "version": "1.2.8",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "mcp-server-markview",
-      "version": "1.2.7",
+      "version": "1.2.8",
       "transport": {
         "type": "stdio"
       },

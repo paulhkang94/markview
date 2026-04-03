@@ -70,16 +70,36 @@ module.exports.default = createSandboxServer;
 
 // Stdio entrypoint — only spawns the native binary when run directly.
 if (require.main === module) {
-  const { spawn } = require("child_process");
   const { resolve } = require("path");
+  const fs = require("fs");
   const binary = resolve(__dirname, "bin/mcp-server-markview");
-  const child = spawn(binary, process.argv.slice(2), {
-    stdio: "inherit",
-    env: process.env,
-  });
-  child.on("exit", (code) => process.exit(code != null ? code : 0));
-  child.on("error", (err) => {
-    process.stderr.write("MarkView MCP server error: " + err.message + "\n");
-    process.exit(1);
-  });
+
+  if (process.platform === "darwin" && fs.existsSync(binary)) {
+    const { spawn } = require("child_process");
+    const child = spawn(binary, process.argv.slice(2), {
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("exit", (code) => process.exit(code != null ? code : 0));
+    child.on("error", (err) => {
+      process.stderr.write("MarkView MCP server error: " + err.message + "\n");
+      process.exit(1);
+    });
+  } else {
+    // Non-macOS or binary unavailable: run capability-only sandbox server over stdio.
+    // Used by Smithery's scanner and other non-macOS environments.
+    const {
+      StdioServerTransport,
+    } = require("@modelcontextprotocol/sdk/server/stdio.js");
+    (async () => {
+      const server = createSandboxServer();
+      const transport = new StdioServerTransport();
+      await server.connect(transport);
+    })().catch((err) => {
+      process.stderr.write(
+        "MarkView sandbox server error: " + err.message + "\n",
+      );
+      process.exit(1);
+    });
+  }
 }
