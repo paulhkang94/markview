@@ -2,17 +2,17 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.paulhkang94/markview",
   "title": "MarkView",
-  "description": "Native macOS markdown previewer (Swift, no Electron). MCP tools: open_file and preview_markdown. GFM, Mermaid, syntax highlighting, Quick Look integration.",
+  "description": "Native macOS markdown preview with MCP server for Claude Code. Swift/SwiftUI, no Electron.",
   "repository": {
     "url": "https://github.com/paulhkang94/markview",
     "source": "github"
   },
-  "version": "1.2.9",
+  "version": "1.2.10",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "mcp-server-markview",
-      "version": "1.2.9",
+      "version": "1.2.10",
       "transport": {
         "type": "stdio"
       },

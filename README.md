@@ -2,50 +2,48 @@
 
 [![Glama](https://glama.ai/mcp/servers/@paulhkang94/markview/badges/score.svg)](https://glama.ai/mcp/servers/@paulhkang94/markview)
 
-A native macOS markdown preview app built with Swift and SwiftUI. No Electron, no web server — just a fast, lightweight previewer that renders GitHub Flavored Markdown.
-
-## Demo
+Native macOS markdown preview with MCP server for Claude Code. Claude writes markdown — MarkView renders it live, in a real native window, while you work.
 
 ![MarkView demo](docs/markview_demo.gif)
 
-## Screenshots
+## Quick Start — Claude Code
 
-| Preview only | Editor + Preview |
-|:---:|:---:|
-| ![Preview](docs/screenshots/preview-only.png) | ![Editor + Preview](docs/screenshots/editor-preview.png) |
+One command to wire MarkView into every Claude Code session:
 
-## Features
+```bash
+claude mcp add --transport stdio --scope user markview -- npx mcp-server-markview
+```
 
-- **Live preview** with split-pane editor and WKWebView rendering
-- **GitHub Flavored Markdown** via Apple's swift-cmark (tables, strikethrough, autolinks, task lists)
-- **Syntax highlighting** via Prism.js
-- **Quick Look integration** — preview `.md` files in Finder without opening the app
-- **Markdown linting** with 9 built-in rules and status bar diagnostics
-- **File watching** with DispatchSource (works with VS Code, Vim, and other editors)
-- **Multi-format support** via plugin architecture (Markdown, CSV, HTML)
-- **HTML sanitizer** that strips scripts, event handlers, and XSS vectors
-- **Mermaid diagrams** — flowcharts, sequence, Gantt, ER, and pie charts via mermaid.js
-- **Bidirectional scroll sync** — frame-perfect editor/preview sync via CADisplayLink
-- **Local image rendering** — correctly inlines relative paths like `![](./image.png)`
-- **Drag and drop** — drop any `.md` file onto the window to open
-- **Find & Replace** — Cmd+F to find, Cmd+Option+F to find and replace
-- **Format on save** — auto-applies markdown lint fixes when saving
-- **Auto-save** — configurable interval saves edits without manual Cmd+S
-- **Word count** — live word and character count in the status bar
-- **Scroll position preservation** — reopening a file restores your last scroll position
-- **Configurable tab size** — set 2, 4, or 8 spaces per tab in settings
-- **Line numbers** — toggle line numbers in the editor pane
-- **Window auto-resize** — smart resize when toggling editor/preview panes
-- **Export** to HTML and PDF
-- **Dark mode** support with system/light/dark theme options
-- **18 configurable settings** including font, preview width, tab behavior, and more
+That's it. Claude can now call `preview_markdown` to render any markdown string in a native macOS window, or `open_file` to open any `.md` file directly.
+
+| Tool | What it does |
+|------|-------------|
+| `preview_markdown` | Render markdown content in a live-reloading MarkView window |
+| `open_file` | Open an existing `.md` file in MarkView |
+
+### Claude Desktop Setup
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "markview": {
+      "command": "npx",
+      "args": ["mcp-server-markview"]
+    }
+  }
+}
+```
+
+> **Note:** MCP servers belong in `~/.claude.json` (Claude Code) or `claude_desktop_config.json` (Claude Desktop), not `~/.claude/settings.json`.
 
 ## Installation
 
 ### Homebrew (recommended)
 
 ```bash
-# Full .app with Quick Look extension
+# Full .app with Quick Look extension — Apple notarized, Gatekeeper approved
 brew install --cask paulhkang94/markview/markview
 
 # CLI only (builds from source)
@@ -53,11 +51,9 @@ brew tap paulhkang94/markview
 brew install markview
 ```
 
-The app is Apple notarized and Gatekeeper approved — no quarantine warnings on install.
-
 ### Build from source
 
-**Prerequisites:** macOS 14+, Swift 6.0+ (included with Xcode Command Line Tools)
+**Prerequisites:** macOS 14+, Swift 6.0+ (Xcode Command Line Tools)
 
 ```bash
 git clone https://github.com/paulhkang94/markview.git
@@ -71,15 +67,15 @@ swift build -c release
 bash scripts/bundle.sh --install
 ```
 
-This creates `MarkView.app` in `/Applications` and registers it with Launch Services. You can then right-click any `.md` file in Finder and choose **Open With > MarkView**.
+Creates `MarkView.app` in `/Applications` and registers it with Launch Services for right-click > Open With in Finder.
 
-### Install CLI commands
+### Install CLI
 
 ```bash
 bash scripts/install-cli.sh
 ```
 
-This creates `mdpreview` and `md` symlinks in `~/.local/bin/`. Note: if `md` is aliased in your shell (e.g., to `mkdir`), use `mdpreview` instead.
+Creates `mdpreview` and `md` symlinks in `~/.local/bin/`.
 
 ## Usage
 
@@ -100,68 +96,29 @@ Right-click any `.md`, `.markdown`, `.mdown`, `.mkd` file > **Open With** > **Ma
 open -a MarkView README.md
 ```
 
-## MCP Server (AI Integration)
+## Screenshots
 
-MarkView includes an [MCP](https://modelcontextprotocol.io) server that lets AI assistants preview markdown directly in MarkView.
+| Preview only | Editor + Preview |
+|:---:|:---:|
+| ![Preview](docs/screenshots/preview-only.png) | ![Editor + Preview](docs/screenshots/editor-preview.png) |
 
-### Tools
+## Features
 
-| Tool | Description |
-|------|-------------|
-| `preview_markdown` | Write content to a temp file and open it in MarkView with live reload |
-| `open_file` | Open an existing `.md` file in MarkView |
-
-### Quick Start (npx)
-
-```bash
-npx mcp-server-markview
-```
-
-### Claude Code Setup
-
-The easiest way — run this once in your terminal:
-
-```bash
-claude mcp add --transport stdio --scope user markview -- npx mcp-server-markview
-```
-
-This adds MarkView to `~/.claude.json` (user scope — available in all projects).
-
-Or add it manually to `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "markview": {
-      "command": "npx",
-      "args": ["mcp-server-markview"]
-    }
-  }
-}
-```
-
-> **Note:** MCP servers belong in `~/.claude.json`, not `~/.claude/settings.json`. The settings file is for permissions only.
-
-### Claude Desktop Setup
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "markview": {
-      "command": "npx",
-      "args": ["mcp-server-markview"]
-    }
-  }
-}
-```
-
-### Test the MCP server
-
-```bash
-bash scripts/test-mcp.sh
-```
+- **GitHub Flavored Markdown** via swift-cmark (tables, strikethrough, autolinks, task lists, footnotes)
+- **Mermaid diagrams** — flowcharts, sequence, Gantt, ER, and pie charts
+- **Syntax highlighting** via Prism.js (18 languages)
+- **Quick Look integration** — spacebar-preview `.md` files in Finder without opening the app
+- **Markdown linting** with 9 built-in rules and status bar diagnostics
+- **Live split-pane editor** with WKWebView rendering and bidirectional scroll sync
+- **File watching** with DispatchSource — works with VS Code, Vim, and other editors
+- **Local image rendering** — inlines relative paths like `![](./image.png)` correctly
+- **Export** to HTML and PDF
+- **HTML sanitizer** — strips scripts, event handlers, and XSS vectors
+- **Drag and drop** — drop any `.md` file onto the window to open
+- **Find & Replace** — Cmd+F / Cmd+Option+F
+- **Format on save** — auto-applies lint fixes
+- **Auto-save**, **word count**, **line numbers**, **scroll position preservation**
+- **Dark mode** — system/light/dark theme options, 18 configurable settings
 
 ## Architecture
 
@@ -170,25 +127,22 @@ Sources/MarkViewCore/           # Library (no UI, fully testable)
   MarkdownRenderer.swift        # cmark-gfm C API wrapper
   FileWatcher.swift             # DispatchSource file monitoring
   MarkdownLinter.swift          # 9-rule pure Swift linting engine
-  MarkdownSuggestions.swift     # Auto-suggest engine
-  LanguagePlugin.swift          # Plugin protocol + registry
   HTMLSanitizer.swift           # XSS prevention
+  LanguagePlugin.swift          # Plugin protocol + registry
   Plugins/                      # CSV, HTML, Markdown plugins
 
 Sources/MarkView/               # SwiftUI app (macOS 14+)
   ContentView.swift             # Split-pane editor + preview
   WebPreviewView.swift          # WKWebView with Prism.js
-  Settings.swift                # 18 settings with theme/width/font enums
   ExportManager.swift           # HTML/PDF export
 
 Sources/MarkViewMCPServer/      # MCP server for AI tool integration
-  main.swift                    # stdio JSON-RPC server (preview_markdown, open_file)
+  main.swift                    # stdio JSON-RPC (preview_markdown, open_file)
 
 Tests/TestRunner/               # 403 standalone tests (no XCTest)
 Tests/VisualTester/             # 5 visual regression tests + WCAG contrast
 Tests/FuzzTester/               # 10K random input crash testing
 Tests/DiffTester/               # Differential testing vs cmark-gfm CLI
-scripts/test-mcp.sh             # 5 MCP protocol + integration tests
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
@@ -196,28 +150,21 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 ## Testing
 
 ```bash
-# Run all tests (403 tests)
-swift run MarkViewTestRunner
-
-# Full verification (build + tests)
-bash verify.sh
-
-# Extended (fuzz + differential)
-bash verify.sh --extended
+swift run MarkViewTestRunner    # 403 tests
+bash verify.sh                  # Full verification (build + tests)
+bash verify.sh --extended       # + fuzz + differential
+bash scripts/test-mcp.sh        # MCP protocol tests
 ```
 
 ## Development
 
 ```bash
-swift build                          # Build all targets
-swift run MarkView                   # Launch app
-swift run MarkView /path/to/file.md  # Launch with file
-swift run MarkViewTestRunner         # Run tests
+swift build
+swift run MarkView
+swift run MarkView /path/to/file.md
 ```
 
 ## Support
-
-If MarkView is useful to you, consider supporting development:
 
 - [GitHub Sponsors](https://github.com/sponsors/paulhkang94)
 - Star this repo to help others find it
