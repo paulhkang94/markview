@@ -10,6 +10,10 @@ Native macOS markdown preview with MCP server for Claude Code. Claude writes mar
 
 ![MarkView demo](docs/markview_demo.gif)
 
+| Preview only | Editor + Preview |
+|:---:|:---:|
+| ![Preview](docs/screenshots/preview-only.png) | ![Editor + Preview](docs/screenshots/editor-preview.png) |
+
 ## Quick Start — Claude Code
 
 One command to wire MarkView into every Claude Code session:
@@ -99,12 +103,6 @@ Right-click any `.md`, `.markdown`, `.mdown`, `.mkd` file > **Open With** > **Ma
 ```bash
 open -a MarkView README.md
 ```
-
-## Screenshots
-
-| Preview only | Editor + Preview |
-|:---:|:---:|
-| ![Preview](docs/screenshots/preview-only.png) | ![Editor + Preview](docs/screenshots/editor-preview.png) |
 
 ## Features
 
