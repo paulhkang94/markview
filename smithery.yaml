@@ -28,9 +28,9 @@ tools:
         content:
           type: string
           description: Markdown source text to preview
-        title:
+        filename:
           type: string
-          description: Optional window title
+          description: Optional filename hint (default: preview.md)
       required:
         - content
 
