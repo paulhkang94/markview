@@ -1,8 +1,12 @@
 # MarkView
 
+[![App](https://img.shields.io/github/v/release/paulhkang94/markview?label=app&color=blue)](https://github.com/paulhkang94/markview/releases/latest)
+[![npm](https://img.shields.io/npm/v/mcp-server-markview?label=npm%20(MCP)&color=green)](https://www.npmjs.com/package/mcp-server-markview)
 [![Glama](https://glama.ai/mcp/servers/@paulhkang94/markview/badges/score.svg)](https://glama.ai/mcp/servers/@paulhkang94/markview)
 
 Native macOS markdown preview with MCP server for Claude Code. Claude writes markdown — MarkView renders it live, in a real native window, while you work.
+
+> **Versions:** The macOS app (`app` badge) and the npm MCP wrapper (`npm` badge) are versioned independently. App releases happen when the Swift binary changes; npm patches happen for MCP server improvements. Both badges always show the latest of each.
 
 ![MarkView demo](docs/markview_demo.gif)
 
