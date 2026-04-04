@@ -556,6 +556,57 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
   // 6. Multi-diagram isolation
   // -------------------------------------------------------------------------
 
+  // -------------------------------------------------------------------------
+  // 6. Wheel scroll behavior
+  // Regression: plain scroll was intercepted by e.preventDefault(), blocking
+  // page scroll when the pointer was over a diagram.
+  // -------------------------------------------------------------------------
+
+  test.describe("wheel scroll behavior", () => {
+    test("plain wheel scroll does NOT zoom diagram (passes through to page)", async ({
+      page,
+    }) => {
+      const before = await getTransform(page, 0);
+      // Dispatch a plain wheel event (no ctrlKey/metaKey) — should NOT zoom
+      await page.locator(".mermaid").first().dispatchEvent("wheel", {
+        deltaY: -120,
+        deltaMode: 0,
+        ctrlKey: false,
+        metaKey: false,
+      });
+      const after = await getTransform(page, 0);
+      // Scale must be unchanged — plain scroll must not zoom
+      expect(after.s).toBeCloseTo(before.s, 3);
+    });
+
+    test("Ctrl+wheel zooms diagram in (does not scroll page)", async ({
+      page,
+    }) => {
+      const before = await getTransform(page, 0);
+      // Dispatch a Ctrl+wheel event — should zoom in
+      await page.locator(".mermaid").first().dispatchEvent("wheel", {
+        deltaY: -120,
+        deltaMode: 0,
+        ctrlKey: true,
+        metaKey: false,
+      });
+      const after = await getTransform(page, 0);
+      expect(after.s).toBeGreaterThan(before.s);
+    });
+
+    test("Ctrl+wheel zoom out reduces scale below 1", async ({ page }) => {
+      const before = await getTransform(page, 0);
+      await page.locator(".mermaid").first().dispatchEvent("wheel", {
+        deltaY: 120,
+        deltaMode: 0,
+        ctrlKey: true,
+        metaKey: false,
+      });
+      const after = await getTransform(page, 0);
+      expect(after.s).toBeLessThan(before.s);
+    });
+  });
+
   test.describe("multi-diagram isolation", () => {
     test("panning one diagram does not affect another", async ({ page }) => {
       const count = await page.locator(".mermaid").count();

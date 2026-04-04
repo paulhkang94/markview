@@ -339,8 +339,10 @@ public struct HTMLPipeline {
                         container.appendChild(controls);
                         container.style.overflow = 'hidden';
                         window._PHK_DEBUG && console.log('[PHK] mermaid controls: wired for container', container.id || container.className);
-                        // Mouse wheel zoom (natural trackpad/scroll interaction)
+                        // Mouse wheel zoom: only on Ctrl+scroll or Cmd+scroll (macOS pinch).
+                        // Plain scroll must propagate to the WKWebView for normal page scroll.
                         container.addEventListener('wheel', function(e) {
+                            if (!e.ctrlKey && !e.metaKey) return; // let page scroll pass through
                             e.preventDefault();
                             var Z = e.deltaY < 0 ? 1.1 : 0.9;
                             state.s = Math.min(Math.max(state.s * Z, 0.1), 8);
