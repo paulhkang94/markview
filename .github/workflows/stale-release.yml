@@ -47,25 +47,18 @@ jobs:
             exit 0
           fi
           LOG=$(git log "${LAST_TAG}..HEAD" --oneline | head -20)
+          # Write body to tmpfile — avoids YAML backtick-escaping issues
+          BODY_FILE=$(mktemp)
+          printf '## %s commits since `%s`\n\n' "$COUNT" "$LAST_TAG" > "$BODY_FILE"
+          printf 'Time to cut a new release. Current `Info.plist` version: `%s`\n\n' "$VERSION" >> "$BODY_FILE"
+          printf '### Recent commits\n```\n%s\n```\n\n' "$LOG" >> "$BODY_FILE"
+          printf '### How to release\n```bash\nbash scripts/release.sh --bump minor --ship\n```\n\n' >> "$BODY_FILE"
+          printf 'Or trigger from GitHub Actions → Release → Run workflow.\n\n' >> "$BODY_FILE"
+          printf '*Auto-opened by the stale-release check workflow.*\n' >> "$BODY_FILE"
           gh issue create \
             --repo "$GITHUB_REPOSITORY" \
             --title "$TITLE" \
             --label release \
-            --body "## $COUNT commits since \`$LAST_TAG\`
-
-It's time to cut a new release. Current \`Info.plist\` version: \`$VERSION\`
-
-### Recent commits
-\`\`\`
-$LOG
-\`\`\`
-
-### How to release
-\`\`\`bash
-bash scripts/release.sh --bump minor --ship
-\`\`\`
-
-Or trigger from GitHub Actions → Release → Run workflow.
-
-*Auto-opened by the stale-release check workflow.*"
+            --body-file "$BODY_FILE" || echo "Note: could not create issue (label may not exist)"
+          rm -f "$BODY_FILE"
           echo "Opened issue: $TITLE"

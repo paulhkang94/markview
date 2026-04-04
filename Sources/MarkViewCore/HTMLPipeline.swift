@@ -1,5 +1,18 @@
 import Foundation
 
+// MARK: - PHK Debug
+
+/// Lightweight debug logger gated on PHK_DEBUG env var.
+/// Enable: `PHK_DEBUG=1 swift run MarkViewHTMLGen ...` or `PHK_DEBUG=1 swift run MarkViewTestRunner`.
+/// Zero overhead in production (env var read once at process start).
+enum PHKDebug {
+    static let enabled = ProcessInfo.processInfo.environment["PHK_DEBUG"] != nil
+    static func log(_ msg: String, file: String = #fileID, line: Int = #line) {
+        guard enabled else { return }
+        fputs("[PHK] \(msg) (\(file):\(line))\n", stderr)
+    }
+}
+
 /// Assembles the full HTML document delivered to WKWebView by injecting
 /// bundled JS libraries (Prism, Mermaid, KaTeX) into a rendered template.
 ///
@@ -29,24 +42,32 @@ public struct HTMLPipeline {
     /// resource bundle (the path used at runtime by the test runner and MCP server).
     /// The Xcode app target uses ResourceBundle instead (translocation-safe).
     public static func loadFromBundle() -> HTMLPipeline {
+        PHKDebug.log("loadFromBundle() — bundle: \(Bundle.module.bundlePath)")
         func load(_ name: String, ext: String = "js") -> String? {
             // SPM .process() resources are placed at the bundle root, not in a subdirectory.
             // Try without subdirectory first (debug/release SPM builds), then with "Resources"
             // as a fallback for any future layout changes.
             if let url = Bundle.module.url(forResource: name, withExtension: ext) {
-                return try? String(contentsOf: url, encoding: .utf8)
+                let content = try? String(contentsOf: url, encoding: .utf8)
+                PHKDebug.log("  \(name).\(ext): \(content.map { "\($0.count) bytes" } ?? "READ FAILED")")
+                return content
             }
             if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Resources") {
-                return try? String(contentsOf: url, encoding: .utf8)
+                let content = try? String(contentsOf: url, encoding: .utf8)
+                PHKDebug.log("  \(name).\(ext) (Resources/): \(content.map { "\($0.count) bytes" } ?? "READ FAILED")")
+                return content
             }
+            PHKDebug.log("  \(name).\(ext): NOT FOUND in bundle ⚠️")
             return nil
         }
-        return HTMLPipeline(
+        let pipeline = HTMLPipeline(
             prismJS: load("prism-bundle.min"),
             mermaidJS: load("mermaid.min"),
             katexJS: load("katex.min"),
             katexAutoRenderJS: load("auto-render.min")
         )
+        PHKDebug.log("loadFromBundle() done — prism:\(pipeline.prismJS != nil) mermaid:\(pipeline.mermaidJS != nil) katex:\(pipeline.katexJS != nil)")
+        return pipeline
     }
 
     // MARK: - Public assembly
@@ -177,7 +198,11 @@ public struct HTMLPipeline {
                         });
                     });
                     window.rendered = true;  // Mermaid async complete — unblock Playwright/WKWebView sentinel
-                }).catch(function() { window.rendered = true; });  // unblock on error too
+                    window._PHK_DEBUG && console.log('[PHK] mermaid.run() resolved — rendered=true (path: mermaid.then)');
+                }).catch(function(err) {
+                    window._PHK_DEBUG && console.log('[PHK] mermaid.run() error — rendered=true (path: mermaid.catch)', err);
+                    window.rendered = true;  // unblock on error too
+                });
             };
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', window._markviewRenderMermaid);
