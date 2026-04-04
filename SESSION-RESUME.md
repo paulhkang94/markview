@@ -65,8 +65,8 @@ xcodebuild -project MarkView.xcodeproj -scheme MarkView \
 5. Run `fastlane match appstore` to create Distribution cert + provisioning profile
 
 **Android:**
-1. ✅ Google Play Console created — `paulkang.dev`, Account ID `5018909132441005957`, `paulhkang94@gmail.com`
-2. ⏳ Complete identity verification — upload gov ID at play.google.com/console (takes 2–7 days), verify Android device (Play Console app), verify phone
+1. ✅ Google Play Console account created — see private `markview-android/docs/RELEASE.md` for details
+2. ⏳ Complete identity verification (takes 2–7 days), verify Android device, verify phone
 3. Create app listing: "MarkView — Markdown Viewer", package `dev.paulkang.markview`
 4. Create service account for CI: Play Console → Setup → API access → Create
 5. Upload first AAB: `~/repos/markview-android/app/build/outputs/bundle/release/app-release.aab`
