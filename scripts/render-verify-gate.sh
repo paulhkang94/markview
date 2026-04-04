@@ -5,7 +5,8 @@
 
 set -euo pipefail
 
-STAMP="/Users/pkang/repos/markview/.last-render-verify-at"
+REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)"
+STAMP="$REPO_ROOT/.last-render-verify-at"
 THRESHOLD=600  # 10 minutes
 
 # Read the stdin JSON to check if this is a git commit command

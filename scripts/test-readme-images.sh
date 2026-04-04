@@ -3,8 +3,9 @@
 # Simulates HTMLPipeline.inlineLocalImages — if this passes, MarkView.app will render them.
 set -euo pipefail
 
-README="/Users/pkang/repos/markview/icons/README.md"
-BASE_DIR="/Users/pkang/repos/markview/icons"
+REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)"
+README="$REPO_ROOT/icons/README.md"
+BASE_DIR="$REPO_ROOT/icons"
 PASS=0; FAIL=0
 
 log_pass() { echo "  ✓ $1"; PASS=$((PASS+1)); }
