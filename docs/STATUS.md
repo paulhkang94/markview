@@ -29,7 +29,7 @@ pending work, and key architectural decisions.
 |---------|--------|-------|
 | GitHub Flavored Markdown | ✅ | cmark-gfm, all extensions |
 | Syntax highlighting | ✅ | Prism.js, 18+ languages |
-| Mermaid diagrams | ✅ | 6 types: flowchart, sequence, class, Gantt, ER, pie |
+| Mermaid diagrams | ✅ | 6 types: flowchart, sequence, class, Gantt, ER, pie — pan/zoom/reset/copy controls |
 | KaTeX math | ✅ | `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, MathML output |
 | GFM alerts (`> [!NOTE]`) | ✅ | All 5 types, dark mode, handles GitHub-standard format |
 | TOC sidebar | ✅ | h1–h4, scroll-spy, ≥3 headings threshold |
@@ -61,11 +61,12 @@ pending work, and key architectural decisions.
 ```
 Tier 1 — Swift unit tests (cmark-gfm output)          280 tests  SPM, fast
 Tier 2 — Golden HTML body snapshots                    8 fixtures  git-committed
-Tier 3 — Full-pipeline structural tests (HTMLPipeline) 9 tests    NEW Apr 2026
+Tier 3 — Full-pipeline structural tests (HTMLPipeline) 9 tests    extracted for testability Apr 2026
 Tier 4 — MCP protocol tests (JSON-RPC)                21 tests   --skip-e2e in CI
+Tier 5 — Playwright DOM tests (post-JS DOM state)      66 tests   `make playwright`, Chromium
+          alerts (7), mermaid (19), katex (5), prism (5), controls (35)
 
 MISSING (planned):
-Tier 5 — Playwright DOM tests (post-JS DOM state)      0 tests    Step 1 below
 Tier 6 — DOM snapshot goldens (rendered/*.dom.json)    0 files    Step 2 below
 ```
 
@@ -86,16 +87,17 @@ Previously 413 tests passed while the app rendered broken output.
 
 ## Pending Work: Testing Infrastructure
 
-### Step 1 — Playwright fixture tests for client-side transforms (P0, 1 day)
+### Step 1 — Playwright fixture tests for client-side transforms ✅ DONE (2026-04-04)
 ```
-tests/rendered/
-  alerts.spec.js     — assert .alert-note exists, no raw [!NOTE] text
-  mermaid.spec.js    — assert svg present, no JS source in article
-  katex.spec.js      — assert <math> elements or .katex spans present
-  prism.spec.js      — assert .token spans in code blocks
+tests/
+  alerts.spec.js     — 7 tests: .alert-note exists, no raw [!NOTE] text
+  mermaid.spec.js    — 19 tests: svg present, no JS source, pan/zoom/reset/copy controls
+  katex.spec.js      — 5 tests: <math> elements or .katex spans present
+  prism.spec.js      — 5 tests: .token spans in code blocks
+  controls.spec.js   — 35 tests: diagram pan/zoom/reset/copy button behavior
 ```
-These would have caught BOTH Apr 4 bugs immediately.
-Pattern: `await page.waitForFunction(() => window.rendered === true)` sentinel.
+66 Playwright tests total. `window.rendered` sentinel guards all async assertions.
+Both Apr 4 bugs (mermaid injection, alert regex) would have been caught immediately.
 
 ### Step 2 — DOM snapshot goldens (P1, 1 day)
 ```
@@ -184,7 +186,9 @@ Last snapshot: 2026-04-04
 
 | File | Purpose |
 |------|---------|
-| `Sources/MarkViewCore/HTMLPipeline.swift` | Injection pipeline (NEW — extracted for testability) |
+| `Sources/MarkViewCore/HTMLPipeline.swift` | Injection pipeline (extracted for testability Apr 2026) |
+| `Sources/MarkViewHTMLGen/main.swift` | CLI fixture generator for Playwright tests |
+| `tests/` | Playwright e2e test suite (Node.js, Chromium, 66 tests) |
 | `Sources/MarkViewCore/MarkdownRenderer.swift` | cmark-gfm wrapper |
 | `Sources/MarkViewCore/MarkdownLinter.swift` | 9-rule linter |
 | `Sources/MarkViewCore/Resources/template.html` | HTML template: CSS, alert/TOC JS |
