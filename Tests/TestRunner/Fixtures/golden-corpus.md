@@ -356,11 +356,11 @@ line-by-line diagnostics.
 
 ## 11. Images
 
-![MarkView Demo](https://raw.githubusercontent.com/paulhkang94/markview/main/docs/screenshots/preview.png)
+![MarkView preview-only mode](docs/screenshots/preview-only.png)
 
 Image with title:
 
-![Architecture Diagram](https://raw.githubusercontent.com/paulhkang94/markview/main/docs/screenshots/editor.png "MarkView split-pane editor")
+![MarkView split-pane editor](docs/screenshots/editor-preview.png "MarkView split-pane editor with live preview")
 
 ---
 
