@@ -28,6 +28,10 @@ Package.resolved
 CLAUDE.md
 scripts/cl-*.sh
 
+# Session files — internal dev context, may contain PII (emails, account IDs)
+SESSION-RESUME.md
+.claude-checkpoint.md
+
 # Private docs (not for public repo)
 docs/LAUNCH-PLAN.md
 docs/MARKET-ANALYSIS.md
