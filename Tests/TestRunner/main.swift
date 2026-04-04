@@ -4372,6 +4372,35 @@ runner.test("Performance: Markdown with many code blocks (100) renders in <1000m
 //   Tested manually during development; regression requires E2E with AX.
 
 // =============================================================================
+// KaTeX + GFM Alerts
+// =============================================================================
+
+runner.test("math.md fixture: math content passes through renderer") {
+    let md = try loadFixture("math.md")
+    let html = MarkdownRenderer.renderHTML(from: md)
+    // cmark renders math as raw text — KaTeX runs client-side in WKWebView
+    try expect(html.contains("mc^2") || html.contains("mc"), "Math content not present in rendered HTML")
+    try expect(!html.isEmpty, "math.md rendered to empty string")
+}
+
+runner.test("gfm-alerts.md fixture: alert blockquotes render") {
+    let md = try loadFixture("gfm-alerts.md")
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("<blockquote"), "Missing blockquote in gfm-alerts.md")
+    // [!NOTE] etc. present as raw text — JS transforms to styled divs client-side
+    try expect(html.contains("[!NOTE]"), "[!NOTE] content not found in rendered HTML")
+    try expect(html.contains("[!WARNING]"), "[!WARNING] content not found in rendered HTML")
+    try expect(html.contains("[!TIP]"), "[!TIP] content not found in rendered HTML")
+}
+
+runner.test("gfm-alerts: regular blockquote is unaffected") {
+    let md = "> This is a regular blockquote without an alert prefix."
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(html.contains("<blockquote"), "Regular blockquote should still render as blockquote")
+    try expect(!html.contains("[!"), "Regular blockquote should not contain alert markers")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()

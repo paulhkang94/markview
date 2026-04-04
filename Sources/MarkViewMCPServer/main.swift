@@ -1,5 +1,6 @@
 import Foundation
 import MCP
+import MarkViewCore
 
 @main
 struct MarkViewMCPServer {
@@ -46,6 +47,25 @@ struct MarkViewMCPServer {
                         "required": .array([.string("path")])
                     ])
                 ),
+                Tool(
+                    name: "lint_file",
+                    description: "Lint a markdown file using MarkView's built-in linter. Returns line-by-line diagnostics (warnings and errors) for 9 rules: inconsistent-headings, trailing-whitespace, missing-blank-lines, duplicate-headings, broken-links, unclosed-fences, unclosed-formatting, mismatched-brackets, invalid-tables.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "path": .object([
+                                "type": .string("string"),
+                                "description": .string("Absolute path to the markdown file to lint")
+                            ]),
+                            "rules": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("string")]),
+                                "description": .string("Optional list of rule names to enable. Defaults to all rules. Valid: inconsistent-headings, trailing-whitespace, missing-blank-lines, duplicate-headings, broken-links, unclosed-fences, unclosed-formatting, mismatched-brackets, invalid-tables")
+                            ])
+                        ]),
+                        "required": .array([.string("path")])
+                    ])
+                ),
             ])
         }
 
@@ -55,6 +75,8 @@ struct MarkViewMCPServer {
                 return try handlePreviewMarkdown(params)
             case "open_file":
                 return try handleOpenFile(params)
+            case "lint_file":
+                return try handleLintFile(params)
             default:
                 return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
             }
@@ -144,5 +166,55 @@ struct MarkViewMCPServer {
             content: [.text("Opened in MarkView: \(resolvedPath)")],
             isError: false
         )
+    }
+
+    static func handleLintFile(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let path = params.arguments?["path"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: path")], isError: true)
+        }
+
+        let resolvedPath = (path as NSString).standardizingPath
+        guard FileManager.default.fileExists(atPath: resolvedPath) else {
+            return .init(content: [.text("File not found: \(resolvedPath)")], isError: true)
+        }
+
+        let ext = (resolvedPath as NSString).pathExtension.lowercased()
+        let markdownExtensions = ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn"]
+        guard markdownExtensions.contains(ext) else {
+            return .init(
+                content: [.text("Not a markdown file (.\(ext)). Supported: \(markdownExtensions.joined(separator: ", "))")],
+                isError: true
+            )
+        }
+
+        let content: String
+        do {
+            content = try String(contentsOfFile: resolvedPath, encoding: .utf8)
+        } catch {
+            return .init(content: [.text("Failed to read file: \(error.localizedDescription)")], isError: true)
+        }
+
+        // Parse optional rules filter
+        var activeRules: Set<LintRule>? = nil
+        if let rulesArg = params.arguments?["rules"],
+           case let .array(ruleValues) = rulesArg {
+            let ruleStrings = ruleValues.compactMap { $0.stringValue }
+            let parsed = ruleStrings.compactMap { LintRule(rawValue: $0) }
+            if !parsed.isEmpty { activeRules = Set(parsed) }
+        }
+
+        let diagnostics = MarkdownLinter().lint(content, rules: activeRules)
+
+        if diagnostics.isEmpty {
+            return .init(content: [.text("No issues found in \(resolvedPath)")], isError: false)
+        }
+
+        let lines = diagnostics.map { d -> String in
+            var line = "\(d.severity.rawValue.uppercased()) [\(d.rule.rawValue)] line \(d.line), col \(d.column): \(d.message)"
+            if let fix = d.fix { line += " → Fix: \(fix)" }
+            return line
+        }
+        let summary = "\(diagnostics.count) issue(s) found in \(resolvedPath):\n" + lines.joined(separator: "\n")
+        return .init(content: [.text(summary)], isError: false)
     }
 }

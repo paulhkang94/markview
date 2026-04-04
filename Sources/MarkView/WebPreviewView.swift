@@ -84,6 +84,8 @@ struct WebPreviewView: NSViewRepresentable {
         private var lastFileIdentifier: String?
         private var prismJS: String?
         private var mermaidJS: String?
+        private var katexJS: String?
+        private var katexAutoRenderJS: String?
         /// When true, ignore the next scroll event from JS (it's from a programmatic scroll).
         var suppressNextScroll = false
 
@@ -110,6 +112,30 @@ struct WebPreviewView: NSViewRepresentable {
             } else {
                 AppLogger.render.warning("Mermaid.js bundle resource not found")
                 AppLogger.breadcrumb("Mermaid.js resource missing", category: "render", level: .warning)
+            }
+
+            if let katexURL = ResourceBundle.url(forResource: "katex.min", withExtension: "js", subdirectory: "Resources") {
+                do {
+                    katexJS = try String(contentsOf: katexURL, encoding: .utf8)
+                } catch {
+                    AppLogger.render.warning("Failed to load KaTeX bundle: \(error.localizedDescription)")
+                    AppLogger.breadcrumb("KaTeX load failed", category: "render", level: .warning)
+                }
+            } else {
+                AppLogger.render.warning("KaTeX bundle resource not found")
+                AppLogger.breadcrumb("KaTeX resource missing", category: "render", level: .warning)
+            }
+
+            if let arURL = ResourceBundle.url(forResource: "auto-render.min", withExtension: "js", subdirectory: "Resources") {
+                do {
+                    katexAutoRenderJS = try String(contentsOf: arURL, encoding: .utf8)
+                } catch {
+                    AppLogger.render.warning("Failed to load KaTeX auto-render bundle: \(error.localizedDescription)")
+                    AppLogger.breadcrumb("KaTeX auto-render load failed", category: "render", level: .warning)
+                }
+            } else {
+                AppLogger.render.warning("KaTeX auto-render bundle resource not found")
+                AppLogger.breadcrumb("KaTeX auto-render resource missing", category: "render", level: .warning)
             }
         }
 
@@ -290,7 +316,7 @@ struct WebPreviewView: NSViewRepresentable {
 
             if needsFullReload {
                 pendingFileReload = false
-                let fullHTML = injectMermaid(into: injectPrism(into: styledHTML))
+                let fullHTML = injectKaTeX(into: injectMermaid(into: injectPrism(into: styledHTML)))
                 loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true
             } else {
@@ -507,6 +533,29 @@ struct WebPreviewView: NSViewRepresentable {
             </script>
             """
             return html.replacingOccurrences(of: "</body>", with: "\(scriptTag)\n</body>")
+        }
+
+        private func injectKaTeX(into html: String) -> String {
+            guard let katexJS = katexJS, let autoRenderJS = katexAutoRenderJS else { return html }
+            let script = """
+            <script>\(katexJS)</script>
+            <script>
+            \(autoRenderJS)
+            document.addEventListener("DOMContentLoaded", function() {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false},
+                        {left: "\\\\(", right: "\\\\)", display: false},
+                        {left: "\\\\[", right: "\\\\]", display: true}
+                    ],
+                    output: "mathml",
+                    throwOnError: false
+                });
+            });
+            </script>
+            """
+            return html.replacingOccurrences(of: "</body>", with: "\(script)\n</body>")
         }
 
         private func updateContentViaJS(_ html: String, in webView: WKWebView) {

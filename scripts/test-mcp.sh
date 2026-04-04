@@ -137,7 +137,7 @@ if resp:
         tool_names = [t['name'] for t in tools]
         test('lists preview_markdown tool', 'preview_markdown' in tool_names)
         test('lists open_file tool', 'open_file' in tool_names)
-        test('exactly 2 tools', len(tools) == 2)
+        test('exactly 3 tools', len(tools) == 3)
 
         # Check schema structure
         for t in tools:
@@ -515,6 +515,85 @@ console.log(JSON.stringify({hasCorrectPath}));
     else
         fail "npm: index.js binary path should be 'markview-mcp-server-binary' to avoid infinite loop"
     fi
+fi
+
+# --- Step N: lint_file Tool Tests ---
+echo ""
+echo "--- lint_file Tool Tests ---"
+
+python3 - "$MCP_BIN" << 'PYEOF'
+import subprocess, json, sys, os, tempfile
+
+MCP_BIN = sys.argv[1]
+passes = 0
+fails = 0
+
+def test(name, condition):
+    global passes, fails
+    if condition:
+        print(f"  \u2713 {name}")
+        passes += 1
+    else:
+        print(f"  \u2717 {name}")
+        fails += 1
+
+def send_recv(proc, req):
+    proc.stdin.write((json.dumps(req) + "\n").encode())
+    proc.stdin.flush()
+    line = proc.stdout.readline()
+    return json.loads(line) if line else {}
+
+proc = subprocess.Popen(
+    [MCP_BIN],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+)
+send_recv(proc, {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
+proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}\n')
+proc.stdin.flush()
+
+r = send_recv(proc, {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})
+tool_names = [t["name"] for t in r.get("result",{}).get("tools",[])]
+test("lint_file listed in tools/list", "lint_file" in tool_names)
+
+r = send_recv(proc, {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lint_file","arguments":{}}})
+test("lint_file missing path returns isError", r.get("result",{}).get("isError") == True)
+
+r = send_recv(proc, {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lint_file","arguments":{"path":"/tmp/nonexistent_mcp_xyz.md"}}})
+test("lint_file nonexistent file returns isError", r.get("result",{}).get("isError") == True)
+
+clean = "# Hello\n\nThis is clean markdown.\n"
+with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+    f.write(clean); clean_path = f.name
+try:
+    r = send_recv(proc, {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"lint_file","arguments":{"path":clean_path}}})
+    res = r.get("result",{})
+    test("lint_file clean file: isError false", res.get("isError") == False)
+    test("lint_file clean file: reports no issues", "No issues" in str(res.get("content","")))
+finally:
+    os.unlink(clean_path)
+
+dirty = "# Hello\n# Hello\ntrailing   \n"
+with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+    f.write(dirty); dirty_path = f.name
+try:
+    r = send_recv(proc, {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"lint_file","arguments":{"path":dirty_path}}})
+    res = r.get("result",{})
+    content = str(res.get("content",""))
+    test("lint_file dirty file: isError false", res.get("isError") == False)
+    test("lint_file dirty file: reports issues", "issue" in content.lower())
+    test("lint_file dirty file: includes rule name", "duplicate" in content.lower() or "trailing" in content.lower())
+finally:
+    os.unlink(dirty_path)
+
+proc.terminate()
+print(f"\n  lint_file subtests: {passes} passed, {fails} failed")
+sys.exit(0 if fails == 0 else 1)
+PYEOF
+
+if [ $? -eq 0 ]; then
+    PASS=$((PASS + 7))
+else
+    FAIL=$((FAIL + 1))
 fi
 
 # Summary

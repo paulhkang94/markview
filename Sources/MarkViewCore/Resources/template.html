@@ -140,6 +140,23 @@
         /* width/height attrs removed by JS post-processing so viewBox scales with zoom */
         .mermaid svg { width: 100%; max-width: 100%; height: auto; display: block; margin: 0 auto; }
 
+        /* GFM Alert callouts ([!NOTE], [!WARNING], etc.) */
+        .alert { border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid; }
+        .alert p { margin: 0; }
+        .alert-title { font-weight: 600; margin-bottom: 6px !important; display: flex; align-items: center; gap: 6px; }
+        .alert-note      { background: #ddf4ff; border-color: #54aeff; color: #0550ae; }
+        .alert-tip       { background: #dafbe1; border-color: #4ac26b; color: #116329; }
+        .alert-important { background: #fbefff; border-color: #c297ff; color: #6e40c9; }
+        .alert-warning   { background: #fff8c5; border-color: #d4a72c; color: #7d4e00; }
+        .alert-caution   { background: #ffebe9; border-color: #ff8182; color: #a40e26; }
+        @media (prefers-color-scheme: dark) {
+            .alert-note      { background: #0d2d6b; border-color: #1f6feb; color: #cae8ff; }
+            .alert-tip       { background: #062d0f; border-color: #238636; color: #aff5b4; }
+            .alert-important { background: #21003d; border-color: #8957e5; color: #d2a8ff; }
+            .alert-warning   { background: #2d1e00; border-color: #9e6a03; color: #e3b341; }
+            .alert-caution   { background: #300b0b; border-color: #da3633; color: #ffa198; }
+        }
+
         /* Print */
         @media print {
             body { max-width: none; padding: 0; }
@@ -161,6 +178,21 @@
             table.parentNode.insertBefore(wrapper, table);
             wrapper.appendChild(table);
         });
+        // Transform GFM alert callouts: blockquotes starting with [!TYPE]
+        (function() {
+            var icons   = {note:'ℹ️', tip:'💡', important:'❗', warning:'⚠️', caution:'🔴'};
+            var labels  = {note:'Note', tip:'Tip', important:'Important', warning:'Warning', caution:'Caution'};
+            document.querySelectorAll('article blockquote').forEach(function(bq) {
+                var firstP = bq.querySelector('p');
+                if (!firstP) return;
+                var m = firstP.textContent.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$/i);
+                if (!m) return;
+                var type = m[1].toLowerCase();
+                bq.className = 'alert alert-' + type;
+                firstP.innerHTML = '<strong>' + icons[type] + ' ' + labels[type] + '</strong>';
+                firstP.className = 'alert-title';
+            });
+        })();
         // Inline Prism.js will be loaded here by the app
     </script>
 </body>
