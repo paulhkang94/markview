@@ -139,6 +139,65 @@ const TOOLS = [
       required: ["path"],
     },
   },
+  {
+    name: "lint_content",
+    description:
+      "Lint raw markdown content using MarkView's built-in linter. Returns line-by-line " +
+      "diagnostics (warnings and errors) for 9 rules: inconsistent-headings, " +
+      "trailing-whitespace, missing-blank-lines, duplicate-headings, broken-links, " +
+      "unclosed-fences, unclosed-formatting, mismatched-brackets, invalid-tables. " +
+      "Unlike lint_file, no file path is required — pass content directly.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "Raw markdown content to lint",
+        },
+        rules: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional list of rule names to enable. Defaults to all rules.",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "get_word_count",
+    description:
+      "Count words, characters, lines, and estimated tokens in markdown content. " +
+      "Returns structured JSON with word_count, char_count, line_count, and " +
+      "estimated_token_count (approximated as ceil(char_count / 4)).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "Markdown content to count",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "outline",
+    description:
+      "Extract the heading tree from markdown content. Returns a JSON array of headings " +
+      "with their level (1–6), text, and 1-based line number. Useful for navigating large " +
+      "documents or verifying document structure.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "Markdown content to extract headings from",
+        },
+      },
+      required: ["content"],
+    },
+  },
 ];
 
 /**

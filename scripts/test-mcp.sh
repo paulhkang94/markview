@@ -140,7 +140,10 @@ if resp:
         test('lists render_diff_file tool', 'render_diff_file' in tool_names)
         test('lists render_diff_raw tool', 'render_diff_raw' in tool_names)
         test('lists get_changed_files tool', 'get_changed_files' in tool_names)
-        test('exactly 6 tools', len(tools) == 6)  # 3 original + 3 new: render_diff_file, render_diff_raw, get_changed_files
+        test('lists lint_content tool', 'lint_content' in tool_names)
+        test('lists get_word_count tool', 'get_word_count' in tool_names)
+        test('lists outline tool', 'outline' in tool_names)
+        test('exactly 9 tools', len(tools) == 9)  # 6 existing + 3 new: lint_content, get_word_count, outline
 
         # Check schema structure
         for t in tools:
@@ -404,6 +407,150 @@ index 1234567..abcdefg 100644
         r = gcf_bad_resp.get('result', {})
         test('get_changed_files invalid path: isError true', r.get('isError', False) == True)
 
+    # Test: lint_content — clean content returns no issues
+    lint_clean_req = {
+        'jsonrpc': '2.0', 'id': 60, 'method': 'tools/call',
+        'params': {'name': 'lint_content', 'arguments': {'content': '# Hello\n\nThis is clean markdown.\n'}}
+    }
+    lint_clean_resp = send_and_receive(proc, lint_clean_req)
+    test('lint_content: returns response for clean content', lint_clean_resp is not None)
+    if lint_clean_resp:
+        r = lint_clean_resp.get('result', {})
+        text = r.get('content', [{}])[0].get('text', '')
+        test('lint_content: clean content reports no issues', 'No issues found' in text)
+        test('lint_content: clean content isError false', r.get('isError', False) == False)
+
+    # Test: lint_content — dirty content with trailing whitespace reports issue
+    lint_dirty_req = {
+        'jsonrpc': '2.0', 'id': 61, 'method': 'tools/call',
+        'params': {'name': 'lint_content', 'arguments': {'content': '# Hello   \n\nTrailing spaces above.\n'}}
+    }
+    lint_dirty_resp = send_and_receive(proc, lint_dirty_req)
+    test('lint_content: returns response for dirty content', lint_dirty_resp is not None)
+    if lint_dirty_resp:
+        r = lint_dirty_resp.get('result', {})
+        text = r.get('content', [{}])[0].get('text', '')
+        test('lint_content: dirty content reports at least 1 issue', 'issue' in text)
+        test('lint_content: dirty content isError false (issues ≠ tool error)', r.get('isError', False) == False)
+
+    # Test: lint_content — missing required parameter returns isError
+    lint_missing_req = {
+        'jsonrpc': '2.0', 'id': 62, 'method': 'tools/call',
+        'params': {'name': 'lint_content', 'arguments': {}}
+    }
+    lint_missing_resp = send_and_receive(proc, lint_missing_req)
+    test('lint_content: missing content param returns response', lint_missing_resp is not None)
+    if lint_missing_resp:
+        r = lint_missing_resp.get('result', {})
+        test('lint_content: missing content param is error', r.get('isError', False) == True)
+
+    # Test: get_word_count — returns correct JSON shape
+    wc_req = {
+        'jsonrpc': '2.0', 'id': 63, 'method': 'tools/call',
+        'params': {'name': 'get_word_count', 'arguments': {'content': '# Hello World\n\nOne two three four five.\n'}}
+    }
+    wc_resp = send_and_receive(proc, wc_req)
+    test('get_word_count: returns response', wc_resp is not None)
+    if wc_resp:
+        r = wc_resp.get('result', {})
+        text = r.get('content', [{}])[0].get('text', '')
+        test('get_word_count: isError false', r.get('isError', False) == False)
+        try:
+            data = json.loads(text)
+            test('get_word_count: has word_count field', 'word_count' in data)
+            test('get_word_count: has char_count field', 'char_count' in data)
+            test('get_word_count: has line_count field', 'line_count' in data)
+            test('get_word_count: has estimated_token_count field', 'estimated_token_count' in data)
+            test('get_word_count: word_count > 0', data.get('word_count', 0) > 0)
+            test('get_word_count: line_count > 0', data.get('line_count', 0) > 0)
+            test('get_word_count: char_count > 0', data.get('char_count', 0) > 0)
+            test('get_word_count: estimated_token_count > 0', data.get('estimated_token_count', 0) > 0)
+        except Exception:
+            test('get_word_count: response is valid JSON', False)
+
+    # Test: get_word_count — missing content param
+    wc_missing_req = {
+        'jsonrpc': '2.0', 'id': 64, 'method': 'tools/call',
+        'params': {'name': 'get_word_count', 'arguments': {}}
+    }
+    wc_missing_resp = send_and_receive(proc, wc_missing_req)
+    test('get_word_count: missing content param returns response', wc_missing_resp is not None)
+    if wc_missing_resp:
+        r = wc_missing_resp.get('result', {})
+        test('get_word_count: missing content param is error', r.get('isError', False) == True)
+
+    # Test: outline — returns heading array with correct shape
+    outline_req = {
+        'jsonrpc': '2.0', 'id': 65, 'method': 'tools/call',
+        'params': {'name': 'outline', 'arguments': {'content': '# Title\n\n## Section 1\n\nSome text.\n\n### Subsection\n\n## Section 2\n'}}
+    }
+    outline_resp = send_and_receive(proc, outline_req)
+    test('outline: returns response', outline_resp is not None)
+    if outline_resp:
+        r = outline_resp.get('result', {})
+        text = r.get('content', [{}])[0].get('text', '')
+        test('outline: isError false', r.get('isError', False) == False)
+        try:
+            headings = json.loads(text)
+            test('outline: returns a list', isinstance(headings, list))
+            test('outline: finds 4 headings', len(headings) == 4)
+            if headings:
+                h0 = headings[0]
+                test('outline: first heading has level field', 'level' in h0)
+                test('outline: first heading has text field', 'text' in h0)
+                test('outline: first heading has line field', 'line' in h0)
+                test('outline: h1 level is 1', h0.get('level') == 1)
+                test('outline: h1 text is Title', h0.get('text') == 'Title')
+                test('outline: h1 line is 1', h0.get('line') == 1)
+            if len(headings) >= 2:
+                test('outline: second heading is h2', headings[1].get('level') == 2)
+                test('outline: second heading text', headings[1].get('text') == 'Section 1')
+        except Exception:
+            test('outline: response is valid JSON array', False)
+
+    # Test: outline — empty document returns empty array
+    outline_empty_req = {
+        'jsonrpc': '2.0', 'id': 66, 'method': 'tools/call',
+        'params': {'name': 'outline', 'arguments': {'content': 'No headings here.\n'}}
+    }
+    outline_empty_resp = send_and_receive(proc, outline_empty_req)
+    test('outline: empty document returns response', outline_empty_resp is not None)
+    if outline_empty_resp:
+        r = outline_empty_resp.get('result', {})
+        text = r.get('content', [{}])[0].get('text', '')
+        try:
+            headings = json.loads(text)
+            test('outline: no headings returns empty array', headings == [])
+        except Exception:
+            test('outline: no headings returns valid JSON', False)
+
+    # Test: outline — headings inside fenced code blocks are ignored
+    outline_fence_req = {
+        'jsonrpc': '2.0', 'id': 67, 'method': 'tools/call',
+        'params': {'name': 'outline', 'arguments': {'content': '# Real Heading\n\n```\n# Not a heading\n```\n\n## Another Real\n'}}
+    }
+    outline_fence_resp = send_and_receive(proc, outline_fence_req)
+    test('outline: fenced headings returns response', outline_fence_resp is not None)
+    if outline_fence_resp:
+        r = outline_fence_resp.get('result', {})
+        text = r.get('content', [{}])[0].get('text', '')
+        try:
+            headings = json.loads(text)
+            test('outline: fenced code headings excluded (exactly 2 real headings)', len(headings) == 2)
+        except Exception:
+            test('outline: fenced headings returns valid JSON', False)
+
+    # Test: outline — missing content param
+    outline_missing_req = {
+        'jsonrpc': '2.0', 'id': 68, 'method': 'tools/call',
+        'params': {'name': 'outline', 'arguments': {}}
+    }
+    outline_missing_resp = send_and_receive(proc, outline_missing_req)
+    test('outline: missing content param returns response', outline_missing_resp is not None)
+    if outline_missing_resp:
+        r = outline_missing_resp.get('result', {})
+        test('outline: missing content param is error', r.get('isError', False) == True)
+
     # Test: open_file with valid markdown (E2E)
     if not SKIP_E2E and os.path.isdir('/Applications/MarkView.app'):
         print('')
@@ -522,6 +669,9 @@ elif [ ! -d "$NPM_MODULES" ]; then
     grep -q 'render_diff_file' "$NPM_INDEX" && pass "npm: render_diff_file tool defined" || fail "npm: render_diff_file missing"
     grep -q 'render_diff_raw' "$NPM_INDEX" && pass "npm: render_diff_raw tool defined" || fail "npm: render_diff_raw missing"
     grep -q 'get_changed_files' "$NPM_INDEX" && pass "npm: get_changed_files tool defined" || fail "npm: get_changed_files missing"
+    grep -q 'lint_content' "$NPM_INDEX" && pass "npm: lint_content tool defined" || fail "npm: lint_content missing"
+    grep -q 'get_word_count' "$NPM_INDEX" && pass "npm: get_word_count tool defined" || fail "npm: get_word_count missing"
+    grep -q 'outline' "$NPM_INDEX" && pass "npm: outline tool defined" || fail "npm: outline missing"
 else
     NODE_CHECK=$(node -e "
 const m = require('$NPM_INDEX');
@@ -534,7 +684,10 @@ const hasLintFile = src.includes('lint_file');
 const hasRenderDiffFile = src.includes('render_diff_file');
 const hasRenderDiffRaw = src.includes('render_diff_raw');
 const hasGetChangedFiles = src.includes('get_changed_files');
-console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile, hasLintFile, hasRenderDiffFile, hasRenderDiffRaw, hasGetChangedFiles}));
+const hasLintContent = src.includes('lint_content');
+const hasGetWordCount = src.includes('get_word_count');
+const hasOutline = src.includes('outline');
+console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile, hasLintFile, hasRenderDiffFile, hasRenderDiffRaw, hasGetChangedFiles, hasLintContent, hasGetWordCount, hasOutline}));
 " 2>/dev/null || echo '{}')
 
     if echo "$NODE_CHECK" | grep -q '"hasFn":true'; then
@@ -583,6 +736,24 @@ console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile, hasLint
         pass "npm: sandbox server defines get_changed_files tool"
     else
         fail "npm: sandbox server missing get_changed_files tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasLintContent":true'; then
+        pass "npm: sandbox server defines lint_content tool"
+    else
+        fail "npm: sandbox server missing lint_content tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasGetWordCount":true'; then
+        pass "npm: sandbox server defines get_word_count tool"
+    else
+        fail "npm: sandbox server missing get_word_count tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasOutline":true'; then
+        pass "npm: sandbox server defines outline tool"
+    else
+        fail "npm: sandbox server missing outline tool"
     fi
 
     BINARY_PATH_CHECK=$(node -e "

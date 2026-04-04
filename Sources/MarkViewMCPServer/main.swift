@@ -192,6 +192,53 @@ struct MarkViewMCPServer {
                         "required": .array([.string("path")])
                     ])
                 ),
+                Tool(
+                    name: "lint_content",
+                    description: "Lint raw markdown content using MarkView's built-in linter. Returns line-by-line diagnostics (warnings and errors) for 9 rules: inconsistent-headings, trailing-whitespace, missing-blank-lines, duplicate-headings, broken-links, unclosed-fences, unclosed-formatting, mismatched-brackets, invalid-tables. Unlike lint_file, no file path is required — pass content directly.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "content": .object([
+                                "type": .string("string"),
+                                "description": .string("Raw markdown content to lint")
+                            ]),
+                            "rules": .object([
+                                "type": .string("array"),
+                                "items": .object(["type": .string("string")]),
+                                "description": .string("Optional list of rule names to enable. Defaults to all rules. Valid: inconsistent-headings, trailing-whitespace, missing-blank-lines, duplicate-headings, broken-links, unclosed-fences, unclosed-formatting, mismatched-brackets, invalid-tables")
+                            ])
+                        ]),
+                        "required": .array([.string("content")])
+                    ])
+                ),
+                Tool(
+                    name: "get_word_count",
+                    description: "Count words, characters, lines, and estimated tokens in markdown content. Returns structured JSON with word_count, char_count, line_count, and estimated_token_count (approximated as ceil(char_count / 4)).",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "content": .object([
+                                "type": .string("string"),
+                                "description": .string("Markdown content to count")
+                            ])
+                        ]),
+                        "required": .array([.string("content")])
+                    ])
+                ),
+                Tool(
+                    name: "outline",
+                    description: "Extract the heading tree from markdown content. Returns a JSON array of headings with their level (1–6), text, and 1-based line number. Useful for navigating large documents or verifying document structure.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "content": .object([
+                                "type": .string("string"),
+                                "description": .string("Markdown content to extract headings from")
+                            ])
+                        ]),
+                        "required": .array([.string("content")])
+                    ])
+                ),
             ])
         }
 
@@ -209,6 +256,12 @@ struct MarkViewMCPServer {
                 return try handleRenderDiffRaw(params)
             case "get_changed_files":
                 return try handleGetChangedFiles(params)
+            case "lint_content":
+                return try handleLintContent(params)
+            case "get_word_count":
+                return try handleGetWordCount(params)
+            case "outline":
+                return try handleOutline(params)
             default:
                 return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
             }
@@ -514,6 +567,113 @@ struct MarkViewMCPServer {
             content: [.text(combinedOutput)],
             isError: false
         )
+    }
+
+    // MARK: - lint_content
+
+    static func handleLintContent(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let content = params.arguments?["content"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: content")], isError: true)
+        }
+
+        // Parse optional rules filter (same logic as lint_file)
+        var activeRules: Set<LintRule>? = nil
+        if let rulesArg = params.arguments?["rules"],
+           case let .array(ruleValues) = rulesArg {
+            let ruleStrings = ruleValues.compactMap { $0.stringValue }
+            let parsed = ruleStrings.compactMap { LintRule(rawValue: $0) }
+            if !parsed.isEmpty { activeRules = Set(parsed) }
+        }
+
+        let diagnostics = MarkdownLinter().lint(content, rules: activeRules)
+
+        if diagnostics.isEmpty {
+            return .init(content: [.text("No issues found.")], isError: false)
+        }
+
+        let lines = diagnostics.map { d -> String in
+            var line = "\(d.severity.rawValue.uppercased()) [\(d.rule.rawValue)] line \(d.line), col \(d.column): \(d.message)"
+            if let fix = d.fix { line += " → Fix: \(fix)" }
+            return line
+        }
+        let summary = "\(diagnostics.count) issue(s) found:\n" + lines.joined(separator: "\n")
+        return .init(content: [.text(summary)], isError: false)
+    }
+
+    // MARK: - get_word_count
+
+    static func handleGetWordCount(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let content = params.arguments?["content"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: content")], isError: true)
+        }
+
+        let lineCount = content.components(separatedBy: "\n").count
+        let charCount = content.unicodeScalars.count
+        // Word count: split on whitespace, filter empty components
+        let wordCount = content.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .count
+        // Token estimate: ~4 chars per token (GPT/Claude approximation), round up
+        let estimatedTokenCount = (charCount + 3) / 4
+
+        struct WordCountResult: Encodable {
+            let word_count: Int
+            let char_count: Int
+            let line_count: Int
+            let estimated_token_count: Int
+        }
+
+        let result = WordCountResult(
+            word_count: wordCount,
+            char_count: charCount,
+            line_count: lineCount,
+            estimated_token_count: estimatedTokenCount
+        )
+        let jsonData = (try? JSONEncoder().encode(result)) ?? Data()
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+        return .init(content: [.text(jsonString)], isError: false)
+    }
+
+    // MARK: - outline
+
+    static func handleOutline(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let content = params.arguments?["content"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: content")], isError: true)
+        }
+
+        struct HeadingEntry: Encodable {
+            let level: Int
+            let text: String
+            let line: Int
+        }
+
+        var headings: [HeadingEntry] = []
+        var inFence = false
+        let lines = content.components(separatedBy: "\n")
+
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Toggle fence state on ``` lines
+            if trimmed.hasPrefix("```") { inFence.toggle(); continue }
+            if inFence { continue }
+
+            // Detect ATX headings: 1–6 # chars followed by a space (or end of line)
+            guard trimmed.hasPrefix("#") else { continue }
+            var level = 0
+            for ch in trimmed {
+                if ch == "#" { level += 1 } else { break }
+            }
+            guard level >= 1, level <= 6 else { continue }
+            // Must have a space after the hashes (or be just hashes — treat as empty heading)
+            let afterHashes = trimmed.dropFirst(level)
+            guard afterHashes.isEmpty || afterHashes.first == " " else { continue }
+            let headingText = afterHashes.trimmingCharacters(in: .whitespaces)
+            headings.append(HeadingEntry(level: level, text: headingText, line: i + 1))
+        }
+
+        let jsonData = (try? JSONEncoder().encode(headings)) ?? Data()
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "[]"
+        return .init(content: [.text(jsonString)], isError: false)
     }
 
     // MARK: - Helpers
