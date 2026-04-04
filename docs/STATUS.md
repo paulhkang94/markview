@@ -1,0 +1,196 @@
+# MarkView — Status & Architecture Reference
+
+Living document. Updated each session. Source of truth for current state,
+pending work, and key architectural decisions.
+
+---
+
+## Current Release
+
+| | |
+|---|---|
+| **App version** | v1.3.0 (build 240) |
+| **npm package** | mcp-server-markview v1.3.0 |
+| **BINARY_VERSION** | 1.2.6 (intentionally decoupled — points to last notarized binary) |
+| **MCP registry** | `io.github.paulhkang94/markview` — active |
+| **Tag** | `v1.3.0` pushed 2026-04-04 |
+
+> **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
+> successfully notarized GitHub Release binary. It is intentionally decoupled from
+> the npm package version. npm patches (JS wrapper changes) do NOT bump BINARY_VERSION.
+> Only run `release.sh --bump-binary` when a new notarized binary is published to GitHub.
+
+---
+
+## Feature Set (v1.3.0)
+
+### Rendering
+| Feature | Status | Notes |
+|---------|--------|-------|
+| GitHub Flavored Markdown | ✅ | cmark-gfm, all extensions |
+| Syntax highlighting | ✅ | Prism.js, 18+ languages |
+| Mermaid diagrams | ✅ | 6 types: flowchart, sequence, class, Gantt, ER, pie |
+| KaTeX math | ✅ | `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, MathML output |
+| GFM alerts (`> [!NOTE]`) | ✅ | All 5 types, dark mode, handles GitHub-standard format |
+| TOC sidebar | ✅ | h1–h4, scroll-spy, ≥3 headings threshold |
+| Quick Look (Finder spacebar) | ✅ | Full rendering pipeline |
+| PDF / HTML export | ✅ | Via print dialog |
+
+### MCP Server (3 tools)
+| Tool | Description |
+|------|-------------|
+| `preview_markdown` | Render content in native window |
+| `open_file` | Open .md file with live reload |
+| `lint_file` | 9-rule linter, returns line diagnostics |
+| **Resources** | `markview://preview/latest` — read back rendered content |
+
+### App
+| Feature | Status |
+|---------|--------|
+| Split-pane editor | ✅ |
+| File watching (atomic save) | ✅ |
+| Find & Replace | ✅ |
+| Word count / stats | ✅ |
+| CLI (`markview file.md`) | ✅ `scripts/markview-cli.sh` |
+| Dark mode (system + manual) | ✅ |
+
+---
+
+## Test Pyramid
+
+```
+Tier 1 — Swift unit tests (cmark-gfm output)          280 tests  SPM, fast
+Tier 2 — Golden HTML body snapshots                    8 fixtures  git-committed
+Tier 3 — Full-pipeline structural tests (HTMLPipeline) 9 tests    NEW Apr 2026
+Tier 4 — MCP protocol tests (JSON-RPC)                21 tests   --skip-e2e in CI
+
+MISSING (planned):
+Tier 5 — Playwright DOM tests (post-JS DOM state)      0 tests    Step 1 below
+Tier 6 — DOM snapshot goldens (rendered/*.dom.json)    0 files    Step 2 below
+```
+
+**Critical gap closed Apr 4 2026**: `HTMLPipeline.swift` extracted from
+`WebPreviewView.swift` (AppKit) into `MarkViewCore` (SPM-testable). The injection
+pipeline (`injectPrism` → `injectMermaid` → `injectKaTeX`) is now unit-testable.
+Previously 413 tests passed while the app rendered broken output.
+
+**Root cause of Apr 4 bugs (both missed by tests):**
+1. `mermaid.min.js` bundles DOMPurify which contains `</body>` as a JS string literal.
+   `replacingOccurrences(of: "</body>", ...)` replaced ALL occurrences → JS source
+   rendered as visible text. Fix: `insertBeforeBodyClose` uses `.backwards` search.
+2. GFM alerts JS regex `^\[!NOTE\]$` required the ENTIRE paragraph = just the marker.
+   cmark-gfm puts content on the same line → alerts always showed as plain blockquotes.
+   Fix: match at start, strip marker prefix from innerHTML.
+
+---
+
+## Pending Work: Testing Infrastructure
+
+### Step 1 — Playwright fixture tests for client-side transforms (P0, 1 day)
+```
+tests/rendered/
+  alerts.spec.js     — assert .alert-note exists, no raw [!NOTE] text
+  mermaid.spec.js    — assert svg present, no JS source in article
+  katex.spec.js      — assert <math> elements or .katex spans present
+  prism.spec.js      — assert .token spans in code blocks
+```
+These would have caught BOTH Apr 4 bugs immediately.
+Pattern: `await page.waitForFunction(() => window.rendered === true)` sentinel.
+
+### Step 2 — DOM snapshot goldens (P1, 1 day)
+```
+Tests/rendered/*.dom.json   — normalized DOM after JS execution
+```
+Committed to git. CI fails on unexpected structural diff.
+Catches regressions that behavioral assertions miss.
+
+### Step 3 — PostToolUse hook: render-verify gate (P2, 2 hours)
+Extend `commit-gate.sh` with `.last-render-verify-at` stamp.
+Any write to `template.html`, `WebPreviewView.swift`, or `*.min.js` resets it.
+Gate blocks until Playwright render-verify runs clean.
+
+### Step 4 — CL fingerprint for JS injection layer (P2, 1 hour)
+Pattern: `template\.html|WebPreviewView\.swift|\.min\.js` → `render-verify-required`
+Surfaces as cl-check warning on next tool call after edit.
+
+### Step 5 — `make rendered` regeneration command (P3, 30 min)
+Single command to update all DOM snapshots. Text-diffable in PRs.
+
+---
+
+## CI Architecture
+
+### Hermetic vs Environment-Dependent (key design principle)
+
+**Hermetic jobs** (run in any environment, no credentials, no installed artifacts):
+- `build` — swift build + swift run MarkViewTestRunner
+- `golden-check` — regenerate goldens, git diff
+- `docs-audit` — shell script, ubuntu-latest
+
+**Environment-dependent jobs** (require specific environment):
+- `verify` — needs full git history (`fetch-depth: 0`) for tag checks
+- `bundle` — needs Xcode signing certificate (GitHub Secret)
+- `mcp` — needs to build the MCP binary
+- `visual-smoke` — needs display context (advisory, `continue-on-error: true`)
+
+**Rule**: Never mix hermetic and environment-dependent checks in the same job.
+`verify.sh` originally mixed both → every push emailed a failure.
+
+### Known CI Issues (resolved)
+
+| Issue | Root cause | Fix | Status |
+|-------|-----------|-----|--------|
+| Verify fails every push | `fetch-tags:true` insufficient with shallow clone | `fetch-depth:0` | ✅ Fixed `5d5d33d` |
+| stale-release.yml YAML error | Backtick JS template literals in YAML | Rewrite with gh CLI | ✅ Fixed `be6a83d` |
+| MCP Tests: isError on CI | `preview_markdown` returned error when app not installed | Return success, add note | ✅ Fixed `be2bff7` |
+| release.sh BINARY_VERSION not updated | Sed pattern `const VERSION` vs `const BINARY_VERSION` | Add `--bump-binary` flag | ✅ Fixed `71cccf5` |
+| Verify mktemp template | `.md` before `XXXXX` suffix invalid on macOS | Use `$(mktemp ...)".md"` | ✅ Fixed |
+
+### Notification policy
+- GitHub Actions → "On GitHub, failed workflows only" (set by user Apr 4 2026)
+- With hermetic/env separation, only genuine new bugs generate notifications
+
+---
+
+## Distribution Channels
+
+| Channel | Status | Notes |
+|---------|--------|-------|
+| GitHub releases | ✅ | v1.3.0 latest |
+| Homebrew cask | ✅ | `paulhkang94/markview/markview` |
+| npm | ✅ | mcp-server-markview v1.3.0 |
+| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.3.0 |
+| awesome-mcp-servers | ✅ | PR #2139 merged 2026-03-14 |
+| Glama.ai | ✅ | Listed |
+| mcp.so | ⏳ | Submitted |
+| Smithery | ⚠️ | Exists but `isDeployed: null` — Linux sandbox can't install npm pkg |
+
+---
+
+## Adoption Metrics
+
+Run `bash scripts/metrics.sh` for current snapshot.
+
+Last snapshot: 2026-04-04
+- GitHub stars: 25 | Forks: 3
+- npm downloads (7d): 29 | (30d): 512 | YTD: 894
+- Apr 3 spike: 444 downloads — 4 npm versions published in 45 min, registry mirrors
+- Top referrer: reddit.com
+- v1.3.0 just published — next metrics check in 48h
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `Sources/MarkViewCore/HTMLPipeline.swift` | Injection pipeline (NEW — extracted for testability) |
+| `Sources/MarkViewCore/MarkdownRenderer.swift` | cmark-gfm wrapper |
+| `Sources/MarkViewCore/MarkdownLinter.swift` | 9-rule linter |
+| `Sources/MarkViewCore/Resources/template.html` | HTML template: CSS, alert/TOC JS |
+| `Sources/MarkViewMCPServer/main.swift` | MCP server: 3 tools + resources endpoint |
+| `Tests/TestRunner/Fixtures/golden-corpus.md` | Visual QA fixture — all features |
+| `scripts/metrics.sh` | Unified traction tracking |
+| `scripts/release.sh` | Release automation (`--ship`, `--bump-binary` flags) |
+| `scripts/check-version-sync.sh` | Version contract verification |
+| `docs/personal/` | Strategy, adoption, competitive docs (gitignored) |
