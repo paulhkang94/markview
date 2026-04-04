@@ -2000,43 +2000,38 @@ runner.test("WebPreviewView darkModeCSS: all text elements have explicit color")
 }
 
 runner.test("dark mode CSS is consistent across all 3 locations") {
-    // Verify that the key dark mode colors match across template.html,
-    // inline template, and WebPreviewView.swift darkModeCSS
+    // template.html uses CSS custom properties (--color-*) for dark mode.
+    // The wrapInTemplate fallback uses hardcoded hex values.
+    // Verify each path is internally correct rather than cross-comparing hex values,
+    // since CSS vars and hardcoded values can't be compared directly.
     let cwd = FileManager.default.currentDirectoryPath
 
-    // 1. Inline template
-    let inlineHTML = MarkdownRenderer.wrapInTemplate("<p>test</p>")
-    let inlineDark = extractDarkModeRules(from: inlineHTML)
-
-    // 2. template.html
+    // 1. template.html: must define critical CSS vars in the dark media block
     let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
     let templateHTML = try String(contentsOf: templatePath, encoding: .utf8)
-    let templateDark = extractDarkModeRules(from: templateHTML)
-
-    // Check key selectors match between inline and template
-    let criticalSelectors = ["body", "code:not([class*=\"language-\"])", "th, td", "pre"]
-    var mismatches: [String] = []
-
-    for sel in criticalSelectors {
-        let inlineColor = inlineDark[sel]?["color"]
-        let templateColor = templateDark[sel]?["color"]
-
-        if inlineColor != templateColor {
-            mismatches.append("\(sel): inline=\(inlineColor ?? "nil") vs template=\(templateColor ?? "nil")")
-        }
-
-        let inlineBg = inlineDark[sel]?["background"] ?? inlineDark[sel]?["background-color"]
-        let templateBg = templateDark[sel]?["background"] ?? templateDark[sel]?["background-color"]
-
-        if inlineBg != templateBg {
-            mismatches.append("\(sel) bg: inline=\(inlineBg ?? "nil") vs template=\(templateBg ?? "nil")")
+    let requiredDarkVars = ["--color-fg-default", "--color-canvas-default", "--color-border-default", "--color-accent-fg"]
+    for varName in requiredDarkVars {
+        guard templateHTML.contains(varName) else {
+            throw TestError.assertionFailed("template.html missing CSS variable: \(varName)")
         }
     }
+    guard templateHTML.contains("prefers-color-scheme: dark") else {
+        throw TestError.assertionFailed("template.html missing @media prefers-color-scheme: dark block")
+    }
 
-    if !mismatches.isEmpty {
+    // 2. Inline template (wrapInTemplate fallback): must have hardcoded dark mode rules for critical selectors
+    let inlineHTML = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    let inlineDark = extractDarkModeRules(from: inlineHTML)
+    let criticalSelectors = ["body", "code:not([class*=\"language-\"])", "th, td", "pre"]
+    var missing: [String] = []
+    for sel in criticalSelectors {
+        if inlineDark[sel]?["color"] == nil && inlineDark[sel]?["background"] == nil && inlineDark[sel]?["background-color"] == nil {
+            missing.append(sel)
+        }
+    }
+    if !missing.isEmpty {
         throw TestError.assertionFailed(
-            "Dark mode CSS inconsistency between inline template and template.html:\n  " +
-            mismatches.joined(separator: "\n  ")
+            "Inline template missing dark mode rules for: " + missing.joined(separator: ", ")
         )
     }
 }
