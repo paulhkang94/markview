@@ -4,8 +4,48 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style id="app-css">
+        /* ── CSS custom properties ────────────────────────────────────────────
+           Single source of truth for all theme colors. Light values here;
+           dark values in @media block below. Using var() everywhere means
+           no cascade/specificity fights between base rules and media queries —
+           which was causing table rows to stay white in dark mode. */
         :root {
             color-scheme: light dark;
+
+            /* Canvas */
+            --color-canvas-default:  #ffffff;
+            --color-canvas-subtle:   #f6f8fa;
+            --color-canvas-inset:    #f6f8fa;
+
+            /* Foreground */
+            --color-fg-default:      #1f2328;
+            --color-fg-muted:        #656d76;
+            --color-fg-subtle:       #8b949e;
+
+            /* Borders */
+            --color-border-default:  #d0d7de;
+            --color-border-muted:    #d1d9e0;
+
+            /* Accent */
+            --color-accent-fg:       #0969da;
+
+            /* Code */
+            --color-code-bg:         #f6f8fa;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --color-canvas-default:  #0d1117;
+                --color-canvas-subtle:   #151b23;
+                --color-canvas-inset:    #161b22;
+                --color-fg-default:      #e6edf3;
+                --color-fg-muted:        #8b949e;
+                --color-fg-subtle:       #8b949e;
+                --color-border-default:  #3d444d;
+                --color-border-muted:    #3d444d;
+                --color-accent-fg:       #58a6ff;
+                --color-code-bg:         #161b22;
+            }
         }
 
         body {
@@ -26,26 +66,14 @@
             max-width: 100%;
             margin: 0;
             padding: 16px 32px;
-            color: #1f2328;
-            background: #ffffff;
+            color: var(--color-fg-default);
+            background: var(--color-canvas-default);
             transition: color 0.15s, background 0.15s;
             box-sizing: border-box;
         }
 
-        /* Dark mode */
+        /* Prism token colors — dark mode only (light mode uses Prism defaults) */
         @media (prefers-color-scheme: dark) {
-            body { color: #e6edf3; background: #0d1117; }
-            a { color: #58a6ff; }
-            code:not([class*="language-"]) { background: #343942; color: #e6edf3; }
-            pre { background: #161b22 !important; color: #e6edf3; }
-            th, td { border-color: #3d444d; color: #e6edf3; }
-            tr { background-color: #0d1117; border-top-color: #3d444db3; }
-            tr:nth-child(2n) { background-color: #151b23; }
-            blockquote { border-left-color: #3d444d; color: #8b949e; }
-            hr { border-top-color: #3d444d; }
-            h1, h2, h3, h4, h5 { color: #e6edf3; }
-            h1, h2 { border-bottom-color: #3d444d; }
-            h6 { color: #8b949e; }
             .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8b949e; }
             .token.punctuation { color: #e6edf3; }
             .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted { color: #79c0ff; }
@@ -54,36 +82,37 @@
             .token.atrule, .token.attr-value, .token.keyword { color: #ff7b72; }
             .token.function, .token.class-name { color: #d2a8ff; }
             .token.regex, .token.important, .token.variable { color: #ffa657; }
-            :focus-visible { outline-color: #58a6ff; }
         }
 
         /* Headings */
-        h1, h2, h3, h4, h5, h6 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; }
-        h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid #d0d7de; }
-        h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid #d0d7de; }
+        h1, h2, h3, h4, h5, h6 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; color: var(--color-fg-default); }
+        h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--color-border-default); }
+        h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--color-border-default); }
         h3 { font-size: 1.25em; }
         h4 { font-size: 1em; }
         h5 { font-size: 0.875em; }
-        h6 { font-size: 0.85em; color: #656d76; }
+        h6 { font-size: 0.85em; color: var(--color-fg-muted); }
 
         /* Paragraphs and inline */
         p { margin-top: 0; margin-bottom: 16px; }
-        a { color: #0969da; text-decoration: none; }
+        a { color: var(--color-accent-fg); text-decoration: none; }
         a:hover { text-decoration: underline; }
         strong { font-weight: 600; }
 
         /* Code */
         code:not([class*="language-"]) {
-            background: rgba(175, 184, 193, 0.2);  /* GitHub Primer: visible on both light+dark bg */
+            background: rgba(175, 184, 193, 0.2);
             padding: 0.2em 0.4em;
             border-radius: 6px;
             font-size: 85%;
+            color: var(--color-fg-default);
         }
         code {
             font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
         }
         pre {
-            background: #f6f8fa;
+            background: var(--color-code-bg);
+            color: var(--color-fg-default);
             padding: 16px;
             border-radius: 6px;
             overflow-x: auto;
@@ -99,18 +128,16 @@
             display: block;
         }
 
-        /* Tables — matches GitHub Primer */
-        /* overflow-x is on .table-wrapper (injected by JS below), not the table itself,
-           so wide tables scroll horizontally without clipping at the viewport edge */
+        /* Tables — CSS vars prevent cascade conflicts in all rendering engines */
         .table-wrapper { overflow-x: auto; margin-bottom: 16px; -webkit-overflow-scrolling: touch; }
         table { border-spacing: 0; border-collapse: collapse; display: table; width: max-content; min-width: 100%; font-variant: tabular-nums; margin-bottom: 0; }
-        th, td { padding: 6px 13px; border: 1px solid #d1d9e0; }
-        th { font-weight: 600; }
-        tr { background-color: #ffffff; border-top: 1px solid #d1d9e0b3; }
-        tr:nth-child(2n) { background-color: #f6f8fa; }
+        th, td { padding: 6px 13px; border: 1px solid var(--color-border-muted); color: var(--color-fg-default); }
+        th { font-weight: 600; background-color: var(--color-canvas-subtle); }
+        tr { background-color: var(--color-canvas-default); border-top: 1px solid var(--color-border-muted); }
+        tr:nth-child(2n) { background-color: var(--color-canvas-subtle); }
 
         /* Blockquotes */
-        blockquote { border-left: 4px solid #d0d7de; margin: 0 0 16px 0; padding: 0 16px; color: #656d76; }
+        blockquote { border-left: 4px solid var(--color-border-default); margin: 0 0 16px 0; padding: 0 16px; color: var(--color-fg-muted); }
 
         /* Lists */
         ul, ol { padding-left: 2em; margin-top: 0; margin-bottom: 16px; }
@@ -123,7 +150,7 @@
         input[type="checkbox"] { margin-right: 0.5em; vertical-align: middle; }
 
         /* Horizontal rules */
-        hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+        hr { border: none; border-top: 1px solid var(--color-border-default); margin: 24px 0; }
 
         /* Images */
         img { max-width: 100%; height: auto; }
@@ -133,10 +160,10 @@
         details summary { cursor: pointer; font-weight: 600; }
 
         /* Footnotes */
-        .footnotes { font-size: 0.875em; border-top: 1px solid #d0d7de; margin-top: 24px; padding-top: 16px; }
+        .footnotes { font-size: 0.875em; border-top: 1px solid var(--color-border-default); margin-top: 24px; padding-top: 16px; }
 
         /* Focus indicators */
-        :focus-visible { outline: 2px solid #0969da; outline-offset: 2px; }
+        :focus-visible { outline: 2px solid var(--color-accent-fg); outline-offset: 2px; }
         a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
         /* RTL support */
