@@ -3866,11 +3866,21 @@ runner.test("WebPreviewView loads mermaid.min.js resource") {
 }
 
 runner.test("injectMermaid is called before loadViaFileURL") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("injectMermaid(into: injectPrism(into:"),
-        "injectMermaid must wrap injectPrism — Mermaid injected after Prism in the same pass")
-    try expect(source.contains("loadViaFileURL(fullHTML"),
-        "loadViaFileURL must receive the fully-injected HTML including Mermaid")
+    // WebPreviewView now delegates to HTMLPipeline.assemble() — verify the pipeline
+    // and the call site both exist. Injection ordering is enforced inside HTMLPipeline.
+    let webSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(webSource.contains("pipeline.assemble("),
+        "WebPreviewView must delegate injection to pipeline.assemble(styledHTML)")
+    try expect(webSource.contains("loadViaFileURL(fullHTML"),
+        "loadViaFileURL must receive the fully-injected HTML from pipeline.assemble")
+    // Confirm HTMLPipeline.assemble calls Prism before Mermaid (ordering preserved)
+    let pipelineSource = try String(contentsOfFile: "Sources/MarkViewCore/HTMLPipeline.swift", encoding: .utf8)
+    guard let prismPos = pipelineSource.range(of: "html = injectPrism(html)"),
+          let mermaidPos = pipelineSource.range(of: "html = injectMermaid(html)") else {
+        throw TestError.assertionFailed("HTMLPipeline.assemble must call injectPrism and injectMermaid")
+    }
+    try expect(prismPos.lowerBound < mermaidPos.lowerBound,
+        "injectPrism must be called before injectMermaid in HTMLPipeline.assemble()")
 }
 
 runner.test("JS fast-path calls _markviewRenderMermaid after innerHTML swap") {
@@ -4467,6 +4477,184 @@ runner.test("gfm-alerts: regular blockquote is unaffected") {
     let html = MarkdownRenderer.renderHTML(from: md)
     try expect(html.contains("<blockquote"), "Regular blockquote should still render as blockquote")
     try expect(!html.contains("[!"), "Regular blockquote should not contain alert markers")
+}
+
+// =============================================================================
+
+// =============================================================================
+// Full-Pipeline Injection Tests (HTMLPipeline)
+// =============================================================================
+// These tests cover the layer previously untestable because injection lived in
+// WebPreviewView.swift (AppKit). The </body> corruption bug was invisible to all
+// prior tests because it lived exactly here.
+// =============================================================================
+
+print("\n=== Full-Pipeline Injection Tests ===")
+
+runner.test("HTMLPipeline.loadFromBundle() loads all 4 JS bundles") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    try expect(pipeline.prismJS != nil && !pipeline.prismJS!.isEmpty, "Prism.js not loaded")
+    try expect(pipeline.mermaidJS != nil && !pipeline.mermaidJS!.isEmpty, "Mermaid.js not loaded")
+    try expect(pipeline.katexJS != nil && !pipeline.katexJS!.isEmpty, "KaTeX.js not loaded")
+    try expect(pipeline.katexAutoRenderJS != nil && !pipeline.katexAutoRenderJS!.isEmpty, "KaTeX auto-render not loaded")
+}
+
+runner.test("assembled HTML: real </body> closing tag is last HTML element") {
+    // mermaid.min.js (via DOMPurify) contains "</body>" and "</html>" as JS string literals,
+    // so the assembled document will have >1 occurrence of each — that is expected and correct.
+    // The invariant is: the document ends with </body>...</html>, with those tags in the right order.
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let body = MarkdownRenderer.renderHTML(from: "# Test\n\nHello world.")
+    let wrapped = MarkdownRenderer.wrapInTemplate(body)
+    let assembled = pipeline.assemble(wrapped)
+    // The document must end with </html> (ignoring whitespace)
+    let trimmed = assembled.trimmingCharacters(in: .whitespacesAndNewlines)
+    try expect(trimmed.hasSuffix("</html>"), "Assembled HTML must end with </html>")
+    // The final </body> must appear before the final </html>
+    guard let lastBodyRange = assembled.range(of: "</body>", options: .backwards),
+          let lastHtmlRange = assembled.range(of: "</html>", options: .backwards) else {
+        throw TestError.assertionFailed("Assembled HTML missing </body> or </html>")
+    }
+    try expect(lastBodyRange.lowerBound < lastHtmlRange.lowerBound,
+        "Final </body> must precede final </html> — document structure is broken")
+}
+
+runner.test("assembled HTML: document ends with </body></html> in correct order") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let body = MarkdownRenderer.renderHTML(from: "# Test")
+    let assembled = pipeline.assemble(MarkdownRenderer.wrapInTemplate(body))
+    // The closing sequence must be: ...scripts... </body> </html>
+    // (Mermaid JS contains </body> inside a string literal, so we use the last </body>)
+    guard let lastBodyRange = assembled.range(of: "</body>", options: .backwards),
+          let lastHtmlRange = assembled.range(of: "</html>", options: .backwards) else {
+        throw TestError.assertionFailed("Assembled HTML missing </body> or </html>")
+    }
+    try expect(lastBodyRange.lowerBound < lastHtmlRange.lowerBound,
+        "Final </body> must come before </html> in assembled document")
+}
+
+runner.test("assembled HTML: all scripts are after </article>") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let body = MarkdownRenderer.renderHTML(from: "# Test\n\n```mermaid\ngraph TD; A-->B;\n```")
+    let assembled = pipeline.assemble(MarkdownRenderer.wrapInTemplate(body))
+    guard let articleEnd = assembled.range(of: "</article>"),
+          let firstScript = assembled.range(of: "<script>") else {
+        throw TestError.assertionFailed("Missing </article> or <script> in assembled HTML")
+    }
+    try expect(firstScript.lowerBound >= articleEnd.upperBound,
+        "Script injection appears before </article> — JS source may leak into article content")
+}
+
+runner.test("assembled HTML: no <script> tag inside <article> content") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let md = try loadFixture("golden-corpus.md")
+    let body = MarkdownRenderer.renderHTML(from: md)
+    let assembled = pipeline.assemble(MarkdownRenderer.wrapInTemplate(body))
+    guard let articleStart = assembled.range(of: "<article", options: .literal),
+          let articleEnd = assembled.range(of: "</article>", options: .literal) else {
+        throw TestError.assertionFailed("No <article> element in assembled HTML")
+    }
+    let articleContent = String(assembled[articleStart.lowerBound..<articleEnd.upperBound])
+    try expect(!articleContent.contains("<script"), "<script> tag found inside <article> — injection is leaking into content area")
+}
+
+runner.test("assembled HTML: no JS source text leaking into article (DOMPurify regression)") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    // Mermaid content triggers Mermaid.js injection — exactly the failure scenario from Apr 4 2026
+    let md = "# Test\n\n```mermaid\ngraph TD; A-->B;\n```\n\nSome text after the diagram."
+    let body = MarkdownRenderer.renderHTML(from: md)
+    let assembled = pipeline.assemble(MarkdownRenderer.wrapInTemplate(body))
+    guard let articleStart = assembled.range(of: "<article"),
+          let articleEnd = assembled.range(of: "</article>") else {
+        throw TestError.assertionFailed("No <article> in assembled HTML")
+    }
+    let articleHTML = String(assembled[articleStart.lowerBound..<articleEnd.upperBound])
+    // Strip HTML tags to get text content
+    let textContent = articleHTML.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+    // If JS source leaked into article, we'd see these patterns in the visible text
+    let jsLeakPatterns = ["function(", "var ", "const ", "let ", ".prototype.", "document.querySelector", "createElement"]
+    for pattern in jsLeakPatterns {
+        try expect(!textContent.contains(pattern),
+            "JS source pattern '\(pattern)' found in article text content — injection corruption detected. This is exactly the DOMPurify </body> bug.")
+    }
+}
+
+runner.test("HTMLPipeline.insertBeforeBodyClose: replaces only the final </body>") {
+    let pipeline = HTMLPipeline(prismJS: nil, mermaidJS: nil, katexJS: nil, katexAutoRenderJS: nil)
+    // Simulate the mermaid.min.js scenario: JS content that contains </body> as a string literal
+    let htmlWithBodyInScript = """
+    <html><body>
+    <script>var x = "</body></html>"; console.log(x);</script>
+    </body></html>
+    """
+    let result = pipeline.insertBeforeBodyClose("<script>new</script>", into: htmlWithBodyInScript)
+    let bodyCount = result.components(separatedBy: "</body>").count - 1
+    // The </body> inside the script string should NOT be replaced; only the actual closing tag
+    try expect(bodyCount == 2, "Expected 2 </body> occurrences: 1 inside script string + 1 real closing tag. Got \(bodyCount). Forward replacingOccurrences would have produced 3.")
+    // insertBeforeBodyClose replaces the last </body> tag, injecting the script just before it.
+    // Input ends with "</body></html>" so result ends with "<script>new</script>\n</body></html>"
+    try expect(result.contains("<script>new</script>\n</body>"), "Insertion should be just before the final </body>")
+}
+
+runner.test("HTMLPipeline: injectMermaid does not corrupt HTML when Mermaid contains </body>") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    guard let mermaidJS = pipeline.mermaidJS else {
+        throw TestError.assertionFailed("mermaid.min.js not loaded")
+    }
+    let hasDangerousContent = mermaidJS.contains("</body>")
+    // mermaid.min.js (via DOMPurify) contains "</body>" as a JS string literal, so the
+    // assembled HTML will have >1 occurrence of "</body>". The correctness invariant is:
+    // (a) the document ends with </body> followed by </html>, and
+    // (b) </body> count equals 1 (real) + however many are in the injected JS source.
+    let body = MarkdownRenderer.renderHTML(from: "# Mermaid test\n```mermaid\ngraph TD; A-->B;\n```")
+    let assembled = pipeline.assemble(MarkdownRenderer.wrapInTemplate(body))
+    let bodyLiteralCount = mermaidJS.components(separatedBy: "</body>").count - 1
+    let totalBodyCount = assembled.components(separatedBy: "</body>").count - 1
+    let expectedCount = 1 + bodyLiteralCount  // 1 real + N from Mermaid JS source
+    try expect(totalBodyCount == expectedCount,
+        "After Mermaid injection (mermaid.min.js \(hasDangerousContent ? "DOES" : "does NOT") contain </body> \(bodyLiteralCount)x): expected \(expectedCount) total </body> occurrences (1 real + \(bodyLiteralCount) in JS source), got \(totalBodyCount)")
+    // The final </body> must come before </html> — document structure is correct
+    guard let lastBodyRange = assembled.range(of: "</body>", options: .backwards),
+          let lastHtmlRange = assembled.range(of: "</html>", options: .backwards) else {
+        throw TestError.assertionFailed("Assembled HTML missing </body> or </html> after Mermaid injection")
+    }
+    try expect(lastBodyRange.lowerBound < lastHtmlRange.lowerBound,
+        "Final </body> must precede </html> — Mermaid injection corrupted document structure")
+}
+
+runner.test("HTMLPipeline: full-pipeline golden snapshot — structure stable across versions") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let md = """
+    # Pipeline Test
+
+    Math: $E = mc^2$
+
+    ```swift
+    let x = 1
+    ```
+
+    > [!NOTE]
+    > Alert callout
+
+    ```mermaid
+    graph TD; A-->B;
+    ```
+    """
+    let body = MarkdownRenderer.renderHTML(from: md)
+    let assembled = pipeline.assemble(MarkdownRenderer.wrapInTemplate(body))
+    // Structural invariants that must hold regardless of JS bundle versions
+    try expect(assembled.contains("<h1"), "Missing h1")
+    try expect(assembled.contains("E = mc"), "Math content not preserved")
+    try expect(assembled.contains("language-swift"), "Swift code block missing")
+    try expect(assembled.contains("[!NOTE]"), "Alert callout not preserved (JS transforms client-side)")
+    try expect(assembled.contains("language-mermaid"), "Mermaid block missing")
+    try expect(assembled.contains("Prism.highlightAll"), "Prism script not injected")
+    try expect(assembled.contains("mermaid.initialize") || assembled.contains("mermaid.run"), "Mermaid script not injected")
+    try expect(assembled.contains("renderMathInElement"), "KaTeX script not injected")
+    // Ordering: article content comes first, scripts come after
+    let articlePos = assembled.range(of: "E = mc")!.lowerBound
+    let prismPos = assembled.range(of: "Prism.highlightAll")!.lowerBound
+    try expect(articlePos <= prismPos, "Article content should come before injected scripts")
 }
 
 // =============================================================================

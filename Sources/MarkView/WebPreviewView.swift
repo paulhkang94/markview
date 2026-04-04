@@ -139,6 +139,20 @@ struct WebPreviewView: NSViewRepresentable {
             }
         }
 
+        // MARK: - HTML Pipeline
+
+        /// The injection pipeline, built from the already-loaded JS strings.
+        /// HTMLPipeline owns insertBeforeBodyClose and all inject* methods so they
+        /// are testable from MarkViewTestRunner without an AppKit dependency.
+        private lazy var pipeline: HTMLPipeline = {
+            HTMLPipeline(
+                prismJS: prismJS,
+                mermaidJS: mermaidJS,
+                katexJS: katexJS,
+                katexAutoRenderJS: katexAutoRenderJS
+            )
+        }()
+
         // MARK: - WKScriptMessageHandler
 
         /// Receives source line messages from the JS scroll listener.
@@ -316,7 +330,7 @@ struct WebPreviewView: NSViewRepresentable {
 
             if needsFullReload {
                 pendingFileReload = false
-                let fullHTML = injectKaTeX(into: injectMermaid(into: injectPrism(into: styledHTML)))
+                let fullHTML = pipeline.assemble(styledHTML)
                 loadViaFileURL(fullHTML, in: webView)
                 hasLoadedInitialPage = true
             } else {
