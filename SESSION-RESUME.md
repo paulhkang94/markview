@@ -1,4 +1,4 @@
-# MarkView — Session Resume (2026-04-04)
+# MarkView — Session Resume (2026-04-04 v2)
 
 Use this file to resume the next session. Start with `/catchup`.
 
@@ -9,170 +9,162 @@ Use this file to resume the next session. Start with `/catchup`.
 ```
 /catchup
 
-Context: Completed a full v1.4.0 implementation session covering find/search (P0a),
-diff2html + MCP tools (P0b), iOS MarkViewCore migration, Android device fixes,
-and multi-platform E2E testing on Galaxy S25U + iPad (8).
+Context: Massive multi-platform session (2026-04-04). Shipped iOS app v1.0.0
+(PDF export, icon, nav title), Android app v1.0.0 (Prism.js, file picker,
+link fix, PNG icons), macOS CSS custom properties dark-mode fix + color-scheme
+meta tag. App Store release infrastructure in place for both mobile repos.
+macOS v1.4.0 code committed but NOT yet tagged or npm-published.
+
+Apple Dev Program is under haramfaith@gmail.com (team B4M2AX4B6X).
 
 Read first:
-- /Users/pkang/repos/markview/SESSION-RESUME.md     ← this file
-- /Users/pkang/repos/markview/docs/STATUS.md         ← living architecture doc
-- /Users/pkang/repos/markview/docs/personal/progress-2026-04-04.md  ← week summary
-
-Current state:
-- macOS v1.4.0 shipped (commits c9c01cb + 18ea9d2), NOT yet tagged
-- iOS: MarkViewCore migration complete, iPad installed, pending real-device Unicode verify
-- Android: Working on Galaxy S25U, all fixes committed
-
-PRIORITY ORDER for next session:
-1. Tag v1.4.0 + push + npm bump (15 min)
-2. iOS: Verify Unicode on physical iPad, E2ETester find bar tests (AX)
-3. Android: File picker button + Samsung content:// intent filters + Prism.js
-4. Android: Google Play developer account setup
-5. macOS P1a: Diagram controls visual QA (15 min manual task)
+- /Users/pkang/repos/markview/SESSION-RESUME.md         ← this file
+- /Users/pkang/repos/markview/docs/STATUS.md             ← living architecture doc
+- /Users/pkang/repos/markview-ios/docs/RELEASE.md        ← iOS App Store checklist
+- /Users/pkang/repos/markview-android/docs/RELEASE.md    ← Android Play Store checklist
 ```
 
 ---
 
-## Prioritized Action Items
+## PRIORITY ORDER
 
-### P0 — Release v1.4.0 (15 min, do first)
+### P0 — Tag v1.4.0 + npm publish (blocked: run preflight first)
 
 ```bash
 cd ~/repos/markview
+bash scripts/release-preflight.sh   # creates .release-preflight-passed-1.4.0
 git tag v1.4.0
 git push --tags
-# Then bump npm: edit npm/package.json version 1.3.0 → 1.4.0
-# npm publish from npm/ directory
+cd npm && npm version 1.4.0 && npm publish
 ```
 
-verify.sh warns: "18 commit(s) since v1.3.0 — consider bumping version before release"
+### P0 — iOS: Verify iPad rendering after all fixes
+
+Key things to verify on physical iPad (8):
+- App icon shows (fixed: ASSETCATALOG_COMPILER_APPICON_NAME added)
+- Dark mode tables correct (fixed: CSS custom properties)
+- Inline code visible (fixed: rgba(175,184,193,0.2))
+- PDF export works (tap share icon)
+- Links open in Safari (not in-app, iOS uses SFSafariViewController automatically)
+
+Build + install:
+```bash
+cd ~/repos/markview-ios && xcodegen generate
+xcodebuild -project MarkView.xcodeproj -scheme MarkView \
+  -destination 'id=00008103-000D306E140B001E' \
+  -allowProvisioningUpdates build
+```
+
+### P0 — App Store: Complete manual setup steps
+
+**iOS (haramfaith@gmail.com account):**
+1. Sign in at appstoreconnect.apple.com with haramfaith@gmail.com
+2. Create app: "MarkView — Markdown Viewer", bundle ID `dev.paulkang.markview-ios`
+3. Generate API key: App Store Connect → Users & Access → Integrations → Keys
+4. Create private certs repo: `gh repo create paulhkang94/markview-certs --private`
+5. Run `fastlane match appstore` to create Distribution cert + provisioning profile
+
+**Android:**
+1. Create Google Play Console account ($25): play.google.com/console
+2. Create app listing: "MarkView — Markdown Viewer", package `dev.paulkang.markview`
+3. Create service account for CI: Play Console → Setup → API access → Create
+4. Upload first AAB: `~/repos/markview-android/app/build/outputs/bundle/release/app-release.aab`
+
+### P1 — iOS Quick Look provider
+
+`QLPreviewingController` for Files.app spacebar preview (`.md` files).
+New target in project.yml, similar to macOS `MarkViewQuickLook`.
+
+### P1 — Android: MCP tool quick wins for macOS
+
+From roadmap `features-roadmap-2026-04-04.md` Week 1:
+- `lint_content` — lint raw string (no file), XS effort
+- `get_word_count` — words/chars/lines/tokens, XS effort
+- `outline` — heading tree + line numbers, S effort
+- `preview_markdown` return HTML in response, S effort
+
+### P1 — Android: E2E test infrastructure
+
+Add Appium + WebdriverIO for WebView DOM inspection:
+- `switchContext('WEBVIEW_dev.paulkang.markview')` to inspect rendered DOM
+- Assert tables exist, code blocks have .token spans, dark mode vars correct
+- See `~/repos/markview-android/docs/TESTING.md`
+
+### P2 — macOS: MCP `export_pdf` tool
+
+Uses `WKWebView.createPDF()` in MCP server context. Medium effort — needs main
+thread + CFRunLoopRun() for WKWebView in a non-UI process.
+
+### P2 — iOS: iCloud Drive sync
+
+`UIDocumentPickerViewController` + `NSFileCoordinator`.
+Retention feature: Claude Code generates doc on macOS → appears on iPhone.
+
+### P3 — Diagram controls visual QA
+
+Manual check: open golden-corpus.md, verify 8 SVG icons at 3 window sizes.
+No code changes needed.
 
 ---
 
-### P0 — Android: File Picker Button (~1 hour)
+## Key Infrastructure
 
-Add folder button (like iOS) to browse and open .md files using Android's system file picker.
-
-**Pattern** (matches iOS `fileImporter` exactly):
-```kotlin
-// In MainActivity, add ActivityResultLauncher:
-val openFileLauncher = registerForActivityResult(
-    ActivityResultContracts.OpenDocument()
-) { uri ->
-    uri?.let {
-        val text = contentResolver.openInputStream(it)?.use { s ->
-            s.bufferedReader().readText()
-        } ?: return@let
-        currentMarkdown = text
-        currentUri = it
-    }
-}
-
-// In Compose, add folder button in top bar:
-IconButton(onClick = { openFileLauncher.launch(arrayOf("text/markdown", "text/plain")) }) {
-    Icon(Icons.Default.FolderOpen, contentDescription = "Open file")
-}
-```
-
-Supports any MIME types we add in the future — just extend the array.
-
----
-
-### P1 — Android: Samsung Galaxy content:// Intent Filters
-
-Current manifest missing Samsung My Files content URI coverage. See IMPLEMENTATION-PLAN.md for full 7-filter manifest replacement. Key missing filter:
-
-```xml
-<intent-filter>
-    <action android:name="android.intent.action.VIEW" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <data android:scheme="content" android:mimeType="*/*"
-          android:pathPattern=".*\\.md" />
-</intent-filter>
-<intent-filter>
-    <action android:name="android.intent.action.VIEW" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <data android:mimeType="application/octet-stream" />
-</intent-filter>
-```
-
-Full plan: `~/repos/markview-android/IMPLEMENTATION-PLAN.md`
-
----
-
-### P1 — Android: Prism.js Syntax Highlighting
-
-Copy from macOS repo (already exists, no download needed):
+### Signing & Release
 
 ```bash
-cp ~/repos/markview/Sources/MarkViewCore/Resources/prism-bundle.min.js \
-   ~/repos/markview-android/app/src/main/assets/
+# Android keystore password
+security find-generic-password -a 'markview-android' -s 'MARKVIEW_KEYSTORE_PASS' -w
+
+# Android release AAB build
+cd ~/repos/markview-android && ./gradlew bundleRelease
+# Output: app/build/outputs/bundle/release/app-release.aab
+
+# Fastlane (installed 2026-04-04)
+export PATH="/opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/4.0.0/bin:$PATH"
+fastlane --version  # 2.232.2
+
+# iOS App Store apple_id: haramfaith@gmail.com (team B4M2AX4B6X)
+# NOT contact@paulkang.dev or paulhkang94@gmail.com
 ```
 
-Add to template.html before `</body>`:
-```html
-<script src="prism-bundle.min.js"></script>
-```
-
-Prism auto-highlights `<code class="language-*">` which marked.js already produces. Zero JS changes needed.
-
----
-
-### P1 — Android: Google Play Developer Account
-
-1. Go to https://play.google.com/console
-2. One-time $25 registration fee
-3. Accept developer agreement
-4. Create app listing: "MarkView — Markdown Viewer"
-5. Generate signed release APK: `./gradlew bundleRelease` → AAB format for Play Store
-6. Create keystore: `keytool -genkey -v -keystore markview-release.jks ...`
-
-Store keystore in macOS Keychain, NOT in repo.
-
----
-
-### P2 — iOS: E2ETester Find Bar Tests
-
-9 test stubs already in `Tests/E2ETester/main.swift`. Need Accessibility permission to implement. Tests:
-- findBar_opensOnCmdF, findBar_closesOnEsc, findBar_closesOnDoneButton
-- findBar_matchCountForKnownDocument, findBar_wrapAroundForward, findBar_wrapAroundBackward
-- findBar_caseSensitiveToggle, findBar_survivesJSContentUpdate, findBar_zeroResultsShowsRedBorder
-
-Enable AX: `swift run MarkViewE2ETester` — will prompt for permission on first run.
-
----
-
-### P2 — macOS: P1a Diagram Controls Visual QA (15 min)
-
-Manual check only — no code changes needed. Open golden-corpus.md in MarkView and verify at 3 window sizes:
-- 8 SVG icons: ↑↓←→ arrows, ↺ reset, ＋ zoom in, － zoom out, ⎘ copy + ✓ feedback
-- clamp() scaling: 32px (normal) → 42px (full-screen)
-
----
-
-### P2 — macOS: LOOP Template Sync
-
-After P0 tags are pushed, extract these patterns to the LOOP template:
-- Per-repo verify stamp paths (two-gate system)
-- Auto-install after playwright passes
-- Render-verify gate pre-commit hook
-
----
-
-### P3 — iOS Screen Mirroring (research done, install pending)
-
-`quicktime_video_hack` is the SOTA tool — native USB H.264 protocol, ~50ms latency, open source.
-
-**No brew tap exists.** Compile from source:
+### TV Stamp Paths (two-gate system)
 ```bash
-brew install libusb pkg-config gstreamer gst-plugins-bad gst-plugins-good gst-plugins-base
-git clone https://github.com/danielpaulus/quicktime_video_hack
-cd quicktime_video_hack
-go run main.go  # starts live mirror
+date +%s > ~/repos/claude-loop/.claude/memory/.last-verify-at     # commit-gate (SEPARATE call)
+date +%s > ~/repos/markview/.last-render-verify-at                  # render-verify
+# CRITICAL: stamp in its own Bash call. Hook reads BEFORE command executes.
 ```
 
-For now: QuickTime Player → New Movie Recording → select iPad as source (already working).
-`pymobiledevice3` for CLI screenshots: `pip3 install pymobiledevice3` → `pymobiledevice3 developer dvt screenshot /tmp/ipad.png`
+### Build Commands (all platforms)
+```bash
+# macOS
+cd ~/repos/markview
+swift run MarkViewTestRunner   # 350+ tests
+make playwright                 # 150 Playwright tests + installs app
+bash verify.sh                  # full gate
+
+# iOS (device)
+cd ~/repos/markview-ios && xcodegen generate
+xcodebuild -project MarkView.xcodeproj -scheme MarkView \
+  -destination 'id=00008103-000D306E140B001E' \
+  -allowProvisioningUpdates build
+
+# Android
+cd ~/repos/markview-android
+./gradlew assembleDebug
+adb -s R5CXC2YSECW install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Android golden-corpus test (private dir)
+cat ~/repos/markview/Tests/TestRunner/Fixtures/golden-corpus.md | \
+  adb -s R5CXC2YSECW shell "run-as dev.paulkang.markview sh -c \
+  'cat > /data/data/dev.paulkang.markview/files/golden-corpus.md'"
+adb -s R5CXC2YSECW shell am start -a android.intent.action.VIEW \
+  -d "file:///data/data/dev.paulkang.markview/files/golden-corpus.md" \
+  -n dev.paulkang.markview/.MainActivity
+```
+
+### Device UDIDs
+- iPad (8), iOS 18.6.2: `00008103-000D306E140B001E`
+- Galaxy S25U, Android 15: `R5CXC2YSECW` (adb)
 
 ---
 
@@ -181,86 +173,70 @@ For now: QuickTime Player → New Movie Recording → select iPad as source (alr
 ### markview (macOS)
 | Hash | Description |
 |------|-------------|
-| `18ea9d2` | feat(ios): iOS platform support + mobile TOC responsive hide |
-| `c9c01cb` | feat: v1.4.0 — find/search (P0a) + diff viewer + MCP tools (P0b) |
+| `e660b09` | fix(dark-mode): color-scheme meta tag + render-verify gate wired |
+| `7cd61bf` | fix(rendering): CSS custom properties — dark mode reliable across all renderers |
+| `65ac608` | feat(icon): SF Pro Bold M at 28% + inline code CSS fix (150/150 tests) |
+| `9cf5b84` | feat(icon): clean M — remove # symbol, unified brand |
 
 ### markview-ios
 | Hash | Description |
 |------|-------------|
-| `3c4b577` | chore: add development team for iPad device builds |
-| `99e3476` | feat: migrate to MarkViewCore rendering — fixes Unicode, images, footnotes |
+| `16d551e` | feat(release): App Store infrastructure + CI/CD |
+| `56da208` | chore: delete orphan marked.js + update docs |
+| `c43b7c1` | feat(icon): 32% padding |
+| `0665f29` | feat(icon): SF Pro Bold M + fix ASSETCATALOG_COMPILER_APPICON_NAME |
+| `fee5b5d` | feat: PDF export + nav title + app icon + Info.plist |
 
 ### markview-android
 | Hash | Description |
 |------|-------------|
-| `53944b6` | fix: table horizontal scroll scoped to table, pinch-to-zoom enabled |
-| `08c564c` | fix: status bar edge-to-edge + file:// URI handler + PHK logging |
+| `fab9d59` | feat(release): Play Store infrastructure + CI/CD |
+| `1d32528` | fix(android): open hyperlinks in system browser |
+| `f4468b9` | fix(file-picker): re-render content on new file + PNG icon mipmaps |
+| `b2800f9` | feat(icon): SF Pro Bold M 28% + remove debug package suffix |
+| `43a1568` | feat: Prism.js + TopAppBar + file picker + adaptive icon |
 
 ---
 
-## Key Infrastructure Notes
+## Architecture Notes
 
-### Device UDIDs
-- iPad (8), iOS 18.6.2: `00008103-000D306E140B001E`
-- Galaxy S25U, Android 15: `R5CXC2YSECW` (adb)
-- MarkView-iPhone17 simulator: `F1A7A709-35C0-4CCF-8E35-6E56CEDF21E8`
+### iOS dark mode — two requirements
+Both are required for WKWebView (A11Y research finding 2026-04-04):
+```html
+<meta name="color-scheme" content="light dark">  <!-- in <head> -->
+```
+```css
+:root { color-scheme: light dark; }  /* in CSS */
+```
+Without the meta tag, scrollbars/form controls/system colors ignore dark mode.
 
-### Build Commands (cross-platform)
-```bash
-# macOS
-cd ~/repos/markview && swift run MarkViewTestRunner   # 292 tests
-make playwright                                        # 150 Playwright tests
-bash verify.sh                                         # full gate
-
-# iOS simulator build
-xcodebuild -project markview-ios/MarkView.xcodeproj -scheme MarkView \
-  -destination 'platform=iOS Simulator,id=F1A7A709-35C0-4CCF-8E35-6E56CEDF21E8' \
-  CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
-
-# iOS device build (iPad)
-xcodebuild -project markview-ios/MarkView.xcodeproj -scheme MarkView \
-  -destination 'id=00008103-000D306E140B001E' \
-  -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
-
-# Android
-cd ~/repos/markview-android && ./gradlew assembleDebug
-adb -s R5CXC2YSECW install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s R5CXC2YSECW exec-out screencap -p > screenshot.png
-
-# Android file push for testing (run-as for private dir)
-cat file.md | adb shell "run-as dev.paulkang.markview sh -c 'cat > /data/data/dev.paulkang.markview/files/file.md'"
-adb shell am start -a android.intent.action.VIEW \
-  -d "file:///data/data/dev.paulkang.markview/files/file.md" \
-  -n dev.paulkang.markview/.MainActivity
+### Android AndroidView update block
+When markdown state changes (file picker), the `update` block must call
+`renderMarkdown` via JS. The `factory` closure captures initial state only.
+```kotlin
+AndroidView(
+    factory = { /* create WebView, load URL, onPageFinished renders initial */ },
+    update = { webView ->
+        webView.evaluateJavascript(
+            "if (typeof renderMarkdown === 'function') { renderMarkdown($encodedMarkdown) }",
+            null
+        )
+    }
+)
 ```
 
-### TV Stamp Paths (two-gate system)
-```bash
-date +%s > ~/repos/claude-loop/.claude/memory/.last-verify-at      # commit-gate
-date +%s > ~/repos/markview/.last-render-verify-at                  # render-verify
-# Must be SEPARATE bash calls — hook reads before command executes
-```
+### CSS custom properties (dark mode fix)
+The template.html now uses `--color-*` CSS variables. Light values in `:root`,
+dark overrides in `@media (prefers-color-scheme: dark) { :root { ... } }`.
+This eliminates cascade/specificity conflicts in Chrome auto-dark and WKWebView.
 
-### Critical: diff2html Bundle
-Use `diff2html.min.js` (core, 77KB) — NOT `diff2html-ui-base.min.js`.
-Core bundle exports `Diff2Html.html()`. UI-base exports `Diff2HtmlUI` class only.
-Verified: `node -e "const vm=require('vm'),fs=require('fs'),c={};vm.runInNewContext(fs.readFileSync('bundle.js','utf8'),c);console.log(Object.keys(c))"`
+### Android icon: PNG mipmaps > XML gradient
+Samsung launcher flattens `aapt:attr` XML gradients. Generated PNG mipmaps
+(mdpi→xxxhdpi) via cairosvg from the SVG source guarantee pixel-accurate gradients.
+Source: `~/repos/markview/icons/markview-icon.svg`
+Generator: `bash ~/repos/markview/icons/generate.sh`
 
-### iOS Simulator [?] Boxes
-Not a code bug. iOS Simulator WKWebView lacks CJK/Arabic/emoji fonts.
-All real devices (iPad, Galaxy S25U) render correctly.
-Don't debug Unicode in simulator — connect a real device.
-
-### SourceKit False Positives (iOS files)
-All `~/repos/markview-ios/Sources/*.swift` are wrapped in `#if canImport(UIKit)`.
-macOS SourceKit reports errors for UIKit types — expected, build is clean.
-Test with: `xcodebuild ... build` not SourceKit diagnostics.
-
----
-
-## Android Rendering Clarification
-
-**Samsung Files + My Files apps ARE opening files via MarkView** — not native rendering.
-Both apps fire `ACTION_VIEW` intent → MarkView registered for `text/markdown` → MarkView's MainActivity renders via marked.js → rendered HTML displayed.
-The Files apps have no built-in markdown rendering. MarkView is the handler.
-Confirmed: styling matches MarkView template.html exactly (GitHub dark theme, identical font sizes).
+### App Store Apple ID
+Apple Developer Program is registered under `haramfaith@gmail.com` (team B4M2AX4B6X).
+Use this for: App Store Connect, fastlane match, fastlane Appfile, TestFlight.
+NOT: contact@paulkang.dev, NOT: paulhkang94@gmail.com.
