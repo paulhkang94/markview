@@ -181,6 +181,9 @@ struct MarkViewMCPServer {
         let fileURL = tmpDir.appendingPathComponent(safeName)
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
 
+        // File write succeeded — that is the primary success criterion.
+        // App launch is best-effort: if MarkView.app is not installed (e.g. on CI),
+        // we still return success so agents know the content is staged at fileURL.path.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-a", "MarkView", fileURL.path]
@@ -189,8 +192,8 @@ struct MarkViewMCPServer {
 
         if process.terminationStatus != 0 {
             return .init(
-                content: [.text("Failed to open MarkView (exit \(process.terminationStatus)). Is MarkView.app installed?")],
-                isError: true
+                content: [.text("Content written to \(fileURL.path). Note: could not open MarkView.app (exit \(process.terminationStatus)) — is MarkView installed?")],
+                isError: false
             )
         }
 

@@ -177,7 +177,7 @@ if [ -x "$HOME/.local/bin/mdpreview" ] && file "$HOME/.local/bin/mdpreview" | gr
     echo "✓ mdpreview CLI is installed (shell script)"
     # Behavioral: verify it actually launches MarkView.app
     if [ -d "/Applications/MarkView.app" ] || [ -d "$HOME/Applications/MarkView.app" ]; then
-        _CLI_TMP=$(mktemp /tmp/markview-cli-test-XXXXX.md)
+        _CLI_TMP=$(mktemp /tmp/markview-cli-test-XXXXXXXX)".md"
         echo "# CLI test" > "$_CLI_TMP"
         "$HOME/.local/bin/mdpreview" "$_CLI_TMP" &
         _CLI_PID=$!
