@@ -12,6 +12,7 @@ PLIST="$PROJECT_DIR/Sources/MarkView/Info.plist"
 BUMP="patch"
 SKIP_TESTS=false
 DO_NOTARIZE=false
+SHIP=false   # --ship: auto-commit, tag, and push after a successful build
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -28,9 +29,13 @@ while [[ $# -gt 0 ]]; do
             DO_NOTARIZE=true
             shift
             ;;
+        --ship)
+            SHIP=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash scripts/release.sh [--bump major|minor|patch] [--skip-tests] [--notarize]"
+            echo "Usage: bash scripts/release.sh [--bump major|minor|patch] [--skip-tests] [--notarize] [--ship]"
             exit 1
             ;;
     esac
@@ -214,19 +219,41 @@ if [ -f "$NPM_PKG" ]; then
     fi
 fi
 
-# Step 12: Summary
+# Step 12: Commit, tag, push (--ship) or print manual instructions
+echo ""
+if [ "$SHIP" = true ]; then
+    echo "--- Shipping: commit + tag + push ---"
+    git add \
+        Sources/MarkView/Info.plist \
+        Sources/MarkViewQuickLook/Info.plist \
+        Sources/MarkViewMCPServer/main.swift \
+        npm/package.json \
+        npm/server.json \
+        npm/scripts/postinstall.js
+    git commit -m "Release v$NEW_VERSION
+
+$(git log $(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --oneline | grep -v "^$(git rev-parse --short HEAD)" | head -20 | sed 's/^/- /')
+
+Co-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
+    git tag "v$NEW_VERSION"
+    git push origin main --tags
+    echo "✓ Tagged and pushed v$NEW_VERSION — release CI workflow triggered"
+else
+    echo "Next steps (or use --ship to automate):"
+    echo "  git add Sources/MarkView/Info.plist Sources/MarkViewQuickLook/Info.plist \\"
+    echo "          Sources/MarkViewMCPServer/main.swift npm/package.json npm/server.json npm/scripts/postinstall.js"
+    echo "  git commit -m 'Release v$NEW_VERSION'"
+    echo "  git tag v$NEW_VERSION"
+    echo "  git push origin main --tags"
+fi
+
+# Step 13: Summary
 echo ""
 echo "=== Released MarkView v$NEW_VERSION (build $BUILD_NUMBER) ==="
 echo ""
 echo "Installed:"
 echo "  /Applications/MarkView.app"
 echo "  ~/.local/bin/mdpreview"
-echo ""
-echo "Next steps:"
-echo "  git add Sources/MarkView/Info.plist"
-echo "  git commit -m 'Release v$NEW_VERSION'"
-echo "  git tag v$NEW_VERSION"
-echo "  git push origin main --tags"
 if [ "$DO_NOTARIZE" = true ]; then
     echo ""
     echo "Notarization: completed (ticket stapled to app bundle)"

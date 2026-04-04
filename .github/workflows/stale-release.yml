@@ -1,0 +1,96 @@
+name: Stale Release Check
+
+# Runs weekly and opens a GitHub issue when there are ≥10 commits since the
+# last release tag — a signal that features have accumulated and a release is due.
+# Also runs on-demand for manual checks.
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'   # every Monday at 10am UTC
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check for stale release
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history required to count commits since tag
+
+      - name: Count commits since last release
+        id: count
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "No tags found — skipping"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COUNT=$(git rev-list "${LAST_TAG}..HEAD" --count)
+          VERSION=$(cat Sources/MarkView/Info.plist | grep -A1 "BundleShortVersionString" | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          echo "Last tag: $LAST_TAG | Commits since: $COUNT | Current Info.plist: $VERSION"
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$COUNT" -ge 10 ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open stale-release issue
+        if: steps.count.outputs.stale == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const count = '${{ steps.count.outputs.count }}';
+            const lastTag = '${{ steps.count.outputs.last_tag }}';
+            const version = '${{ steps.count.outputs.version }}';
+            const title = `Release due: ${count} commits since ${lastTag}`;
+
+            // Check if there's already an open issue with this title to avoid duplicates
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'release'
+            });
+            const existing = issues.data.find(i => i.title.startsWith('Release due:'));
+            if (existing) {
+              console.log(`Issue already open: #${existing.number} — skipping`);
+              return;
+            }
+
+            // Get commit log since last tag
+            const { execSync } = require('child_process');
+            const log = execSync(`git log ${lastTag}..HEAD --oneline | head -20`).toString().trim();
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['release'],
+              body: `## ${count} commits have accumulated since \`${lastTag}\`
+
+It's time to cut a new release. Current \`Info.plist\` version: \`${version}\`
+
+### Recent commits
+\`\`\`
+${log}
+\`\`\`
+
+### How to release
+\`\`\`bash
+bash scripts/release.sh --bump minor --ship
+\`\`\`
+
+Or trigger from [GitHub Actions → Release → Run workflow](../../actions/workflows/release.yml).
+
+*Auto-opened by the stale-release check workflow.*`
+            });
+            console.log(`Opened stale-release issue: ${title}`);
