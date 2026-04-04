@@ -3407,21 +3407,33 @@ globalThis["mermaid"] = globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;
                 function applyTransform() {
                     inner.style.transform = 'translate(' + state.tx + 'px,' + state.ty + 'px) scale(' + state.s + ')';
                 }
-                // Build controls: nav cross (↑←⟳→↓) + zoom column (+−⎘)
+                // SVG icons — 1em×1em, fill/stroke=currentColor, scale with --mv-icon clamp()
+                var IC = {
+                    u:  '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><path d="M8 3 2 13h12Z"/></svg>',
+                    d:  '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><path d="M8 13 2 3h12Z"/></svg>',
+                    l:  '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><path d="M3 8 13 2v12Z"/></svg>',
+                    ri: '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><path d="M13 8 3 2v12Z"/></svg>',
+                    r0: '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8a4.5 4.5 0 1 0 1.6-3.4M3.5 2.5v3h3"/></svg>',
+                    zi: '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><path d="M9 7V3H7v4H3v2h4v4h2V9h4V7H9z"/></svg>',
+                    zo: '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><path d="M3 7h10v2H3V7z"/></svg>',
+                    cp: '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="currentColor"><rect x="2" y="5" width="9" height="10" rx="1"/><path d="M5 5V4a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1V6a1 1 0 0 0-1-1H5z"/></svg>',
+                    ck: '<svg viewBox="0 0 16 16" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l4 4 6-7"/></svg>'
+                };
+                // Build controls: nav cross (↑←↺→↓) + zoom/copy column
                 var controls = document.createElement('div');
                 controls.className = 'mermaid-controls';
-                var B = '<button class="mermaid-btn" data-a="';
+                function btn(action, title) {
+                    return '<button class="mermaid-btn" data-a="' + action + '" title="' + title + '">' + IC[action] + '</button>';
+                }
                 var SP = '<div class="mermaid-btn-spacer"></div>';
                 controls.innerHTML =
                     '<div class="mermaid-ctrl-group mermaid-ctrl-nav">' +
-                        SP + B + 'u" title="Pan up">↑</button>' + SP +
-                        B + 'l" title="Pan left">←</button>' + B + 'r0" title="Reset">↺</button>' + B + 'ri" title="Pan right">→</button>' +
-                        SP + B + 'd" title="Pan down">↓</button>' + SP +
+                        SP + btn('u','Pan up') + SP +
+                        btn('l','Pan left') + btn('r0','Reset') + btn('ri','Pan right') +
+                        SP + btn('d','Pan down') + SP +
                     '</div>' +
                     '<div class="mermaid-ctrl-group mermaid-ctrl-zoom">' +
-                        B + 'zi" title="Zoom in">＋</button>' +
-                        B + 'zo" title="Zoom out">－</button>' +
-                        B + 'cp" title="Copy SVG">⎘</button>' +
+                        btn('zi','Zoom in') + btn('zo','Zoom out') + btn('cp','Copy SVG') +
                     '</div>';
                 controls.addEventListener('click', function(e) {
                     var btn = e.target.closest('[data-a]');
@@ -3440,8 +3452,8 @@ globalThis["mermaid"] = globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;
                             try {
                                 var xml = new XMLSerializer().serializeToString(svg);
                                 navigator.clipboard.writeText(xml).then(function() {
-                                    btn.textContent = '✓';
-                                    setTimeout(function() { btn.textContent = '⎘'; }, 1200);
+                                    btn.innerHTML = IC.ck;  // checkmark SVG
+                                    setTimeout(function() { btn.innerHTML = IC.cp; }, 1200);
                                 }).catch(function() {});
                             } catch(e) {}
                             return;

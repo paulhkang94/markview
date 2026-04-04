@@ -365,7 +365,7 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
       expect(value as string).toContain("</svg>");
     });
 
-    test("copy button text changes to ✓ immediately after click", async ({
+    test("copy button shows checkmark SVG immediately after click", async ({
       page,
     }) => {
       await injectClipboardMock(page);
@@ -374,17 +374,26 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
       const btn = page.locator(".mermaid").first().locator('[data-a="cp"]');
       await btn.click();
 
-      // Button shows ✓ after clipboard write resolves (~one microtask)
+      // After SVG icon switch: btn.innerHTML = IC.ck (checkmark SVG, no rect element)
+      // The checkmark SVG has a <path> with stroke but no <rect>, unlike the copy icon.
+      // Wait for the copy icon's <rect> to disappear (replaced by checkmark SVG).
       await page.waitForFunction(
         () => {
           const b = document.querySelector(
             '[data-a="cp"]',
           ) as HTMLElement | null;
-          return b?.textContent?.trim() === "✓";
+          // Checkmark SVG: has <path> but no <rect>
+          return (
+            b !== null &&
+            b.querySelector("rect") === null &&
+            b.querySelector("path") !== null
+          );
         },
         { timeout: 3_000 },
       );
-      await expect(btn).toHaveText("✓");
+      // Verify the checkmark SVG is present (no rect = checkmark, not copy icon)
+      await expect(btn.locator("rect")).not.toBeAttached();
+      await expect(btn.locator("path")).toBeAttached();
     });
 
     test("copy button reverts to ⎘ after 1200ms feedback window", async ({
@@ -394,24 +403,29 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
       await hoverMermaid(page);
       await clickControl(page, "cp");
 
-      // Wait for ✓ to appear, then wait for it to revert
+      // Wait for ✓ SVG to appear (button shows checkmark SVG on success)
       await page.waitForFunction(
         () =>
           (
             document.querySelector('[data-a="cp"]') as HTMLElement | null
-          )?.textContent?.trim() === "✓",
+          )?.querySelector("path[d*='4 4']") !== null, // checkmark path distinctive segment
         { timeout: 3_000 },
       );
+      // Wait for button to revert — textContent becomes empty again (SVG, no text nodes)
       await page.waitForFunction(
-        () =>
-          (
-            document.querySelector('[data-a="cp"]') as HTMLElement | null
-          )?.textContent?.trim() === "⎘",
+        () => {
+          const b = document.querySelector(
+            '[data-a="cp"]',
+          ) as HTMLElement | null;
+          // Reverted: button holds the copy SVG again (2 children: rect + path)
+          return b !== null && b.querySelector("rect") !== null;
+        },
         { timeout: 2_500 }, // 1200ms + buffer
       );
+      // Verify button contains the copy icon SVG (rect element is unique to the copy icon)
       await expect(
-        page.locator(".mermaid").first().locator('[data-a="cp"]'),
-      ).toHaveText("⎘");
+        page.locator(".mermaid").first().locator('[data-a="cp"] rect'),
+      ).toBeAttached();
     });
 
     test("clipboard contains the SVG from the hovered diagram", async ({

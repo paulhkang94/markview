@@ -25,7 +25,9 @@ test.describe("Mermaid diagrams", () => {
   test("SVG has no fixed width/height (responsive sizing applied)", async ({
     page,
   }) => {
-    const svgs = page.locator(".mermaid svg");
+    // Target diagram SVGs inside .mermaid-inner — not the control icon SVGs in .mermaid-controls
+    // (control icons have width="1em" by design for em-based scaling)
+    const svgs = page.locator(".mermaid-inner svg");
     const count = await svgs.count();
     expect(count).toBeGreaterThan(0);
     for (let i = 0; i < count; i++) {
