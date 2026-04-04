@@ -4432,6 +4432,27 @@ runner.test("gfm-alerts.md fixture: alert blockquotes render") {
     try expect(html.contains("[!TIP]"), "[!TIP] content not found in rendered HTML")
 }
 
+runner.test("script injection: mermaid.min.js contains </body> literals (DOMPurify regression guard)") {
+    // mermaid.min.js bundles DOMPurify which contains "</body></html>" as string literals.
+    // The original inject functions used replacingOccurrences(of: "</body>", ...) which
+    // replaced ALL occurrences — including the 2 inside mermaid.min.js already injected —
+    // causing KaTeX injection to corrupt the mermaid script and render JS source as visible
+    // text. Root cause confirmed Apr 4 2026. Fix: insertBeforeBodyClose uses .backwards search
+    // to replace only the actual final </body> closing tag.
+    let mermaidPath = FileManager.default.currentDirectoryPath + "/Sources/MarkViewCore/Resources/mermaid.min.js"
+    let webPreviewPath = FileManager.default.currentDirectoryPath + "/Sources/MarkView/WebPreviewView.swift"
+    if FileManager.default.fileExists(atPath: mermaidPath) {
+        let mermaid = try String(contentsOfFile: mermaidPath, encoding: .utf8)
+        // Confirm the JS bundle actually contains the problematic pattern
+        try expect(mermaid.contains("</body>"), "mermaid.min.js must contain </body> literal — if missing, DOMPurify was removed from bundle and guard is still harmless")
+        // Confirm the fix is in place: all inject calls use insertBeforeBodyClose
+        let webPreview = try String(contentsOfFile: webPreviewPath, encoding: .utf8)
+        try expect(webPreview.contains("insertBeforeBodyClose"), "WebPreviewView must use insertBeforeBodyClose (backwards-search replace) for all script injections")
+        let forwardReplaceCount = webPreview.components(separatedBy: "replacingOccurrences(of: \"</body>\"").count - 1
+        try expect(forwardReplaceCount == 0, "No inject function should use forward replacingOccurrences(of: \"</body>\") — use insertBeforeBodyClose instead (found \(forwardReplaceCount) violations)")
+    }
+}
+
 runner.test("TOC: template.html source contains toc-sidebar CSS and JS") {
     // swift run sets cwd to the package root — use that to locate the source file
     let templatePath = FileManager.default.currentDirectoryPath + "/Sources/MarkViewCore/Resources/template.html"

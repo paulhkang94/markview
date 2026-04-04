@@ -437,10 +437,21 @@ struct WebPreviewView: NSViewRepresentable {
             return html.replacingOccurrences(of: "</head>", with: "\(styleTag)\n</head>")
         }
 
+        /// Replace the final </body> tag in the document with script + </body>.
+        /// Must use backwards search — bundled JS (e.g. mermaid.min.js, which includes DOMPurify)
+        /// contains "</body>" as a string literal. replacingOccurrences() would corrupt those
+        /// occurrences and cause the JS source after the mangled </body> to render as visible text.
+        private func insertBeforeBodyClose(_ script: String, into html: String) -> String {
+            guard let range = html.range(of: "</body>", options: .backwards) else {
+                return html + script
+            }
+            return html.replacingCharacters(in: range, with: "\(script)\n</body>")
+        }
+
         private func injectPrism(into html: String) -> String {
             guard let prismJS = prismJS else { return html }
             let scriptTag = "<script>\(prismJS)\nPrism.manual = false; Prism.highlightAll();</script>"
-            return html.replacingOccurrences(of: "</body>", with: "\(scriptTag)\n</body>")
+            return insertBeforeBodyClose(scriptTag, into: html)
         }
 
         private func injectMermaid(into html: String) -> String {
@@ -532,15 +543,21 @@ struct WebPreviewView: NSViewRepresentable {
             })();
             </script>
             """
-            return html.replacingOccurrences(of: "</body>", with: "\(scriptTag)\n</body>")
+            return insertBeforeBodyClose(scriptTag, into: html)
         }
 
         private func injectKaTeX(into html: String) -> String {
             guard let katexJS = katexJS, let autoRenderJS = katexAutoRenderJS else { return html }
+            // KaTeX bundles DOMPurify which contains the literal string "</script>" — this would
+            // end the <script> tag prematurely if not escaped, causing JS source to render as text.
+            // Replacing "</script>" with "<\/script>" is safe: browsers parse them identically inside
+            // JS but the HTML parser doesn't treat "<\/script>" as a closing tag.
+            let safeKatex = katexJS.replacingOccurrences(of: "</script>", with: "<\\/script>")
+            let safeAutoRender = autoRenderJS.replacingOccurrences(of: "</script>", with: "<\\/script>")
             let script = """
-            <script>\(katexJS)</script>
+            <script>\(safeKatex)</script>
             <script>
-            \(autoRenderJS)
+            \(safeAutoRender)
             document.addEventListener("DOMContentLoaded", function() {
                 renderMathInElement(document.body, {
                     delimiters: [
@@ -555,7 +572,7 @@ struct WebPreviewView: NSViewRepresentable {
             });
             </script>
             """
-            return html.replacingOccurrences(of: "</body>", with: "\(script)\n</body>")
+            return insertBeforeBodyClose(script, into: html)
         }
 
         private func updateContentViaJS(_ html: String, in webView: WKWebView) {
