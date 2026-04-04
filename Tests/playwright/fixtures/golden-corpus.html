@@ -765,33 +765,34 @@ var _self="undefined"!=typeof window?window:"undefined"!=typeof WorkerGlobalScop
 Prism.manual = false; Prism.highlightAll();</script>
 <style>
 /* Mermaid pan/zoom/copy controls — shown on diagram hover, matches GitHub UX */
+/* Sizing: 32px buttons (Material/Apple standard for pointer-driven macOS) */
 .mermaid { position: relative; overflow: hidden; }
 .mermaid-inner { transform-origin: 50% 50%; transition: transform 0.1s ease; }
 .mermaid-controls {
     position: absolute; top: 8px; right: 8px;
     display: flex; flex-direction: row; gap: 4px;
-    opacity: 0; transition: opacity 0.15s;
+    opacity: 0; transition: opacity 120ms ease-in-out;
     z-index: 20; pointer-events: none;
 }
 .mermaid:hover .mermaid-controls { opacity: 1; pointer-events: auto; }
 .mermaid-ctrl-group {
-    display: grid; gap: 2px;
+    display: grid; gap: 3px;
     background: rgba(128,128,128,0.08);
     border: 1px solid rgba(128,128,128,0.2);
-    border-radius: 6px; padding: 3px;
+    border-radius: 6px; padding: 6px;
     backdrop-filter: blur(6px);
 }
-.mermaid-ctrl-nav { grid-template-columns: 24px 24px 24px; grid-template-rows: 24px 24px 24px; }
-.mermaid-ctrl-zoom { grid-template-columns: 24px; grid-template-rows: 24px 24px 24px; }
+.mermaid-ctrl-nav { grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(3, 32px); }
+.mermaid-ctrl-zoom { grid-template-columns: 32px; grid-template-rows: repeat(3, 32px); }
 .mermaid-btn {
-    width: 24px; height: 24px; padding: 0; margin: 0;
+    width: 32px; height: 32px; padding: 0; margin: 0;
     background: rgba(128,128,128,0.1); border: none; border-radius: 4px;
-    cursor: pointer; font-size: 13px; line-height: 1;
+    cursor: pointer; font-size: 14px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
     color: inherit;
 }
 .mermaid-btn:hover { background: rgba(128,128,128,0.25); }
-.mermaid-btn-spacer { width: 24px; height: 24px; }
+.mermaid-btn-spacer { width: 32px; height: 32px; }
 @media (prefers-color-scheme: dark) {
     .mermaid-ctrl-group { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
     .mermaid-btn { background: rgba(255,255,255,0.1); }
