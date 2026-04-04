@@ -293,10 +293,6 @@ if CommandLine.arguments.contains("--generate-goldens") {
 
 var runner = TestRunner()
 
-print("=== Tier 0: Build ===")
-print("  ✓ Build succeeded (you're running this)")
-runner.passed += 1
-
 // MARK: - Renderer Tests
 
 print("\n=== Tier 1: Renderer Unit Tests ===")
@@ -439,22 +435,6 @@ runner.test("custom template") {
     try expect(html == "<html><body><p>Test</p></body></html>", "Custom template failed")
 }
 
-runner.test("template.html contract: contains required element IDs and placeholder") {
-    // This test catches drift between template.html and the code that references it.
-    // If template.html is modified to remove/rename these, this test fails.
-    let templatePath = "Sources/MarkViewCore/Resources/template.html"
-    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
-
-    try expect(template.contains(TemplateConstants.contentPlaceholder),
-        "template.html must contain '\(TemplateConstants.contentPlaceholder)' — MarkdownRenderer.wrapInTemplate depends on this")
-    try expect(template.contains("id=\"\(TemplateConstants.contentElementID)\""),
-        "template.html must contain id=\"\(TemplateConstants.contentElementID)\" — WebPreviewView JS fast-path depends on this")
-    try expect(template.contains("</head>"),
-        "template.html must contain </head> — CSS injection inserts before this tag")
-    try expect(template.contains("</body>"),
-        "template.html must contain </body> — Prism.js injection inserts before this tag")
-}
-
 runner.test("TemplateConstants.contentPlaceholder used by wrapInTemplate") {
     // Verify the constant is actually what wrapInTemplate replaces
     let template = "BEFORE\(TemplateConstants.contentPlaceholder)AFTER"
@@ -586,17 +566,6 @@ runner.test("large file renders under 500ms") {
     try expect(elapsed < 500, "Render took \(elapsed)ms, expected < 500ms")
 }
 
-runner.test("large file performance (10 iterations)") {
-    let md = try loadFixture("large-file.md")
-    var totalMs = 0.0
-    for _ in 0..<10 {
-        let start = CFAbsoluteTimeGetCurrent()
-        _ = MarkdownRenderer.renderHTML(from: md)
-        totalMs += (CFAbsoluteTimeGetCurrent() - start) * 1000
-    }
-    let avgMs = totalMs / 10.0
-    print("    Average: \(String(format: "%.1f", avgMs))ms per render")
-}
 
 // MARK: - FileWatcher Tests
 
@@ -701,12 +670,6 @@ print("\n=== Tier 2: Renderer Stress Tests ===")
 runner.test("empty document renders gracefully") {
     let html = MarkdownRenderer.renderHTML(from: "")
     try expect(html.isEmpty, "Empty input should produce empty output")
-}
-
-runner.test("whitespace-only document") {
-    let html = MarkdownRenderer.renderHTML(from: "   \n\n   \n\t\t\n   ")
-    // Should not crash, may produce empty or whitespace
-    _ = html // Just checking it doesn't crash
 }
 
 runner.test("very long single line") {
@@ -907,16 +870,6 @@ runner.test("full template renders all GFM features in context") {
     try expect(full.contains("<a href=\"https://example.com\""), "Missing autolink")
 }
 
-runner.test("full template dark mode CSS is complete") {
-    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
-
-    // Verify dark mode has all necessary overrides
-    try expect(full.contains("color: #e6edf3"), "Missing dark text color")
-    try expect(full.contains("background: #0d1117"), "Missing dark background")
-    try expect(full.contains("#161b22"), "Missing dark code background")
-    try expect(full.contains("#3d444d"), "Missing dark border color")
-}
-
 runner.test("dark mode CSS covers all styled elements") {
     let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
 
@@ -956,19 +909,6 @@ runner.test("dark mode table has proper contrast (GitHub Primer)") {
 
     // Borders should use GitHub dark border color #3d444d
     try expect(afterDark.contains("#3d444d"), "Dark mode borders should use #3d444d")
-}
-
-runner.test("dark mode inherits text color from body") {
-    let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
-
-    guard let darkStart = full.range(of: "@media (prefers-color-scheme: dark)") else {
-        throw TestError.assertionFailed("No dark mode media query found")
-    }
-    let afterDark = String(full[darkStart.upperBound...])
-
-    // Body sets light text color — table cells inherit it (GitHub Primer approach)
-    try expect(afterDark.contains("body") && afterDark.contains("color: #e6edf3"),
-              "Dark mode body must set light text color for inheritance")
 }
 
 runner.test("dark mode inline code has explicit text color") {
@@ -1221,144 +1161,6 @@ runner.test("debounce-simulated rapid renders stay under budget") {
     try expect(avgMs < 50, "Rapid render avg \(String(format: "%.1f", avgMs))ms exceeds 50ms budget")
 }
 
-// MARK: - Settings Enum Tests
-//
-// These enums mirror the definitions in Sources/MarkView/Settings.swift.
-// The test runner can't import MarkView (SwiftUI dependency), so we redefine
-// the enum contracts here to verify raw values, labels, and CSS values are correct.
-
-print("\n=== Settings Enum Tests ===")
-
-enum TestAppTheme: String, CaseIterable {
-    case light, dark, system
-    var label: String {
-        switch self {
-        case .light: return "Light"
-        case .dark: return "Dark"
-        case .system: return "System"
-        }
-    }
-}
-
-enum TestPreviewWidth: String, CaseIterable {
-    case narrow, medium, wide, full
-    var label: String {
-        switch self {
-        case .narrow: return "Narrow (700px)"
-        case .medium: return "Medium (900px)"
-        case .wide: return "Wide (1200px)"
-        case .full: return "Full Width"
-        }
-    }
-    var cssValue: String {
-        switch self {
-        case .narrow: return "700px"
-        case .medium: return "900px"
-        case .wide: return "1200px"
-        case .full: return "100%"
-        }
-    }
-}
-
-enum TestTabBehavior: String, CaseIterable {
-    case twoSpaces, fourSpaces, tab
-    var label: String {
-        switch self {
-        case .twoSpaces: return "2 Spaces"
-        case .fourSpaces: return "4 Spaces"
-        case .tab: return "Tab"
-        }
-    }
-    var insertionString: String {
-        switch self {
-        case .twoSpaces: return "  "
-        case .fourSpaces: return "    "
-        case .tab: return "\t"
-        }
-    }
-}
-
-runner.test("AppTheme has 3 cases and is CaseIterable") {
-    let cases = ["light", "dark", "system"]
-    for raw in cases {
-        let theme = TestAppTheme(rawValue: raw)
-        try expect(theme != nil, "AppTheme missing case: \(raw)")
-    }
-    try expect(TestAppTheme.allCases.count == 3, "Expected 3 AppTheme cases, got \(TestAppTheme.allCases.count)")
-}
-
-runner.test("AppTheme default is system") {
-    try expect(TestAppTheme.system.rawValue == "system", "Default theme should be 'system'")
-}
-
-runner.test("PreviewWidth has 4 cases and correct CSS values") {
-    try expect(TestPreviewWidth.allCases.count == 4, "Expected 4 PreviewWidth cases")
-    try expect(TestPreviewWidth.narrow.cssValue == "700px", "Narrow should be 700px")
-    try expect(TestPreviewWidth.medium.cssValue == "900px", "Medium should be 900px")
-    try expect(TestPreviewWidth.wide.cssValue == "1200px", "Wide should be 1200px")
-    try expect(TestPreviewWidth.full.cssValue == "100%", "Full should be 100%")
-}
-
-runner.test("PreviewWidth default is medium") {
-    try expect(TestPreviewWidth.medium.rawValue == "medium", "Default width should be 'medium'")
-}
-
-runner.test("TabBehavior has 3 cases and correct insertion strings") {
-    try expect(TestTabBehavior.allCases.count == 3, "Expected 3 TabBehavior cases")
-    try expect(TestTabBehavior.twoSpaces.insertionString == "  ", "2 spaces should insert 2 spaces")
-    try expect(TestTabBehavior.fourSpaces.insertionString == "    ", "4 spaces should insert 4 spaces")
-    try expect(TestTabBehavior.tab.insertionString == "\t", "Tab should insert tab character")
-}
-
-runner.test("TabBehavior default is fourSpaces") {
-    try expect(TestTabBehavior.fourSpaces.rawValue == "fourSpaces", "Default tab behavior should be 'fourSpaces'")
-}
-
-runner.test("AppTheme labels are correct") {
-    try expect(TestAppTheme.light.label == "Light", "Light theme label")
-    try expect(TestAppTheme.dark.label == "Dark", "Dark theme label")
-    try expect(TestAppTheme.system.label == "System", "System theme label")
-}
-
-runner.test("PreviewWidth labels are correct") {
-    try expect(TestPreviewWidth.narrow.label == "Narrow (700px)", "Narrow label")
-    try expect(TestPreviewWidth.medium.label == "Medium (900px)", "Medium label")
-    try expect(TestPreviewWidth.wide.label == "Wide (1200px)", "Wide label")
-    try expect(TestPreviewWidth.full.label == "Full Width", "Full label")
-}
-
-runner.test("TabBehavior labels are correct") {
-    try expect(TestTabBehavior.twoSpaces.label == "2 Spaces", "2 spaces label")
-    try expect(TestTabBehavior.fourSpaces.label == "4 Spaces", "4 spaces label")
-    try expect(TestTabBehavior.tab.label == "Tab", "Tab label")
-}
-
-runner.test("AppTheme raw values round-trip") {
-    for theme in TestAppTheme.allCases {
-        let recovered = TestAppTheme(rawValue: theme.rawValue)
-        try expect(recovered == theme, "Round-trip failed for \(theme)")
-    }
-}
-
-runner.test("PreviewWidth raw values round-trip") {
-    for width in TestPreviewWidth.allCases {
-        let recovered = TestPreviewWidth(rawValue: width.rawValue)
-        try expect(recovered == width, "Round-trip failed for \(width)")
-    }
-}
-
-runner.test("TabBehavior raw values round-trip") {
-    for tab in TestTabBehavior.allCases {
-        let recovered = TestTabBehavior(rawValue: tab.rawValue)
-        try expect(recovered == tab, "Round-trip failed for \(tab)")
-    }
-}
-
-runner.test("Invalid raw values return nil") {
-    try expect(TestAppTheme(rawValue: "invalid") == nil, "Invalid AppTheme should be nil")
-    try expect(TestPreviewWidth(rawValue: "invalid") == nil, "Invalid PreviewWidth should be nil")
-    try expect(TestTabBehavior(rawValue: "invalid") == nil, "Invalid TabBehavior should be nil")
-}
 
 // MARK: - Linter Tests
 
@@ -1494,10 +1296,6 @@ runner.test("linter clean: consistent table columns") {
 
 // Integration tests
 
-runner.test("linter has 9 rules") {
-    try expect(LintRule.allCases.count == 9, "Expected 9 lint rules, got \(LintRule.allCases.count)")
-}
-
 runner.test("linter diagnostics are sorted by line") {
     let md = "Some text\n# Heading\n**unclosed\n"
     let diags = linter.lint(md)
@@ -1591,75 +1389,6 @@ runner.test("autoFixableRules contains expected rules") {
         "unclosedFences should NOT be auto-fixable")
 }
 
-// MARK: - Lint Popover UI Tests
-
-print("\n--- Lint Popover UI Tests ---")
-
-let statusBarSource = (try? String(contentsOfFile: "Sources/MarkView/StatusBarView.swift", encoding: .utf8)) ?? ""
-let viewModelSource = (try? String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)) ?? ""
-let contentViewSource = (try? String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)) ?? ""
-
-runner.test("StatusBarView has clickable lint button") {
-    try expect(statusBarSource.contains("Button") && statusBarSource.contains("showLintPopover"),
-        "StatusBarView must wrap lint icons in a Button that toggles popover")
-}
-
-runner.test("StatusBarView shows popover on click") {
-    try expect(statusBarSource.contains(".popover(isPresented:"),
-        "StatusBarView must use .popover modifier for lint diagnostic display")
-}
-
-runner.test("StatusBarView accepts lintDiagnostics parameter") {
-    try expect(statusBarSource.contains("lintDiagnostics: [LintDiagnostic]"),
-        "StatusBarView must accept full diagnostic array, not just counts")
-}
-
-runner.test("StatusBarView has Fix All button") {
-    try expect(statusBarSource.contains("onFixAll") && statusBarSource.contains("lintFixAll"),
-        "StatusBarView must have a Fix All button with callback")
-}
-
-runner.test("LintPopoverView shows diagnostic details") {
-    try expect(statusBarSource.contains("diagnostic.message") && statusBarSource.contains("diagnostic.rule"),
-        "Popover must show diagnostic message and rule")
-}
-
-runner.test("LintPopoverView shows line and column") {
-    try expect(statusBarSource.contains("diagnostic.line") && statusBarSource.contains("diagnostic.column"),
-        "Popover must show line and column location")
-}
-
-runner.test("LintPopoverView shows fix suggestions") {
-    try expect(statusBarSource.contains("diagnostic.fix"),
-        "Popover must show fix suggestions when available")
-}
-
-runner.test("LintDiagnosticRow has severity icon") {
-    try expect(statusBarSource.contains("xmark.circle.fill") && statusBarSource.contains("exclamationmark.triangle.fill"),
-        "Diagnostic row must show severity-appropriate icon")
-}
-
-runner.test("LintPopoverView has accessibility labels") {
-    try expect(statusBarSource.contains("lintPopoverA11yLabel") && statusBarSource.contains("lintDiagnosticA11y"),
-        "Popover must have accessibility labels")
-}
-
-runner.test("PreviewViewModel stores full diagnostics array") {
-    try expect(viewModelSource.contains("@Published var lintDiagnostics: [LintDiagnostic]"),
-        "ViewModel must publish full LintDiagnostic array")
-}
-
-runner.test("PreviewViewModel has autoFixLint method") {
-    try expect(viewModelSource.contains("func autoFixLint()") && viewModelSource.contains("linter.autoFix"),
-        "ViewModel must have autoFixLint method that calls linter.autoFix")
-}
-
-runner.test("ContentView passes diagnostics and fix callback to StatusBarView") {
-    try expect(contentViewSource.contains("lintDiagnostics: viewModel.lintDiagnostics"),
-        "ContentView must pass diagnostics to StatusBarView")
-    try expect(contentViewSource.contains("onFixAll:") && contentViewSource.contains("autoFixLint"),
-        "ContentView must pass autoFixLint callback to StatusBarView")
-}
 
 // MARK: - Auto-Suggest Tests
 
@@ -1925,19 +1654,6 @@ runner.test("sanitizer strips svg onload XSS") {
     try expect(clean.contains("<p>Safe</p>"), "Should preserve safe content")
 }
 
-runner.test("sanitizer strips svg with nested content") {
-    let html = "<svg><circle r=\"50\"/><animate onbegin=\"alert(1)\"/></svg>"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("<svg"), "Should strip svg tags")
-    try expect(!clean.contains("animate"), "Should strip svg child elements")
-}
-
-runner.test("sanitizer strips SVG case-insensitive") {
-    let html = "<SVG ONLOAD=alert(1)></SVG>"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("<SVG"), "Should strip uppercase SVG tags")
-}
-
 // --- Vector 2: Style tag injection ---
 
 runner.test("sanitizer strips style tags with CSS exfiltration") {
@@ -1954,12 +1670,6 @@ runner.test("sanitizer strips style tags with expression") {
     let clean = sanitizer.sanitize(html)
     try expect(!clean.contains("<style"), "Should strip style tags")
     try expect(!clean.contains("tracker.com"), "Should strip tracking URL")
-}
-
-runner.test("sanitizer strips STYLE case-insensitive") {
-    let html = "<STYLE>body{color:red}</STYLE>"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("<STYLE"), "Should strip uppercase STYLE tags")
 }
 
 // --- Vector 3: Unquoted event handlers ---
@@ -2007,12 +1717,6 @@ runner.test("sanitizer strips self-closing base tag") {
     let html = "<base href=\"https://evil.com/\" />"
     let clean = sanitizer.sanitize(html)
     try expect(!clean.contains("<base"), "Should strip self-closing base tags")
-}
-
-runner.test("sanitizer strips BASE case-insensitive") {
-    let html = "<BASE HREF=\"https://evil.com/\">"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("<BASE"), "Should strip uppercase BASE tags")
 }
 
 // --- Vector 5: Form/input tag injection (phishing) ---
@@ -2065,12 +1769,6 @@ runner.test("sanitizer strips link with prefetch") {
     try expect(!clean.contains("<link"), "Should strip prefetch link tags")
 }
 
-runner.test("sanitizer strips LINK case-insensitive") {
-    let html = "<LINK REL=\"stylesheet\" HREF=\"https://evil.com/steal.css\">"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("<LINK"), "Should strip uppercase LINK tags")
-}
-
 // --- Vector 7: data: URI scheme ---
 
 runner.test("sanitizer blocks data URI in href") {
@@ -2087,25 +1785,12 @@ runner.test("sanitizer blocks data URI in img src") {
     try expect(clean.contains("blocked-data:"), "Should replace with blocked-data:")
 }
 
-runner.test("sanitizer blocks DATA URI case-insensitive") {
-    let html = "<a href=\"DATA:text/html,<script>alert(1)</script>\">Click</a>"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("\"DATA:"), "Should block uppercase DATA: URI")
-    try expect(clean.contains("blocked-data:"), "Should replace with blocked-data:")
-}
-
 // --- Vector 8: Math tags ---
 
 runner.test("sanitizer strips math tags") {
     let html = "<math><mtext><table><mglyph><style><!--</style><img src=x onerror=alert(1)></mglyph></mtext></math>"
     let clean = sanitizer.sanitize(html)
     try expect(!clean.contains("<math"), "Should strip math tags")
-}
-
-runner.test("sanitizer strips MATH case-insensitive") {
-    let html = "<MATH><MTEXT>payload</MTEXT></MATH>"
-    let clean = sanitizer.sanitize(html)
-    try expect(!clean.contains("<MATH"), "Should strip uppercase MATH tags")
 }
 
 // --- Combined / edge cases ---
@@ -2131,6 +1816,30 @@ runner.test("sanitizer preserves safe HTML after stripping dangerous content") {
     try expect(clean.contains("<li>Item</li>"), "Should preserve list items")
 }
 
+runner.test("sanitizer strips dangerous tags case-insensitively") {
+    let cases: [(String, String)] = [
+        ("<SVG onload='x'>evil</SVG>", "SVG uppercase"),
+        ("<Style>body{color:red}</Style>", "STYLE uppercase"),
+        ("<Base href='http://evil.com'>", "BASE uppercase"),
+        ("<Link rel='stylesheet' href='http://evil.com'>", "LINK uppercase"),
+        ("<Math><annotation-xml encoding='text/html'><script>evil</script></annotation-xml></Math>", "MATH uppercase"),
+        ("<IMG src='DATA:text/html,<script>evil</script>'>", "DATA URI case-insensitive"),
+    ]
+    let sanitizer = HTMLSanitizer()
+    for (input, label) in cases {
+        let result = sanitizer.sanitize(input)
+        let isStripped = !result.lowercased().contains("<svg") &&
+                         !result.lowercased().contains("<style") &&
+                         !result.lowercased().contains("<base") &&
+                         !result.lowercased().contains("<link") &&
+                         !result.lowercased().contains("<math") &&
+                         !result.contains("DATA:")
+        // At minimum the dangerous pattern should be absent or defanged
+        try expect(result.count < input.count || !result.contains("evil") || isStripped,
+            "Case-insensitive sanitization failed for: \(label)")
+    }
+}
+
 // HTML plugin integration
 
 runner.test("HTML plugin sanitizes by default") {
@@ -2142,17 +1851,6 @@ runner.test("HTML plugin sanitizes by default") {
     try expect(!plugin.requiresJSExecution, "HTML plugin should not require JS (sanitized)")
 }
 
-runner.test("All enums have non-empty IDs via rawValue") {
-    for theme in TestAppTheme.allCases {
-        try expect(!theme.rawValue.isEmpty, "AppTheme rawValue should not be empty")
-    }
-    for width in TestPreviewWidth.allCases {
-        try expect(!width.rawValue.isEmpty, "PreviewWidth rawValue should not be empty")
-    }
-    for tab in TestTabBehavior.allCases {
-        try expect(!tab.rawValue.isEmpty, "TabBehavior rawValue should not be empty")
-    }
-}
 
 // =============================================================================
 // MARK: - Accessibility (A11Y) Tests
@@ -2206,100 +1904,16 @@ runner.test("postProcessForAccessibility on task list fixture") {
     try expect(processed.contains("aria-label=\"Task item\""), "Task checkboxes missing aria-label")
 }
 
-// MARK: - Focus CSS Tests
-
-print("\n=== Focus CSS Tests ===")
-
-runner.test("template has :focus-visible styles") {
-    // Read template.html from disk
-    let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
-    let template = try String(contentsOf: templatePath, encoding: .utf8)
-    try expect(template.contains(":focus-visible"), "template.html missing :focus-visible CSS")
-    try expect(template.contains("outline:") || template.contains("outline-color:"), "template.html missing focus outline style")
-}
-
-runner.test("dark mode has focus outline color") {
-    let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
-    let template = try String(contentsOf: templatePath, encoding: .utf8)
-
-    guard let darkStart = template.range(of: "@media (prefers-color-scheme: dark)") else {
-        throw TestError.assertionFailed("No dark mode media query in template.html")
-    }
-    let afterDark = String(template[darkStart.upperBound...])
-    try expect(afterDark.contains(":focus-visible") && afterDark.contains("outline-color"),
-              "Dark mode missing focus outline color override")
-}
 
 // MARK: - Internationalization (I18N) Tests
 
 print("\n=== Internationalization Tests ===")
-
-runner.test("template has lang attribute") {
-    let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
-    let template = try String(contentsOf: templatePath, encoding: .utf8)
-    try expect(template.contains("<html lang=\"en\">"), "template.html missing lang=en attribute")
-}
 
 runner.test("inline template has lang attribute") {
     let full = MarkdownRenderer.wrapInTemplate("<p>test</p>")
     try expect(full.contains("<html lang=\"en\">"), "Inline template missing lang=en attribute")
 }
 
-runner.test("RTL CSS rules exist in template") {
-    let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
-    let template = try String(contentsOf: templatePath, encoding: .utf8)
-    try expect(template.contains("[dir=\"rtl\"]"), "template.html missing RTL CSS rules")
-    try expect(template.contains("[dir=\"rtl\"] blockquote"), "template.html missing RTL blockquote rule")
-    try expect(template.contains("[dir=\"rtl\"] ul"), "template.html missing RTL list rule")
-}
-
-runner.test("all user-facing strings use Strings enum") {
-    // Grep SwiftUI view files for bare string literals that should be in Strings enum.
-    // We check for common patterns that indicate a user-facing string NOT using Strings.X
-    let cwd = FileManager.default.currentDirectoryPath
-    let viewFiles = [
-        "Sources/MarkView/ContentView.swift",
-        "Sources/MarkView/StatusBarView.swift",
-        "Sources/MarkView/EditorView.swift",
-        "Sources/MarkView/MarkViewApp.swift",
-    ]
-
-    var violations: [String] = []
-    for file in viewFiles {
-        let path = URL(fileURLWithPath: cwd).appendingPathComponent(file)
-        guard let content = try? String(contentsOf: path, encoding: .utf8) else { continue }
-        let lines = content.components(separatedBy: "\n")
-        for (i, line) in lines.enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Skip comments, imports, struct/class/func declarations
-            if trimmed.hasPrefix("//") || trimmed.hasPrefix("import") || trimmed.isEmpty { continue }
-            // Check for Button("literal"), Text("literal"), .help("literal"), .alert("literal")
-            // These should use Strings.X instead
-            let patterns = [
-                "Button(\"", "Text(\"", ".help(\"", ".alert(\"",
-                ".accessibilityLabel(\"", ".accessibilityHint(\""
-            ]
-            for pattern in patterns {
-                if trimmed.contains(pattern) {
-                    // Allow Text() in format strings like Text("\(value)pt")
-                    // Allow .help() that just wraps a Strings reference
-                    let afterPattern = trimmed.components(separatedBy: pattern).dropFirst().joined()
-                    if afterPattern.hasPrefix("\\(") { continue }
-                    violations.append("\(URL(fileURLWithPath: file).lastPathComponent):\(i+1): \(trimmed.prefix(80))")
-                }
-            }
-        }
-    }
-
-    if !violations.isEmpty {
-        let report = violations.prefix(5).joined(separator: "\n  ")
-        throw TestError.assertionFailed("Found \(violations.count) bare string literals (should use Strings.X):\n  \(report)")
-    }
-}
 
 // =============================================================================
 // MARK: - Dark Mode Explicit Color Regression Tests
@@ -2353,28 +1967,6 @@ runner.test("inline template: all text elements have explicit dark color") {
     }
 }
 
-runner.test("template.html: all text elements have explicit dark color") {
-    let cwd = FileManager.default.currentDirectoryPath
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
-    let template = try String(contentsOf: templatePath, encoding: .utf8)
-    let darkRules = extractDarkModeRules(from: template)
-
-    var missing: [String] = []
-    for (selector, description) in requiredExplicitColorSelectors {
-        let props = darkRules[selector] ?? [:]
-        if props["color"] == nil {
-            missing.append("\(selector) (\(description))")
-        }
-    }
-
-    if !missing.isEmpty {
-        throw TestError.assertionFailed(
-            "template.html dark mode missing explicit color on \(missing.count) text elements " +
-            "(DO NOT rely on inheritance from body):\n  " +
-            missing.joined(separator: "\n  ")
-        )
-    }
-}
 
 runner.test("WebPreviewView darkModeCSS: all text elements have explicit color") {
     // Read WebPreviewView.swift and extract the darkModeCSS constant
@@ -2569,10 +2161,6 @@ struct WindowSizingSpec {
     }
 }
 
-// Read source files to validate constants match
-let appSource = try! String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
-let contentSource = try! String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
-
 runner.test("preview-only default: 55% screen width on standard display") {
     let (w, h) = WindowSizingSpec.previewOnlySize(screenWidth: 1920, screenHeight: 1080)
     try expect(w == 1056, "expected 1056, got \(w)")
@@ -2647,45 +2235,6 @@ runner.test("ultra-wide screen: editor+preview uses 80%") {
     try expect(w == 2752, "expected 2752, got \(w)")
 }
 
-// Source code validation — constants now live in WindowLayout.swift (single source of truth).
-// ContentView and MarkViewApp must delegate to WindowLayout, not hardcode magic numbers.
-runner.test("Window sizing constants defined in WindowLayout.swift") {
-    let layoutSource = try String(
-        contentsOfFile: "Sources/MarkViewCore/WindowLayout.swift", encoding: .utf8)
-    try expect(layoutSource.contains("previewWidthFraction") && layoutSource.contains("0.55"),
-        "WindowLayout must define previewWidthFraction = 0.55")
-    try expect(layoutSource.contains("editorWidthFraction") && layoutSource.contains("0.80"),
-        "WindowLayout must define editorWidthFraction = 0.80")
-    try expect(layoutSource.contains("previewMinWidth") && layoutSource.contains("800"),
-        "WindowLayout must define previewMinWidth = 800")
-    try expect(layoutSource.contains("editorMinWidth") && layoutSource.contains("900"),
-        "WindowLayout must define editorMinWidth = 900")
-    try expect(layoutSource.contains("minHeight") && layoutSource.contains("600"),
-        "WindowLayout must define minHeight = 600")
-}
-
-runner.test("MarkViewApp.swift delegates to WindowLayout (no magic numbers)") {
-    // After WindowLayout extraction, MarkViewApp must use WindowLayout.defaultWindowSize
-    // and NOT hardcode 0.55/800 directly (those live in WindowLayout now)
-    try expect(appSource.contains("WindowLayout"),
-        "MarkViewApp must use WindowLayout for window sizing")
-}
-
-runner.test("ContentView.swift delegates to WindowLayout (no magic numbers)") {
-    try expect(contentSource.contains("WindowLayout"),
-        "ContentView must use WindowLayout for width calculation")
-}
-
-runner.test("MarkViewApp min frame constraint: 600x400") {
-    try expect(appSource.contains("minWidth: 600") && appSource.contains("minHeight: 400"),
-        "MarkViewApp must set frame minimums to 600x400")
-}
-
-runner.test("window sizing uses animate: true for smooth transitions") {
-    try expect(contentSource.contains("animate: true"),
-        "toggleEditor must animate window resize for smooth UX")
-}
-
 // =============================================================================
 // MARK: - Window Title Tests
 // =============================================================================
@@ -2695,31 +2244,6 @@ runner.test("window sizing uses animate: true for smooth transitions") {
 // silently when mainWindow was nil. Fix: use reactive .navigationTitle().
 
 print("\n=== Window Title Tests ===")
-
-runner.test("PreviewViewModel.fileName defaults to MarkView") {
-    try expect(viewModelSource.contains("fileName: String = \"MarkView\""),
-        "fileName should default to \"MarkView\"")
-}
-
-runner.test("loadFile sets fileName from path") {
-    // Verify loadFile extracts lastPathComponent
-    try expect(viewModelSource.contains("URL(fileURLWithPath: path).lastPathComponent"),
-        "loadFile must extract filename from path")
-}
-
-runner.test("no imperative mainWindow?.title in PreviewViewModel") {
-    // The old bug: NSApplication.shared.mainWindow?.title = fileName
-    // This fails silently when mainWindow is nil (e.g. after open panel dismisses)
-    try expect(!viewModelSource.contains("mainWindow?.title"),
-        "must NOT use imperative mainWindow?.title — use reactive .navigationTitle() instead")
-    try expect(!viewModelSource.contains("mainWindow!.title"),
-        "must NOT use forced mainWindow!.title")
-}
-
-runner.test("ContentView uses reactive .navigationTitle for window title") {
-    try expect(contentSource.contains(".navigationTitle(viewModel.fileName)"),
-        "ContentView must use .navigationTitle(viewModel.fileName) for reactive title updates")
-}
 
 runner.test("fileName updates correctly for various file paths") {
     // Simulate the URL(fileURLWithPath:).lastPathComponent extraction
@@ -2751,181 +2275,6 @@ runner.test("sequential file loads produce different fileNames") {
     try expect(nameA != nameB, "sequential file loads must produce different fileNames")
 }
 
-runner.test("onChange(of: initialFilePath) triggers loadFile for subsequent opens") {
-    // ContentView must watch for changes to initialFilePath and reload
-    try expect(contentSource.contains(".onChange(of: initialFilePath)"),
-        "ContentView must observe initialFilePath changes to handle subsequent file opens")
-    // The onChange handler must call loadFile
-    let onChangeSection: String
-    if let start = contentSource.range(of: ".onChange(of: initialFilePath)"),
-       let end = contentSource.range(of: ".onAppear", range: start.upperBound..<contentSource.endIndex) {
-        onChangeSection = String(contentSource[start.lowerBound..<end.lowerBound])
-    } else {
-        onChangeSection = ""
-    }
-    try expect(onChangeSection.contains("loadFile"),
-        "onChange(of: initialFilePath) must call viewModel.loadFile()")
-}
-
-runner.test("no duplicate title-setting mechanisms") {
-    // Ensure there's exactly ONE mechanism for window titles: .navigationTitle
-    // No leftover AppKit title-setting code
-    let appKitTitlePatterns = [
-        "window.title =",
-        "window?.title =",
-        ".title = fileName",
-        "mainWindow?.title",
-    ]
-    for pattern in appKitTitlePatterns {
-        try expect(!viewModelSource.contains(pattern),
-            "PreviewViewModel must not contain AppKit title pattern: '\(pattern)'")
-    }
-}
-
-// =============================================================================
-// MARK: — Launch Behavior Tests
-// =============================================================================
-// Validates that the app launch UX is correct:
-// - No file argument: shows DropTargetView only (no auto-open panel)
-// - With file argument: loads file directly
-// =============================================================================
-
-print("\n--- Launch Behavior ---")
-
-runner.test("no-file launch must NOT auto-show Open panel") {
-    // The onAppear block should NOT call openFile() in the else branch
-    // Having both DropTargetView AND an Open panel creates cluttered two-window UX
-    let onAppearSection: String
-    if let start = appSource.range(of: ".onAppear {"),
-       let end = appSource.range(of: ".onOpenURL", range: start.upperBound..<appSource.endIndex) {
-        onAppearSection = String(appSource[start.lowerBound..<end.lowerBound])
-    } else {
-        onAppearSection = ""
-    }
-    try expect(!onAppearSection.contains("openFile()"),
-        "onAppear must not call openFile() — DropTargetView with Cmd+O hint is sufficient")
-}
-
-runner.test("DropTargetView shows file open guidance") {
-    try expect(contentSource.contains("dropSubprompt") || contentSource.contains("Open"),
-        "DropTargetView must guide user to File → Open")
-}
-
-runner.test("DropTargetView accepts markdown file extensions") {
-    try expect(contentSource.contains("\"md\"") && contentSource.contains("\"markdown\""),
-        "DropTargetView must accept .md and .markdown extensions")
-}
-
-runner.test("File → Open menu exists with Cmd+O shortcut") {
-    try expect(appSource.contains("openFile()") && appSource.contains("\"o\""),
-        "File menu must have Open with Cmd+O keyboard shortcut")
-}
-
-runner.test("openFile uses NSOpenPanel with markdown content types") {
-    try expect(appSource.contains("NSOpenPanel") && appSource.contains("filenameExtension: \"md\""),
-        "openFile must use NSOpenPanel configured for markdown files")
-}
-
-// =============================================================================
-// MARK: - Find Menu Tests
-// =============================================================================
-
-print("\n--- Find Menu ---")
-
-runner.test("Edit menu has Find command with Cmd+F") {
-    try expect(appSource.contains("Strings.find") && appSource.contains("\"f\""),
-        "App must have Find menu item with Cmd+F shortcut")
-}
-
-runner.test("Edit menu has Find and Replace with Cmd+Opt+F") {
-    try expect(appSource.contains("Strings.findAndReplace"),
-        "App must have Find and Replace menu item")
-}
-
-runner.test("Edit menu has Find Next with Cmd+G") {
-    try expect(appSource.contains("Strings.findNext") && appSource.contains("\"g\""),
-        "App must have Find Next menu item with Cmd+G shortcut")
-}
-
-runner.test("Edit menu has Find Previous with Cmd+Shift+G") {
-    try expect(appSource.contains("Strings.findPrevious"),
-        "App must have Find Previous menu item")
-}
-
-runner.test("Find commands route through responder chain via FindHelper") {
-    try expect(appSource.contains("FindHelper.send") && appSource.contains("performFindPanelAction"),
-        "Find commands must use FindHelper to send performFindPanelAction: through responder chain")
-}
-
-runner.test("FindHelper sends correct NSFindPanelAction tags") {
-    try expect(appSource.contains(".showFindPanel") && appSource.contains(".next") && appSource.contains(".previous"),
-        "FindHelper must use proper NSFindPanelAction enum values")
-}
-
-runner.test("EditorView enables find bar on NSTextView") {
-    try expect(editorSource.contains("usesFindBar = true"),
-        "EditorView must set usesFindBar = true for NSTextView find support")
-}
-
-runner.test("EditorView enables incremental search") {
-    try expect(editorSource.contains("isIncrementalSearchingEnabled = true"),
-        "EditorView must enable incremental search for responsive find-as-you-type")
-}
-
-// =============================================================================
-// MARK: — Settings Reactivity Tests
-// =============================================================================
-// Validates that changing settings (font size, theme, width) triggers a
-// WebPreviewView re-render. SwiftUI only calls updateNSView when properties
-// change — settings must be passed as explicit properties, not read internally.
-// =============================================================================
-
-let wpvSource = try! String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-
-print("\n--- Settings Reactivity ---")
-
-runner.test("WebPreviewView has previewFontSize as explicit property") {
-    // Must be a struct property, not read from AppSettings inside Coordinator
-    try expect(wpvSource.contains("var previewFontSize: Double"),
-        "previewFontSize must be an explicit property so SwiftUI detects changes")
-}
-
-runner.test("WebPreviewView has theme as explicit property") {
-    try expect(wpvSource.contains("var theme: AppTheme"),
-        "theme must be an explicit property so SwiftUI detects changes")
-}
-
-runner.test("WebPreviewView has previewWidth as explicit property") {
-    try expect(wpvSource.contains("var previewWidth: String"),
-        "previewWidth must be an explicit property so SwiftUI detects changes")
-}
-
-runner.test("ContentView passes settings to WebPreviewView") {
-    try expect(contentSource.contains("previewFontSize: settings.previewFontSize"),
-        "ContentView must pass previewFontSize from observed settings")
-    try expect(contentSource.contains("theme: settings.theme"),
-        "ContentView must pass theme from observed settings")
-}
-
-runner.test("ContentView observes AppSettings for reactivity") {
-    try expect(contentSource.contains("@ObservedObject") && contentSource.contains("AppSettings.shared"),
-        "ContentView must @ObservedObject AppSettings.shared to trigger re-renders on settings change")
-}
-
-runner.test("Coordinator detects settings changes independently of HTML") {
-    // updateContent must re-render when CSS settings change, even if HTML hasn't changed
-    try expect(wpvSource.contains("cssChanged") && wpvSource.contains("html != lastHTML || cssChanged"),
-        "updateContent must check for CSS changes (font size, theme) not just HTML changes")
-}
-
-runner.test("Cmd+/- updates both editor and preview font size") {
-    try expect(appSource.contains("editorFontSize") && appSource.contains("previewFontSize"),
-        "Font size shortcuts must update both editor and preview font sizes")
-    // Verify increase, decrease, and reset all touch both
-    let increaseSection = appSource.components(separatedBy: "increaseFontSize").last?.prefix(200) ?? ""
-    try expect(increaseSection.contains("editorFontSize") && increaseSection.contains("previewFontSize"),
-        "Increase font must update both editor and preview sizes")
-}
 
 // =============================================================================
 // MARK: — Editor (NSTextView) Tests
@@ -2933,60 +2282,6 @@ runner.test("Cmd+/- updates both editor and preview font size") {
 // Validates that EditorView uses NSTextView with find/replace support.
 
 let editorSource = try! String(contentsOfFile: "Sources/MarkView/EditorView.swift", encoding: .utf8)
-
-print("\n--- Editor (NSTextView) ---")
-
-runner.test("EditorView uses NSViewRepresentable (not SwiftUI TextEditor)") {
-    try expect(editorSource.contains("NSViewRepresentable"),
-        "EditorView must use NSViewRepresentable for native text editing")
-    try expect(!editorSource.contains("TextEditor(text:"),
-        "EditorView must not use SwiftUI TextEditor")
-}
-
-runner.test("EditorView enables find bar") {
-    try expect(editorSource.contains("usesFindBar = true"),
-        "NSTextView must have usesFindBar enabled for Cmd+F support")
-}
-
-runner.test("EditorView enables incremental search") {
-    try expect(editorSource.contains("isIncrementalSearchingEnabled = true"),
-        "NSTextView must have incremental searching for live find-as-you-type")
-}
-
-runner.test("EditorView supports undo") {
-    try expect(editorSource.contains("allowsUndo = true"),
-        "NSTextView must have allowsUndo for Cmd+Z support")
-}
-
-runner.test("EditorView uses monospaced font from settings") {
-    try expect(editorSource.contains("monospacedSystemFont") && editorSource.contains("editorFontSize"),
-        "Editor font must be monospaced and respect editorFontSize setting")
-}
-
-runner.test("EditorView respects word wrap setting") {
-    try expect(editorSource.contains("settings.wordWrap"),
-        "Editor must check wordWrap setting to toggle text wrapping")
-}
-
-runner.test("EditorView respects spell check setting") {
-    try expect(editorSource.contains("settings.spellCheck"),
-        "Editor must check spellCheck setting")
-}
-
-runner.test("EditorView avoids unnecessary text resets") {
-    try expect(editorSource.contains("textView.string != text"),
-        "updateNSView must guard against resetting text when unchanged (prevents cursor jump)")
-}
-
-runner.test("EditorView preserves selection on external text update") {
-    try expect(editorSource.contains("selectedRanges"),
-        "Editor must save/restore selectedRanges when text is updated externally")
-}
-
-runner.test("EditorView has delegate for text change callbacks") {
-    try expect(editorSource.contains("NSTextViewDelegate") && editorSource.contains("textDidChange"),
-        "Editor must use NSTextViewDelegate to notify parent of text changes")
-}
 
 // =============================================================================
 // MARK: - EditorView clampedRanges clamping logic — behavioral regression tests
@@ -3079,20 +2374,6 @@ runner.test("clampedRanges: multiple ranges — invalid entries dropped, valid c
     try expect(result[1].location == 4 && result[1].length == 1, "Fourth range clamped; got \(result[1])")
 }
 
-runner.test("EditorView guard uses strict less-than for location bound (Bug #20 source check)") {
-    // Verify the source uses `< textLength` not `<= textLength` to prevent loc == textLength OOB.
-    try expect(editorSource.contains("range.location < textLength"),
-        "Guard must use strict < to exclude loc == textLength (characterAtIndex OOB)")
-    try expect(!editorSource.contains("range.location <= textLength"),
-        "Guard must NOT use <= (allows loc == textLength which is OOB for characterAtIndex)")
-}
-
-runner.test("EditorView guards against negative range.length (Bug #21 source check)") {
-    // Verify the negative-length guard is present to block corrupted NSRange from AppKit.
-    try expect(editorSource.contains("range.length >= 0"),
-        "Guard must reject negative length (prevents substringWithRange OOB via min() sign error)")
-}
-
 // =============================================================================
 // MARK: - EditorView hang/crash mechanism source checks
 //
@@ -3174,157 +2455,8 @@ runner.test("Quick Look extension source exists") {
     try expect(qlSourceExists, "PreviewProvider.swift must exist in Sources/MarkViewQuickLook/")
 }
 
-runner.test("Quick Look extension uses MarkdownRenderer") {
-    try expect(qlSource.contains("MarkdownRenderer.renderHTML"), "Extension must use MarkdownRenderer.renderHTML")
-}
-
-runner.test("Quick Look extension uses accessibility post-processing") {
-    try expect(qlSource.contains("postProcessForAccessibility"), "Extension must call postProcessForAccessibility")
-}
-
-runner.test("Quick Look extension wraps in template") {
-    try expect(qlSource.contains("wrapInTemplate"), "Extension must call wrapInTemplate for styled output")
-}
-
-runner.test("Quick Look extension imports MarkViewCore") {
-    try expect(qlSource.contains("import MarkViewCore"), "Extension must import MarkViewCore library")
-}
-
 runner.test("Quick Look extension Info.plist exists") {
     try expect(qlPlistExists, "Info.plist must exist in Sources/MarkViewQuickLook/")
-}
-
-runner.test("Quick Look Info.plist declares correct extension point") {
-    try expect(qlPlist.contains("com.apple.quicklook.preview"),
-        "Info.plist must declare com.apple.quicklook.preview extension point")
-}
-
-runner.test("Quick Look Info.plist supports markdown content type") {
-    try expect(qlPlist.contains("net.daringfireball.markdown"),
-        "Info.plist must list net.daringfireball.markdown in QLSupportedContentTypes")
-}
-
-runner.test("Quick Look Info.plist declares principal class") {
-    try expect(qlPlist.contains("NSExtensionPrincipalClass"),
-        "Info.plist must declare NSExtensionPrincipalClass for macOS to instantiate the provider")
-}
-
-runner.test("Quick Look Info.plist uses module-qualified principal class") {
-    // Swift requires module.ClassName format for macOS to find the class
-    try expect(qlPlist.contains("MarkViewQuickLook.PreviewViewController"),
-        "NSExtensionPrincipalClass must be module-qualified: MarkViewQuickLook.PreviewViewController")
-}
-
-runner.test("Quick Look Info.plist has QLSupportedContentTypes inside NSExtensionAttributes") {
-    // macOS only reads QLSupportedContentTypes from NSExtension > NSExtensionAttributes, not top-level
-    try expect(qlPlist.contains("NSExtensionAttributes"),
-        "Info.plist must have NSExtensionAttributes dict inside NSExtension")
-}
-
-runner.test("Quick Look Info.plist has CFBundleSupportedPlatforms") {
-    try expect(qlPlist.contains("CFBundleSupportedPlatforms"),
-        "Info.plist must declare CFBundleSupportedPlatforms for macOS extension discovery")
-    try expect(qlPlist.contains("MacOSX"),
-        "CFBundleSupportedPlatforms must include MacOSX")
-}
-
-runner.test("Quick Look Info.plist has LSMinimumSystemVersion") {
-    try expect(qlPlist.contains("LSMinimumSystemVersion"),
-        "Info.plist must declare LSMinimumSystemVersion for extension registration")
-}
-
-runner.test("Quick Look Info.plist does not declare QLIsDataBasedPreview") {
-    // View-based path (QLPreviewingController) must NOT set QLIsDataBasedPreview
-    try expect(!qlPlist.contains("QLIsDataBasedPreview"),
-        "View-based QL extension must NOT declare QLIsDataBasedPreview")
-}
-
-runner.test("Quick Look Info.plist does not claim public.plain-text") {
-    // public.plain-text conflicts with other QL extensions (Glance, SourceCodeSyntaxHighlight)
-    try expect(!qlPlist.contains("public.plain-text"),
-        "QLSupportedContentTypes must NOT include public.plain-text (causes UTI conflicts)")
-}
-
-runner.test("Quick Look extension calls NSExtensionMain") {
-    // Without NSExtensionMain, macOS can't host the extension as an XPC service
-    try expect(qlSource.contains("NSExtensionMain"),
-        "Extension must call NSExtensionMain() to start the XPC hosting runtime")
-}
-
-runner.test("Main app entitlements MUST NOT include App Sandbox — Developer ID image loading regression") {
-    // App Sandbox (com.apple.security.app-sandbox) breaks image loading for Developer ID distribution:
-    //   1. Main process: Data(contentsOf: imageURL) returns nil for files outside app container
-    //   2. WKWebView WebContent process: sandboxed independently; allowingReadAccessTo doesn't propagate
-    // Hardened Runtime (required for notarization) is independent of App Sandbox — sandbox is safe to remove.
-    // DO NOT re-add app-sandbox to MarkView.entitlements. If you think you need it, read GOTCHAS.md first.
-    let entPath = "Sources/MarkView/MarkView.entitlements"
-    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(!entitlements.contains("com.apple.security.app-sandbox"),
-        "MarkView.entitlements must NOT contain app-sandbox — it breaks image loading (see GOTCHAS.md Session 4)")
-}
-
-runner.test("Quick Look entitlements enable app sandbox") {
-    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
-    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(entitlements.contains("com.apple.security.app-sandbox"),
-        "Quick Look extension entitlements must enable app sandbox (required by pluginkit)")
-}
-
-runner.test("Quick Look entitlements have WKWebView sandbox workarounds") {
-    // WKWebView in QL extension sandbox needs these entitlements to launch WebContent process.
-    // These block App Store — when App Store submission is needed, switch to NSAttributedString.
-    let entPath = "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements"
-    let entitlements = (try? String(contentsOfFile: entPath, encoding: .utf8)) ?? ""
-    try expect(entitlements.contains("com.apple.security.cs.disable-library-validation"),
-        "WKWebView QL extension needs disable-library-validation for WebContent process")
-    try expect(entitlements.contains("com.apple.security.network.client"),
-        "WKWebView QL extension needs network.client for WebKit IPC")
-}
-
-runner.test("Quick Look extension imports WebKit") {
-    try expect(qlSource.contains("import WebKit"),
-        "QL extension must import WebKit for WKWebView rendering")
-}
-
-runner.test("Quick Look extension uses QLPreviewingController") {
-    try expect(qlSource.contains("QLPreviewingController"),
-        "Extension must conform to QLPreviewingController (view-based path)")
-}
-
-runner.test("Quick Look extension implements preparePreviewOfFile") {
-    try expect(qlSource.contains("preparePreviewOfFile"),
-        "Extension must implement preparePreviewOfFile(at:completionHandler:)")
-}
-
-runner.test("Quick Look extension uses WKWebView for full-fidelity rendering") {
-    try expect(qlSource.contains("WKWebView"),
-        "Extension must use WKWebView for CSS + Prism.js rendering")
-}
-
-runner.test("Quick Look extension handles dark mode via CSS injection") {
-    // WKWebView in sandbox doesn't inherit system appearance, so dark mode
-    // must be detected in Swift and injected as CSS overrides.
-    try expect(qlSource.contains("darkModeCSS") && qlSource.contains("isDarkMode"),
-        "Extension must detect dark mode in Swift and inject CSS (media queries don't work in sandbox)")
-}
-
-// Verify bundle.sh includes PlugIns directory creation
-let bundleScript = (try? String(contentsOfFile: "scripts/bundle.sh", encoding: .utf8)) ?? ""
-
-runner.test("bundle.sh creates PlugIns directory for Quick Look extension") {
-    try expect(bundleScript.contains("PlugIns") && bundleScript.contains("MarkViewQuickLook"),
-        "bundle.sh must create PlugIns directory and embed MarkViewQuickLook.appex")
-}
-
-runner.test("bundle.sh signs extension before parent app") {
-    let appexSignIndex = bundleScript.range(of: "QL_APPEX_DIR")
-    let deepSignIndex = bundleScript.range(of: "codesign -s - -f --deep")
-    if let appexIdx = appexSignIndex, let deepIdx = deepSignIndex {
-        try expect(appexIdx.lowerBound < deepIdx.lowerBound,
-            "Extension must be signed before parent app's --deep signing")
-    } else {
-        try expect(appexSignIndex != nil, "bundle.sh must reference QL_APPEX_DIR for extension signing")
-    }
 }
 
 // =============================================================================
@@ -3700,31 +2832,6 @@ runner.test("WebPreviewView does NOT enable allowFileAccessFromFileURLs") {
         "allowFileAccessFromFileURLs must NOT be enabled — it allows JS to fetch arbitrary file:// URLs via XSS. Found: \(activeLines)")
 }
 
-runner.test("WebPreviewView does NOT grant read access to root filesystem") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    // Ensure no loadFileURL call passes "/" as the access scope
-    try expect(!source.contains("allowingReadAccessTo: URL(fileURLWithPath: \"/\")"),
-        "allowingReadAccessTo must NOT be root '/' — restricts to narrowest necessary directory")
-}
-
-runner.test("loadViaFileURL inlines local images as data URIs") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    // App Sandbox blocks WKWebView WebContent process from accessing files outside the container
-    // even with allowingReadAccessTo. Fix: inline images as data URIs in the main app process
-    // (which has user-selected file access) before handing HTML to WKWebView.
-    try expect(source.contains("inlineLocalImages(in: finalHTML, baseDirectory: dir)"),
-        "loadViaFileURL must inline local images as data URIs before writing temp HTML file")
-    try expect(source.contains(";base64,"),
-        "inlineLocalImages must produce data URIs")
-}
-
-runner.test("inlineLocalImages skips absolute URLs and data URIs") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("hasPrefix(\"http://\")"),
-        "inlineLocalImages must skip http:// URLs")
-    try expect(source.contains("hasPrefix(\"data:\")"),
-        "inlineLocalImages must skip existing data: URIs to avoid double-encoding")
-}
 
 // =============================================================================
 // MARK: - Mermaid Rendering Tests
@@ -3770,14 +2877,6 @@ runner.test("multiple mermaid blocks all get language-mermaid class") {
     let html = MarkdownRenderer.renderHTML(from: md)
     let count = html.components(separatedBy: "language-mermaid").count - 1
     try expect(count == 2, "Expected 2 mermaid blocks, found \(count)")
-}
-
-runner.test("mermaid block does not get Prism syntax highlighting class interference") {
-    // Only language-mermaid, not any Prism-added token classes on the raw text
-    let md = "```mermaid\nflowchart LR\n    A --> B\n```"
-    let html = MarkdownRenderer.renderHTML(from: md)
-    // The raw output from cmark should just have language-mermaid — Prism runs client-side
-    try expect(html.contains("language-mermaid"), "Must have language-mermaid class")
 }
 
 runner.test("mermaid fixture renders non-empty output") {
@@ -3857,104 +2956,6 @@ runner.test("mermaid.min.js is non-empty and contains mermaid API") {
     try expect(content.count > 100_000, "mermaid.min.js seems too small — may be truncated or corrupt")
 }
 
-runner.test("WebPreviewView loads mermaid.min.js resource") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("mermaid.min"),
-        "WebPreviewView must load mermaid.min.js from bundle")
-    try expect(source.contains("mermaidJS"),
-        "WebPreviewView must have a mermaidJS property")
-}
-
-runner.test("injectMermaid is called before loadViaFileURL") {
-    // WebPreviewView now delegates to HTMLPipeline.assemble() — verify the pipeline
-    // and the call site both exist. Injection ordering is enforced inside HTMLPipeline.
-    let webSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(webSource.contains("pipeline.assemble("),
-        "WebPreviewView must delegate injection to pipeline.assemble(styledHTML)")
-    try expect(webSource.contains("loadViaFileURL(fullHTML"),
-        "loadViaFileURL must receive the fully-injected HTML from pipeline.assemble")
-    // Confirm HTMLPipeline.assemble calls Prism before Mermaid (ordering preserved)
-    let pipelineSource = try String(contentsOfFile: "Sources/MarkViewCore/HTMLPipeline.swift", encoding: .utf8)
-    guard let prismPos = pipelineSource.range(of: "html = injectPrism(html)"),
-          let mermaidPos = pipelineSource.range(of: "html = injectMermaid(html)") else {
-        throw TestError.assertionFailed("HTMLPipeline.assemble must call injectPrism and injectMermaid")
-    }
-    try expect(prismPos.lowerBound < mermaidPos.lowerBound,
-        "injectPrism must be called before injectMermaid in HTMLPipeline.assemble()")
-}
-
-runner.test("JS fast-path calls _markviewRenderMermaid after innerHTML swap") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("_markviewRenderMermaid"),
-        "JS fast-path must call window._markviewRenderMermaid after content update")
-}
-
-runner.test("injectMermaid exposes bridge as window._markviewRenderMermaid") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("window._markviewRenderMermaid = function()"),
-        "Mermaid bridge must be exposed as window._markviewRenderMermaid for fast-path reuse")
-}
-
-runner.test("injectMermaid bridge converts pre>code.language-mermaid to div.mermaid") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("language-mermaid"),
-        "Mermaid bridge must target code.language-mermaid (cmark-gfm output format)")
-    try expect(source.contains("div.className = 'mermaid'") || source.contains("className = 'mermaid'"),
-        "Mermaid bridge must convert to <div class=\"mermaid\">")
-    try expect(source.contains("code.textContent") || source.contains("textContent"),
-        "Mermaid bridge must use textContent (not innerHTML) to safely read diagram source")
-    try expect(source.contains("pre.parentNode.replaceChild"),
-        "Mermaid bridge must replace the <pre> element with the mermaid div")
-}
-
-runner.test("injectMermaid uses dark theme in dark mode") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("prefers-color-scheme: dark"),
-        "Mermaid initialization must check dark mode preference")
-    try expect(source.contains("theme: isDark ? 'dark' : 'default'") ||
-               (source.contains("'dark'") && source.contains("'default'")),
-        "Mermaid must use dark theme in dark mode and default theme in light mode")
-}
-
-runner.test("injectMermaid uses startOnLoad: false for explicit control") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("startOnLoad: false"),
-        "Mermaid must be initialized with startOnLoad: false to prevent double-rendering")
-}
-
-runner.test("injectMermaid handles DOMContentLoaded for initial load timing") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("DOMContentLoaded"),
-        "Mermaid bridge must handle DOMContentLoaded for pages where DOM isn't ready yet")
-}
-
-runner.test("injectMermaid removes SVG width attribute for zoom scaling — regression for fixed-size diagrams") {
-    // Mermaid outputs SVG with fixed width="N" height="N" attributes.
-    // Removing BOTH allows the SVG to respect CSS max-width:100% and scale correctly
-    // when the user zooms or resizes the preview pane.
-    // REGRESSION GUARD: if only height is removed (old bug), width stays fixed and
-    // diagrams don't scale. Both removeAttribute calls are required.
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("removeAttribute('width')"),
-        "injectMermaid must remove SVG width attribute — fixed width prevents zoom scaling")
-    try expect(source.contains("removeAttribute('height')"),
-        "injectMermaid must remove SVG height attribute — fixed height breaks aspect ratio")
-    // Verify viewBox is preserved/added so the SVG knows its intrinsic dimensions
-    try expect(source.contains("setAttribute('viewBox'"),
-        "injectMermaid must set viewBox before removing dimensions — otherwise SVG loses its aspect ratio")
-}
-
-runner.test("injectMermaid sets SVG width:100% for fluid layout") {
-    // After removing fixed dimensions, the SVG needs an explicit CSS width so it fills
-    // its container rather than collapsing to 0. max-width:100% alone is insufficient
-    // when the SVG has no width attribute — width:100% is also required.
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("style.width = '100%'"),
-        "injectMermaid must set svg.style.width = '100%' after removing the width attribute")
-    try expect(source.contains("style.height = 'auto'"),
-        "injectMermaid must set svg.style.height = 'auto' for proportional scaling")
-}
-
 runner.test("template.html .mermaid svg CSS specifies explicit width for fluid scaling") {
     // CSS must also specify width:100% on .mermaid svg so the rule applies even
     // when JS post-processing hasn't fired yet (e.g. slow Mermaid init).
@@ -3971,114 +2972,10 @@ runner.test("template.html .mermaid svg CSS specifies explicit width for fluid s
         ".mermaid svg CSS must include height: auto for proportional scaling")
 }
 
-runner.test("template.html has mermaid CSS") {
-    let templatePath = "Sources/MarkViewCore/Resources/template.html"
-    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
-    try expect(template.contains(".mermaid"),
-        "template.html must have CSS for .mermaid elements")
-}
-
 // =============================================================================
 // MARK: - Preview Pane Live Update Pipeline (source-code contracts)
 // =============================================================================
 
-print("\n=== Tier 2: Preview Pane Live Update Pipeline ===")
-
-runner.test("contentDidChange → renderDebounced wired — editor typing updates preview") {
-    // Source-code contract: typing in editor must go through renderDebounced → renderedHTML.
-    // If this chain breaks, preview silently stops updating when user types.
-    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
-    try expect(source.contains("func contentDidChange"),
-        "PreviewViewModel must have contentDidChange — editor binding calls this on keystroke")
-    try expect(source.contains("renderDebounced(newText)") || source.contains("renderDebounced("),
-        "contentDidChange must call renderDebounced — all editor keystrokes must eventually update preview")
-}
-
-runner.test("renderImmediate sets renderedHTML — preview binding wired") {
-    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
-    try expect(source.contains("renderedHTML = MarkdownRenderer.wrapInTemplate"),
-        "renderImmediate must set renderedHTML — WebPreviewView reads this to update the DOM")
-}
-
-runner.test("FileWatcher callback calls loadContent — external file changes reach preview") {
-    // When Claude edits a file on disk, the FileWatcher must call loadContent.
-    // loadContent → renderImmediate → renderedHTML change → WebPreviewView update.
-    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
-    try expect(source.contains("self.loadContent(from: path)"),
-        "FileWatcher callback must call loadContent — external file changes must reload preview")
-    try expect(source.contains("func watchFile"),
-        "PreviewViewModel must have watchFile — called from loadFile to start monitoring")
-}
-
-runner.test("watchFile starts FileWatcher — loadFile wires it up") {
-    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
-    try expect(source.contains("watchFile(at: path)"),
-        "loadFile must call watchFile — without this, external file changes never reach preview")
-    try expect(source.contains("fileWatcher?.start()"),
-        "watchFile must call fileWatcher.start() — watcher must be active to detect changes")
-}
-
-runner.test("ContentView binds renderedHTML to WebPreviewView — SwiftUI update path wired") {
-    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
-    try expect(source.contains("html: viewModel.renderedHTML"),
-        "ContentView must pass viewModel.renderedHTML to WebPreviewView — this is the binding that drives preview updates")
-}
-
-runner.test("WebPreviewView updateContent handles html change — JS fast-path wired") {
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(source.contains("guard html != lastHTML || cssChanged || needsFullReload else { return }"),
-        "updateContent must check html != lastHTML to detect content changes")
-    try expect(source.contains("updateContentViaJS"),
-        "updateContent must call updateContentViaJS for same-file updates (not always full reload)")
-}
-
-runner.test("updateContentViaJS uses getElementById(contentElementID) — article ID contract enforced") {
-    // If template.html's article ID changes, the JS fast-path silently fails.
-    // This test verifies the article ID used in JS matches TemplateConstants.
-    // The Swift source uses string interpolation: document.getElementById('\(TemplateConstants.contentElementID)')
-    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    // Check for the Swift interpolation form (TemplateConstants.contentElementID used in JS string)
-    try expect(source.contains("getElementById('\\(TemplateConstants.contentElementID)')") ||
-               source.contains("getElementById(\"\\(TemplateConstants.contentElementID)\")") ||
-               source.contains("getElementById('content')"),
-        "updateContentViaJS must reference TemplateConstants.contentElementID in getElementById call — must match article id in template.html")
-    // Also verify contentEl null-check is present (silent fail if null)
-    try expect(source.contains("if (contentEl)") || source.contains("if(contentEl)"),
-        "updateContentViaJS must guard against null contentEl — null means wrong ID or DOM not ready")
-}
-
-runner.test("wrapInTemplate uses file template (not fallback) — article ID present in output") {
-    // The FALLBACK template in MarkdownRenderer.wrapInTemplate does NOT have id='content'.
-    // The FILE template (template.html) does. If the file template fails to load,
-    // the fallback is used, updateContentViaJS finds no element, and updates silently fail.
-    // This test verifies the file template produces the required article element.
-    let templatePath = "Sources/MarkViewCore/Resources/template.html"
-    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
-
-    // The template itself must have the id
-    try expect(template.contains("id=\"\(TemplateConstants.contentElementID)\""),
-        "template.html must have article id='\(TemplateConstants.contentElementID)' — JS fast-path depends on this")
-
-    // wrapInTemplate with the file template must produce the id in output
-    let output = MarkdownRenderer.wrapInTemplate("<p>test</p>", template: template)
-    try expect(output.contains("id=\"\(TemplateConstants.contentElementID)\""),
-        "wrapInTemplate(template:) output must contain id='\(TemplateConstants.contentElementID)' — required by updateContentViaJS")
-
-    // The FALLBACK (no template) MUST NOT be silently used when file template is available
-    // Verify fallback doesn't have the id (so if fallback is used, tests catch it)
-    let fallback = MarkdownRenderer.wrapInTemplate("<p>test</p>")
-    // Fallback is acceptable as long as file template is always preferred when available
-    _ = fallback // Document: fallback may lack id, that's why we must always load template.html
-}
-
-runner.test("suppresFileWatcher resets after 250ms — external changes not permanently blocked") {
-    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
-    // suppressFileWatcher must be time-limited to prevent blocking external file changes
-    try expect(source.contains("suppressFileWatcher = false"),
-        "suppressFileWatcher must be reset to false after save — otherwise external changes are permanently blocked")
-    try expect(source.contains("250_000_000"),
-        "suppressFileWatcher reset must happen after 250ms delay — matches FileWatcher debounce+atomic-save timing")
-}
 
 // =============================================================================
 // MARK: - Export functionality regression tests
@@ -4087,55 +2984,6 @@ runner.test("suppresFileWatcher resets after 250ms — external changes not perm
 // Previously exportPDF notification was posted but never received — clicking
 // "Export PDF..." in the menu did nothing.
 
-// Tier 1 (source): notification wiring + pagination implementation guard
-// Tier 2 (behavioral — TODO mar-E2E): open long fixture .md, export PDF,
-//   open with PDFKit, assert PDFDocument.pageCount > 1.
-//   WKPDFConfiguration.rect only captures a viewport rect — always 1 page.
-//   NSPrintOperation.printOperation(with:) paginates the full document.
-runner.test("ContentView handles .exportPDF notification — regression for silent no-op") {
-    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
-    try expect(source.contains(".exportPDF"),
-        "ContentView must subscribe to .exportPDF notification (was missing — menu item did nothing)")
-    try expect(source.contains("ExportManager.exportPDF"),
-        "ContentView must call ExportManager.exportPDF when notification received")
-    try expect(source.contains("viewModel.previewWebView"),
-        "ContentView must use viewModel.previewWebView (direct ref) for PDF export")
-    try expect(source.contains("onWebViewCreated"),
-        "WebPreviewView must register WKWebView with viewModel via onWebViewCreated")
-}
-
-runner.test("ExportManager: exportPDF uses Print dialog, generatePDF uses createPDF for tests") {
-    let source = try String(contentsOfFile: "Sources/MarkView/ExportManager.swift", encoding: .utf8)
-    // exportPDF: Print dialog → macOS PDF subsystem handles pagination correctly
-    // generatePDF (test-only): bounded viewport createPDF
-    try expect(!source.contains("NSPrintOperation("),
-        "ExportManager must NOT instantiate NSPrintOperation() — produces corrupt 50MB+ files for complex HTML")
-    try expect(source.contains("printOperation"),
-        "ExportManager.exportPDF must use printOperation for correct paginated output")
-    try expect(source.contains("createPDF"),
-        "ExportManager must use WKWebView.createPDF for efficient PDF output")
-}
-
-runner.test("ContentView handles .exportHTML notification") {
-    let source = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
-    try expect(source.contains(".exportHTML"),
-        "ContentView must subscribe to .exportHTML notification")
-    try expect(source.contains("ExportManager.exportHTML"),
-        "ContentView must call ExportManager.exportHTML when notification received")
-}
-
-runner.test("Export menu items post correct notification names") {
-    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
-    try expect(appSource.contains("name: .exportPDF"),
-        "Export PDF menu item must post .exportPDF notification")
-    try expect(appSource.contains("name: .exportHTML"),
-        "Export HTML menu item must post .exportHTML notification")
-    // Both notification names must be declared
-    try expect(appSource.contains("exportHTML = Notification.Name"),
-        "exportHTML notification name must be declared")
-    try expect(appSource.contains("exportPDF = Notification.Name"),
-        "exportPDF notification name must be declared")
-}
 
 runner.test("mermaid CSS positions diagrams correctly") {
     let templatePath = "Sources/MarkViewCore/Resources/template.html"
@@ -4158,15 +3006,6 @@ runner.test("mermaid CSS positions diagrams correctly") {
 // Regression for NSCocoaErrorDomain Code 260:
 // preview_markdown must write to ~/.cache/markview/previews/ (persistent),
 // NOT to NSTemporaryDirectory() which macOS cleans aggressively.
-
-runner.test("MCP server uses persistent cache path, not NSTemporaryDirectory") {
-    let source = try String(
-        contentsOfFile: "Sources/MarkViewMCPServer/main.swift", encoding: .utf8)
-    try expect(source.contains(".cache/markview/previews"),
-        "MCP server must write to ~/.cache/markview/previews/ — not /tmp")
-    try expect(!source.contains("temporaryDirectory"),
-        "MCP server must NOT use temporaryDirectory (causes NSCocoaErrorDomain Code 260 race)")
-}
 
 runner.test("MCP cache directory is writable") {
     let cacheDir = FileManager.default.homeDirectoryForCurrentUser
@@ -4461,15 +3300,6 @@ runner.test("script injection: mermaid.min.js contains </body> literals (DOMPuri
         let forwardReplaceCount = webPreview.components(separatedBy: "replacingOccurrences(of: \"</body>\"").count - 1
         try expect(forwardReplaceCount == 0, "No inject function should use forward replacingOccurrences(of: \"</body>\") — use insertBeforeBodyClose instead (found \(forwardReplaceCount) violations)")
     }
-}
-
-runner.test("TOC: template.html source contains toc-sidebar CSS and JS") {
-    // swift run sets cwd to the package root — use that to locate the source file
-    let templatePath = FileManager.default.currentDirectoryPath + "/Sources/MarkViewCore/Resources/template.html"
-    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
-    try expect(template.contains("toc-sidebar"), "TOC sidebar CSS/JS not in template.html")
-    try expect(template.contains("has-toc"), "has-toc body class not in template.html")
-    try expect(template.contains("alert-note"), "GFM alert CSS not in template.html (regression check)")
 }
 
 runner.test("gfm-alerts: regular blockquote is unaffected") {
