@@ -3,6 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Required by WKWebView for reliable dark mode: both this meta tag AND the CSS
+         color-scheme property in :root are needed. Without this meta tag, scrollbars,
+         form controls, and system colors stay light regardless of @media queries. -->
+    <meta name="color-scheme" content="light dark">
     <style id="app-css">
         /* ── CSS custom properties ────────────────────────────────────────────
            Single source of truth for all theme colors. Light values here;

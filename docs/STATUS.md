@@ -9,11 +9,11 @@ pending work, and key architectural decisions.
 
 | | |
 |---|---|
-| **App version** | v1.3.0 (build 240) |
-| **npm package** | mcp-server-markview v1.3.0 |
+| **App version** | v1.4.0 (build 263) |
+| **npm package** | mcp-server-markview v1.3.0 (npm publish pending) |
 | **BINARY_VERSION** | 1.2.6 (intentionally decoupled — points to last notarized binary) |
 | **MCP registry** | `io.github.paulhkang94/markview` — active |
-| **Tag** | `v1.3.0` pushed 2026-04-04 |
+| **Tag** | `v1.4.0` pushed 2026-04-04 |
 
 > **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
 > successfully notarized GitHub Release binary. It is intentionally decoupled from
@@ -22,7 +22,7 @@ pending work, and key architectural decisions.
 
 ---
 
-## Feature Set (v1.3.0)
+## Feature Set (v1.4.0)
 
 ### Rendering
 | Feature | Status | Notes |
@@ -35,13 +35,18 @@ pending work, and key architectural decisions.
 | TOC sidebar | ✅ | h1–h4, scroll-spy, ≥3 headings threshold |
 | Quick Look (Finder spacebar) | ✅ | Full rendering pipeline |
 | PDF / HTML export | ✅ | Via print dialog |
+| Find & Replace in editor | ✅ | Cmd+F/H |
+| Find in preview | ✅ | Cmd+F in preview pane |
 
-### MCP Server (3 tools)
+### MCP Server (6 tools)
 | Tool | Description |
 |------|-------------|
 | `preview_markdown` | Render content in native window |
 | `open_file` | Open .md file with live reload |
 | `lint_file` | 9-rule linter, returns line diagnostics |
+| `render_diff_file` | Run git diff on a repo and render with diff2html |
+| `render_diff_raw` | Render raw unified diff string with diff2html |
+| `get_changed_files` | List changed files in a git repo (staged/unstaged/untracked) |
 | **Resources** | `markview://preview/latest` — read back rendered content |
 
 ### App
