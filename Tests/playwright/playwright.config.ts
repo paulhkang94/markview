@@ -16,6 +16,8 @@ export default defineConfig({
 
   use: {
     headless: true,
+    // Grant clipboard permissions so copy-SVG tests can read back what was written
+    permissions: ["clipboard-read", "clipboard-write"],
     // Screenshots only on failure (matches flow convention)
     screenshot: "only-on-failure",
     // Trace on failure for debugging CI flakes

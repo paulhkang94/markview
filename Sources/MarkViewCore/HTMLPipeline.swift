@@ -173,6 +173,41 @@ public struct HTMLPipeline {
         // Exposed as window._markviewRenderMermaid so the JS fast-path can re-invoke it
         // after innerHTML swaps without reloading the full library.
         let scriptTag = """
+        <style>
+        /* Mermaid pan/zoom/copy controls — shown on diagram hover, matches GitHub UX */
+        .mermaid { position: relative; overflow: hidden; }
+        .mermaid-inner { transform-origin: 50% 50%; transition: transform 0.1s ease; }
+        .mermaid-controls {
+            position: absolute; top: 8px; right: 8px;
+            display: flex; flex-direction: row; gap: 4px;
+            opacity: 0; transition: opacity 0.15s;
+            z-index: 20; pointer-events: none;
+        }
+        .mermaid:hover .mermaid-controls { opacity: 1; pointer-events: auto; }
+        .mermaid-ctrl-group {
+            display: grid; gap: 2px;
+            background: rgba(128,128,128,0.08);
+            border: 1px solid rgba(128,128,128,0.2);
+            border-radius: 6px; padding: 3px;
+            backdrop-filter: blur(6px);
+        }
+        .mermaid-ctrl-nav { grid-template-columns: 24px 24px 24px; grid-template-rows: 24px 24px 24px; }
+        .mermaid-ctrl-zoom { grid-template-columns: 24px; grid-template-rows: 24px 24px 24px; }
+        .mermaid-btn {
+            width: 24px; height: 24px; padding: 0; margin: 0;
+            background: rgba(128,128,128,0.1); border: none; border-radius: 4px;
+            cursor: pointer; font-size: 13px; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            color: inherit;
+        }
+        .mermaid-btn:hover { background: rgba(128,128,128,0.25); }
+        .mermaid-btn-spacer { width: 24px; height: 24px; }
+        @media (prefers-color-scheme: dark) {
+            .mermaid-ctrl-group { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
+            .mermaid-btn { background: rgba(255,255,255,0.1); }
+            .mermaid-btn:hover { background: rgba(255,255,255,0.2); }
+        }
+        </style>
         <script>
         \(js)
         ;(function() {
@@ -243,6 +278,91 @@ public struct HTMLPipeline {
                                     }
                                 }
                             } catch(e) {}
+                        });
+                    });
+                    // 3. Pan/zoom/copy controls (GitHub parity)
+                    window._PHK_DEBUG && console.log('[PHK] mermaid controls: adding to', document.querySelectorAll('.mermaid').length, 'diagrams');
+                    document.querySelectorAll('.mermaid').forEach(function(container) {
+                        var svg = container.querySelector('svg');
+                        if (!svg || container.querySelector('.mermaid-controls')) return; // skip if already added
+                        // Wrap SVG in inner div so CSS transform doesn't fight width/height styles
+                        var inner = document.createElement('div');
+                        inner.className = 'mermaid-inner';
+                        container.insertBefore(inner, svg);
+                        inner.appendChild(svg);
+                        var state = { tx: 0, ty: 0, s: 1.0 };
+                        function applyTransform() {
+                            inner.style.transform = 'translate(' + state.tx + 'px,' + state.ty + 'px) scale(' + state.s + ')';
+                        }
+                        // Build controls: nav cross (↑←⟳→↓) + zoom column (+−⎘)
+                        var controls = document.createElement('div');
+                        controls.className = 'mermaid-controls';
+                        var B = '<button class="mermaid-btn" data-a="';
+                        var SP = '<div class="mermaid-btn-spacer"></div>';
+                        controls.innerHTML =
+                            '<div class="mermaid-ctrl-group mermaid-ctrl-nav">' +
+                                SP + B + 'u" title="Pan up">↑</button>' + SP +
+                                B + 'l" title="Pan left">←</button>' + B + 'r0" title="Reset">⟳</button>' + B + 'ri" title="Pan right">→</button>' +
+                                SP + B + 'd" title="Pan down">↓</button>' + SP +
+                            '</div>' +
+                            '<div class="mermaid-ctrl-group mermaid-ctrl-zoom">' +
+                                B + 'zi" title="Zoom in">＋</button>' +
+                                B + 'zo" title="Zoom out">－</button>' +
+                                B + 'cp" title="Copy SVG">⎘</button>' +
+                            '</div>';
+                        controls.addEventListener('click', function(e) {
+                            var btn = e.target.closest('[data-a]');
+                            if (!btn) return;
+                            e.stopPropagation();
+                            var P = 40, Z = 1.3;
+                            switch (btn.dataset.a) {
+                                case 'u':  state.ty += P; break;
+                                case 'd':  state.ty -= P; break;
+                                case 'l':  state.tx += P; break;
+                                case 'ri': state.tx -= P; break;
+                                case 'r0': state = {tx:0, ty:0, s:1.0}; break;
+                                case 'zi': state.s = Math.min(state.s * Z, 8); break;
+                                case 'zo': state.s = Math.max(state.s / Z, 0.1); break;
+                                case 'cp':
+                                    try {
+                                        var xml = new XMLSerializer().serializeToString(svg);
+                                        navigator.clipboard.writeText(xml).then(function() {
+                                            btn.textContent = '✓';
+                                            setTimeout(function() { btn.textContent = '⎘'; }, 1200);
+                                        }).catch(function() {});
+                                    } catch(e) {}
+                                    return;
+                            }
+                            applyTransform();
+                        });
+                        container.appendChild(controls);
+                        container.style.overflow = 'hidden';
+                        window._PHK_DEBUG && console.log('[PHK] mermaid controls: wired for container', container.id || container.className);
+                        // Mouse wheel zoom (natural trackpad/scroll interaction)
+                        container.addEventListener('wheel', function(e) {
+                            e.preventDefault();
+                            var Z = e.deltaY < 0 ? 1.1 : 0.9;
+                            state.s = Math.min(Math.max(state.s * Z, 0.1), 8);
+                            applyTransform();
+                        }, { passive: false });
+                        // Click-drag to pan
+                        var dragging = false, dragStartX = 0, dragStartY = 0, dragTx = 0, dragTy = 0;
+                        inner.style.cursor = 'grab';
+                        inner.addEventListener('mousedown', function(e) {
+                            if (e.button !== 0) return;
+                            dragging = true; dragStartX = e.clientX; dragStartY = e.clientY;
+                            dragTx = state.tx; dragTy = state.ty;
+                            inner.style.cursor = 'grabbing';
+                            e.preventDefault();
+                        });
+                        document.addEventListener('mousemove', function(e) {
+                            if (!dragging) return;
+                            state.tx = dragTx + (e.clientX - dragStartX);
+                            state.ty = dragTy + (e.clientY - dragStartY);
+                            applyTransform();
+                        });
+                        document.addEventListener('mouseup', function() {
+                            if (dragging) { dragging = false; inner.style.cursor = 'grab'; }
                         });
                     });
                     window.rendered = true;  // Mermaid async complete — unblock Playwright/WKWebView sentinel
