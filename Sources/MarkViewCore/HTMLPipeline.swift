@@ -70,6 +70,54 @@ public struct HTMLPipeline {
         return pipeline
     }
 
+    // MARK: - Image inlining
+
+    /// Convert relative image `src` attributes to inline data URIs.
+    ///
+    /// Extracted from WebPreviewView so the image-inlining pipeline is testable
+    /// without an AppKit dependency. The WebContent process in WKWebView is sandboxed
+    /// and cannot load images from arbitrary file paths; this embeds them as base64
+    /// before the HTML reaches the renderer.
+    ///
+    /// Only relative paths are processed (URLs, data URIs, absolute paths are skipped).
+    public static func inlineLocalImages(in html: String, baseDirectory: URL) -> String {
+        let pattern = "src=\"([^\"]*\\.(png|jpg|jpeg|gif|svg|webp|ico|bmp|tiff?))\""
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return html
+        }
+        var result = html
+        let nsHTML = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHTML.length))
+        for match in matches.reversed() {
+            guard match.numberOfRanges > 1,
+                  let srcRange = Range(match.range(at: 1), in: html) else { continue }
+            let src = String(html[srcRange])
+            guard !src.hasPrefix("http://"), !src.hasPrefix("https://"),
+                  !src.hasPrefix("data:"), !src.hasPrefix("file://"),
+                  !src.hasPrefix("/") else { continue }
+            let imageURL = baseDirectory.appendingPathComponent(src)
+            guard let data = try? Data(contentsOf: imageURL) else { continue }
+            let ext = imageURL.pathExtension.lowercased()
+            let mime: String
+            switch ext {
+            case "png":        mime = "image/png"
+            case "jpg","jpeg": mime = "image/jpeg"
+            case "gif":        mime = "image/gif"
+            case "svg":        mime = "image/svg+xml"
+            case "webp":       mime = "image/webp"
+            case "ico":        mime = "image/x-icon"
+            case "bmp":        mime = "image/bmp"
+            case "tif","tiff": mime = "image/tiff"
+            default:           mime = "image/\(ext)"
+            }
+            let dataURI = "data:\(mime);base64,\(data.base64EncodedString())"
+            if let attrRange = Range(match.range(at: 0), in: result) {
+                result.replaceSubrange(attrRange, with: "src=\"\(dataURI)\"")
+            }
+        }
+        return result
+    }
+
     // MARK: - Public assembly
 
     /// Convenience: render markdown → fully assembled HTML document in one call.

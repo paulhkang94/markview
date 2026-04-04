@@ -3488,6 +3488,74 @@ runner.test("HTMLPipeline: full-pipeline golden snapshot — structure stable ac
 }
 
 // =============================================================================
+// HTMLPipeline.inlineLocalImages — regression tests
+// These tests would have caught the golden-corpus image path bug:
+// fixture used repo-root-relative paths but baseDirectory was the fixture's dir.
+// =============================================================================
+
+runner.test("inlineLocalImages: skips http/https/data/file/absolute sources") {
+    let html = """
+    <img src="https://example.com/a.png">
+    <img src="http://example.com/b.png">
+    <img src="data:image/png;base64,abc">
+    <img src="file:///tmp/c.png">
+    <img src="/abs/path/d.png">
+    """
+    let result = HTMLPipeline.inlineLocalImages(in: html, baseDirectory: URL(fileURLWithPath: "/tmp"))
+    try expect(result == html, "Should not modify non-relative sources")
+}
+
+runner.test("inlineLocalImages: inlines existing relative image as data URI") {
+    // Write a tiny 1x1 PNG to a temp file, verify it gets inlined
+    let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("markview-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmpDir) }
+    // Minimal valid 1x1 transparent PNG (67 bytes)
+    let png1x1 = Data([
+        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4,
+        0x89,0x00,0x00,0x00,0x0A,0x49,0x44,0x41,0x54,0x78,0x9C,0x62,0x00,0x01,0x00,0x00,
+        0x05,0x00,0x01,0x0D,0x0A,0x2D,0xB4,0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,
+        0x42,0x60,0x82
+    ])
+    let imgURL = tmpDir.appendingPathComponent("test.png")
+    try png1x1.write(to: imgURL)
+    let html = #"<img src="test.png">"#
+    let result = HTMLPipeline.inlineLocalImages(in: html, baseDirectory: tmpDir)
+    try expect(result.contains("data:image/png;base64,"), "PNG should be inlined as data URI")
+    try expect(!result.contains("src=\"test.png\""), "Original relative src should be replaced")
+}
+
+runner.test("inlineLocalImages: silently skips missing relative image") {
+    let html = #"<img src="nonexistent.png">"#
+    let result = HTMLPipeline.inlineLocalImages(in: html, baseDirectory: URL(fileURLWithPath: "/tmp"))
+    try expect(result == html, "Should return HTML unchanged when image not found")
+}
+
+runner.test("inlineLocalImages: resolves ../ relative paths (golden-corpus regression)") {
+    // Simulate the golden-corpus setup: fixture at Tests/TestRunner/Fixtures/,
+    // images at docs/screenshots/ — path in markdown: ../../../docs/screenshots/img.png
+    let tmpRoot = FileManager.default.temporaryDirectory.appendingPathComponent("markview-gc-\(UUID().uuidString)")
+    let fixturesDir = tmpRoot.appendingPathComponent("Tests/TestRunner/Fixtures")
+    let docsDir = tmpRoot.appendingPathComponent("docs/screenshots")
+    try FileManager.default.createDirectory(at: fixturesDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: docsDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmpRoot) }
+    let png1x1 = Data([
+        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4,
+        0x89,0x00,0x00,0x00,0x0A,0x49,0x44,0x41,0x54,0x78,0x9C,0x62,0x00,0x01,0x00,0x00,
+        0x05,0x00,0x01,0x0D,0x0A,0x2D,0xB4,0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,
+        0x42,0x60,0x82
+    ])
+    try png1x1.write(to: docsDir.appendingPathComponent("preview-only.png"))
+    let html = #"<img src="../../../docs/screenshots/preview-only.png">"#
+    let result = HTMLPipeline.inlineLocalImages(in: html, baseDirectory: fixturesDir)
+    try expect(result.contains("data:image/png;base64,"),
+        "../../../ relative path should resolve and inline the image (golden-corpus regression)")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()

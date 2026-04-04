@@ -219,6 +219,12 @@
 
     </article>
     <script>
+        // PHK Debug: set window._PHK_DEBUG = true before this script runs to enable JS-side logging.
+        // From app: inject via WKWebView.evaluateJavaScript("window._PHK_DEBUG=true")
+        // From CLI: PHK_DEBUG=1 swift run MarkViewHTMLGen adds an enabler script automatically
+        // From tests: page.evaluate(() => window._PHK_DEBUG = true) before setContent()
+        if (typeof window._PHK_DEBUG === 'undefined') { window._PHK_DEBUG = false; }
+        window._PHK_DEBUG && console.log('[PHK] template script starting');
         // Wrap tables in scrollable containers so wide tables scroll horizontally
         // instead of clipping at the viewport edge (GitHub Primer pattern)
         document.querySelectorAll('article table').forEach(function(table) {
@@ -328,7 +334,12 @@
         // Playwright/WKWebView sentinel: signals that all synchronous transforms are complete.
         // Mermaid (async) overrides this via HTMLPipeline.injectMermaid -> window.rendered = true.
         // 1200ms is generous enough for KaTeX + Prism on slow CI runners.
-        setTimeout(function() { if (!window.rendered) window.rendered = true; }, 1200);
+        setTimeout(function() {
+            if (!window.rendered) {
+                window.rendered = true;
+                window._PHK_DEBUG && console.log('[PHK] sentinel: timeout fired (no Mermaid or Mermaid already done)');
+            }
+        }, 1200);
     </script>
 <script>/**
  * Minified by jsDelivr using Terser v5.37.0.

@@ -575,9 +575,9 @@ Always invoke <code>preview_markdown</code> from the top-level Claude Code sessi
 line-by-line diagnostics.</p>
 <hr data-sourcepos="355:1-356:0" />
 <h2 data-sourcepos="357:1-357:13">11. Images</h2>
-<p data-sourcepos="359:1-359:64"><img src="docs/screenshots/preview-only.png" alt="MarkView preview-only mode" /></p>
+<p data-sourcepos="359:1-359:73"><img src="../../../docs/screenshots/preview-only.png" alt="MarkView preview-only mode" /></p>
 <p data-sourcepos="361:1-361:17">Image with title:</p>
-<p data-sourcepos="363:1-363:113"><img src="docs/screenshots/editor-preview.png" alt="MarkView split-pane editor" title="MarkView split-pane editor with live preview" /></p>
+<p data-sourcepos="363:1-363:122"><img src="../../../docs/screenshots/editor-preview.png" alt="MarkView split-pane editor" title="MarkView split-pane editor with live preview" /></p>
 <hr data-sourcepos="365:1-366:0" />
 <h2 data-sourcepos="367:1-367:16">12. Footnotes</h2>
 <p data-sourcepos="369:1-370:33">MarkView supports GitHub Flavored Markdown<sup class="footnote-ref"><a href="#fn-gfm" id="fnref-gfm" data-footnote-ref>1</a></sup>, Mermaid diagrams<sup class="footnote-ref"><a href="#fn-mermaid" id="fnref-mermaid" data-footnote-ref>2</a></sup>,
@@ -624,6 +624,12 @@ and KaTeX math rendering<sup class="footnote-ref"><a href="#fn-katex" id="fnref-
 
     </article>
     <script>
+        // PHK Debug: set window._PHK_DEBUG = true before this script runs to enable JS-side logging.
+        // From app: inject via WKWebView.evaluateJavaScript("window._PHK_DEBUG=true")
+        // From CLI: PHK_DEBUG=1 swift run MarkViewHTMLGen adds an enabler script automatically
+        // From tests: page.evaluate(() => window._PHK_DEBUG = true) before setContent()
+        if (typeof window._PHK_DEBUG === 'undefined') { window._PHK_DEBUG = false; }
+        window._PHK_DEBUG && console.log('[PHK] template script starting');
         // Wrap tables in scrollable containers so wide tables scroll horizontally
         // instead of clipping at the viewport edge (GitHub Primer pattern)
         document.querySelectorAll('article table').forEach(function(table) {
@@ -733,7 +739,12 @@ and KaTeX math rendering<sup class="footnote-ref"><a href="#fn-katex" id="fnref-
         // Playwright/WKWebView sentinel: signals that all synchronous transforms are complete.
         // Mermaid (async) overrides this via HTMLPipeline.injectMermaid -> window.rendered = true.
         // 1200ms is generous enough for KaTeX + Prism on slow CI runners.
-        setTimeout(function() { if (!window.rendered) window.rendered = true; }, 1200);
+        setTimeout(function() {
+            if (!window.rendered) {
+                window.rendered = true;
+                window._PHK_DEBUG && console.log('[PHK] sentinel: timeout fired (no Mermaid or Mermaid already done)');
+            }
+        }, 1200);
     </script>
 <script>/**
  * Minified by jsDelivr using Terser v5.37.0.
