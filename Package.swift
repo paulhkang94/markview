@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "MarkView",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v16)],
     products: [
         // Expose MarkViewCore as a library so XcodeGen targets can depend on it
         .library(name: "MarkViewCore", targets: ["MarkViewCore"]),

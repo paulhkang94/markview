@@ -197,6 +197,12 @@
             #toc-sidebar .toc-title { color: #6e7681; }
         }
 
+        /* Narrow screens (mobile / narrow macOS window) — hide TOC to reclaim space */
+        @media (max-width: 768px) {
+            #toc-sidebar { display: none; }
+            body.has-toc { padding-right: 16px; } /* reset the 240px TOC gutter */
+        }
+
         /* Print */
         @media print {
             body { max-width: none; padding: 0; }
