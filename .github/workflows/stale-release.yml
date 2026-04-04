@@ -13,6 +13,7 @@ jobs:
   check:
     name: Check for stale release
     runs-on: ubuntu-latest
+    continue-on-error: true   # advisory only — a stale-release check failing should never block main
     permissions:
       issues: write
       contents: read

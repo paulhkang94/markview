@@ -220,18 +220,35 @@
             wrapper.appendChild(table);
         });
         // Transform GFM alert callouts: blockquotes starting with [!TYPE]
+        // Handles two forms cmark-gfm produces:
+        //   (a) [!NOTE] alone → <p>[!NOTE]</p> + sibling <p>content</p>  (blank line in source)
+        //   (b) [!NOTE]\nContent → <p>[!NOTE]\nContent</p>               (GitHub standard, no blank line)
         (function() {
             var icons   = {note:'ℹ️', tip:'💡', important:'❗', warning:'⚠️', caution:'🔴'};
             var labels  = {note:'Note', tip:'Tip', important:'Important', warning:'Warning', caution:'Caution'};
             document.querySelectorAll('article blockquote').forEach(function(bq) {
                 var firstP = bq.querySelector('p');
                 if (!firstP) return;
-                var m = firstP.textContent.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]$/i);
+                // Match [!TYPE] at the START of the paragraph (not requiring it to be the whole text)
+                var m = firstP.textContent.trim().match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
                 if (!m) return;
                 var type = m[1].toLowerCase();
                 bq.className = 'alert alert-' + type;
+                // Strip the [!TYPE] marker + any trailing whitespace/newline from innerHTML
+                // to recover the inline content (handles bold, code, links inside the alert)
+                var stripped = firstP.innerHTML
+                    .replace(/^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i, '')
+                    .trim();
+                // Set the title line
                 firstP.innerHTML = '<strong>' + icons[type] + ' ' + labels[type] + '</strong>';
                 firstP.className = 'alert-title';
+                // If content was inline with the marker (form b), inject it after the title
+                if (stripped) {
+                    var contentEl = document.createElement('p');
+                    contentEl.innerHTML = stripped;
+                    firstP.after(contentEl);
+                }
+                // Form (a): sibling paragraphs already exist — no action needed
             });
         })();
         // Inline Prism.js will be loaded here by the app

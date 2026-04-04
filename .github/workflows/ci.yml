@@ -69,7 +69,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-tags: true   # verify.sh checks tag existence for postinstall binary version sync
+          fetch-depth: 0   # full clone — verify.sh checks git tag existence for BINARY_VERSION sync.
+          # fetch-tags:true is insufficient with shallow clones; fetch-depth:0 is the correct fix.
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4

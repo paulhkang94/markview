@@ -12,7 +12,8 @@ PLIST="$PROJECT_DIR/Sources/MarkView/Info.plist"
 BUMP="patch"
 SKIP_TESTS=false
 DO_NOTARIZE=false
-SHIP=false   # --ship: auto-commit, tag, and push after a successful build
+SHIP=false        # --ship: auto-commit, tag, and push after a successful build
+BUMP_BINARY=false # --bump-binary: also update BINARY_VERSION in postinstall.js (only when new notarized binary is ready)
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -27,6 +28,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --notarize)
             DO_NOTARIZE=true
+            shift
+            ;;
+        --bump-binary)
+            BUMP_BINARY=true
             shift
             ;;
         --ship)
@@ -112,8 +117,16 @@ fs.writeFileSync('$NPM_SERVER', JSON.stringify(p, null, 2) + '\n');
     echo "Updated npm/server.json"
 fi
 if [ -f "$NPM_POSTINSTALL" ]; then
-    sed -i '' "s/const VERSION = \"[0-9]*\.[0-9]*\.[0-9]*\";/const VERSION = \"$NEW_VERSION\";/" "$NPM_POSTINSTALL"
-    echo "Updated npm/scripts/postinstall.js"
+    # BINARY_VERSION is intentionally decoupled from the npm package version:
+    # it points to the last GitHub Release that has a valid notarized binary.
+    # Only update it when --bump-binary is passed (i.e. a new Swift binary was built).
+    # The variable name is BINARY_VERSION, not VERSION — keep the sed pattern aligned.
+    if [[ "${BUMP_BINARY:-false}" == "true" ]]; then
+        sed -i '' "s/const BINARY_VERSION = \"[0-9]*\.[0-9]*\.[0-9]*\";/const BINARY_VERSION = \"$NEW_VERSION\";/" "$NPM_POSTINSTALL"
+        echo "Updated npm/scripts/postinstall.js BINARY_VERSION → $NEW_VERSION"
+    else
+        echo "  ℹ Skipping BINARY_VERSION update (pass --bump-binary to update the binary pointer)"
+    fi
 fi
 
 # Step 5: Run tests (unless --skip-tests)
