@@ -50,6 +50,7 @@ generate "$FIXTURES_MD/mermaid.md"       "mermaid"
 generate "$FIXTURES_MD/math.md"          "math"
 generate "$FIXTURES_MD/code-blocks.md"   "code-blocks"
 generate "$FIXTURES_MD/golden-corpus.md" "golden-corpus"
+generate "$FIXTURES_MD/diff.md"          "diff"
 
 COUNT=$(ls "$FIXTURES_HTML"/*.html 2>/dev/null | wc -l | tr -d ' ')
 echo "Generated $COUNT fixtures in $FIXTURES_HTML"

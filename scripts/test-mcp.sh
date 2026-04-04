@@ -137,7 +137,10 @@ if resp:
         tool_names = [t['name'] for t in tools]
         test('lists preview_markdown tool', 'preview_markdown' in tool_names)
         test('lists open_file tool', 'open_file' in tool_names)
-        test('exactly 3 tools', len(tools) == 3)
+        test('lists render_diff_file tool', 'render_diff_file' in tool_names)
+        test('lists render_diff_raw tool', 'render_diff_raw' in tool_names)
+        test('lists get_changed_files tool', 'get_changed_files' in tool_names)
+        test('exactly 6 tools', len(tools) == 6)  # 3 original + 3 new: render_diff_file, render_diff_raw, get_changed_files
 
         # Check schema structure
         for t in tools:
@@ -355,6 +358,52 @@ if resp:
         text = trav_resp.get('result', {}).get('content', [{}])[0].get('text', '')
         test('path traversal sanitized (no ../)', '..' not in text.split('markview-mcp/')[-1] if 'markview-mcp' in text else True)
 
+    # Test: render_diff_raw with a small unified diff
+    CACHE_DIR = os.path.expanduser('~/.cache/markview/previews')
+    raw_diff = '''diff --git a/foo.txt b/foo.txt
+index 1234567..abcdefg 100644
+--- a/foo.txt
++++ b/foo.txt
+@@ -1,3 +1,3 @@
+ unchanged line
+-removed line
++added line
+ another unchanged line
+'''
+    diff_raw_req = {
+        'jsonrpc': '2.0', 'id': 50, 'method': 'tools/call',
+        'params': {'name': 'render_diff_raw', 'arguments': {'diff': raw_diff, 'format': 'side-by-side'}}
+    }
+    diff_raw_resp = send_and_receive(proc, diff_raw_req)
+    test('render_diff_raw: returns response', diff_raw_resp is not None)
+    if diff_raw_resp:
+        r = diff_raw_resp.get('result', {})
+        test('render_diff_raw: non-error response', r.get('isError', False) == False)
+        diff_cache = os.path.join(CACHE_DIR, 'diff-preview.md')
+        test('render_diff_raw: cache file created at ~/.cache/markview/previews/diff-preview.md', os.path.isfile(diff_cache))
+
+    # Test: render_diff_file with a non-git path returns isError
+    diff_file_bad_req = {
+        'jsonrpc': '2.0', 'id': 51, 'method': 'tools/call',
+        'params': {'name': 'render_diff_file', 'arguments': {'path': '/tmp/not-a-git-repo-xyz'}}
+    }
+    diff_file_bad_resp = send_and_receive(proc, diff_file_bad_req)
+    test('render_diff_file invalid path: returns response', diff_file_bad_resp is not None)
+    if diff_file_bad_resp:
+        r = diff_file_bad_resp.get('result', {})
+        test('render_diff_file invalid path: isError true', r.get('isError', False) == True)
+
+    # Test: get_changed_files with a nonexistent path returns isError
+    gcf_bad_req = {
+        'jsonrpc': '2.0', 'id': 52, 'method': 'tools/call',
+        'params': {'name': 'get_changed_files', 'arguments': {'path': '/nonexistent/xyz123'}}
+    }
+    gcf_bad_resp = send_and_receive(proc, gcf_bad_req)
+    test('get_changed_files invalid path: returns response', gcf_bad_resp is not None)
+    if gcf_bad_resp:
+        r = gcf_bad_resp.get('result', {})
+        test('get_changed_files invalid path: isError true', r.get('isError', False) == True)
+
     # Test: open_file with valid markdown (E2E)
     if not SKIP_E2E and os.path.isdir('/Applications/MarkView.app'):
         print('')
@@ -469,6 +518,10 @@ elif [ ! -d "$NPM_MODULES" ]; then
     grep -q 'preview_markdown' "$NPM_INDEX" && pass "npm: preview_markdown tool defined" || fail "npm: preview_markdown missing"
     grep -q 'open_file' "$NPM_INDEX" && pass "npm: open_file tool defined" || fail "npm: open_file missing"
     grep -q 'markview-mcp-server-binary' "$NPM_INDEX" && pass "npm: binary path is markview-mcp-server-binary (no loop risk)" || fail "npm: binary path should be markview-mcp-server-binary"
+    grep -q 'lint_file' "$NPM_INDEX" && pass "npm: lint_file tool defined" || fail "npm: lint_file missing"
+    grep -q 'render_diff_file' "$NPM_INDEX" && pass "npm: render_diff_file tool defined" || fail "npm: render_diff_file missing"
+    grep -q 'render_diff_raw' "$NPM_INDEX" && pass "npm: render_diff_raw tool defined" || fail "npm: render_diff_raw missing"
+    grep -q 'get_changed_files' "$NPM_INDEX" && pass "npm: get_changed_files tool defined" || fail "npm: get_changed_files missing"
 else
     NODE_CHECK=$(node -e "
 const m = require('$NPM_INDEX');
@@ -477,7 +530,11 @@ const src = require('fs').readFileSync('$NPM_INDEX', 'utf8');
 const hasFilename = src.includes('\"filename\"') || src.includes(\"'filename'\") || src.includes('filename:') || src.includes('filename,');
 const hasPreview = src.includes('preview_markdown');
 const hasOpenFile = src.includes('open_file');
-console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile}));
+const hasLintFile = src.includes('lint_file');
+const hasRenderDiffFile = src.includes('render_diff_file');
+const hasRenderDiffRaw = src.includes('render_diff_raw');
+const hasGetChangedFiles = src.includes('get_changed_files');
+console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile, hasLintFile, hasRenderDiffFile, hasRenderDiffRaw, hasGetChangedFiles}));
 " 2>/dev/null || echo '{}')
 
     if echo "$NODE_CHECK" | grep -q '"hasFn":true'; then
@@ -502,6 +559,30 @@ console.log(JSON.stringify({hasFn, hasFilename, hasPreview, hasOpenFile}));
         pass "npm: sandbox server defines open_file tool"
     else
         fail "npm: sandbox server missing open_file tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasLintFile":true'; then
+        pass "npm: sandbox server defines lint_file tool"
+    else
+        fail "npm: sandbox server missing lint_file tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasRenderDiffFile":true'; then
+        pass "npm: sandbox server defines render_diff_file tool"
+    else
+        fail "npm: sandbox server missing render_diff_file tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasRenderDiffRaw":true'; then
+        pass "npm: sandbox server defines render_diff_raw tool"
+    else
+        fail "npm: sandbox server missing render_diff_raw tool"
+    fi
+
+    if echo "$NODE_CHECK" | grep -q '"hasGetChangedFiles":true'; then
+        pass "npm: sandbox server defines get_changed_files tool"
+    else
+        fail "npm: sandbox server missing get_changed_files tool"
     fi
 
     BINARY_PATH_CHECK=$(node -e "

@@ -173,20 +173,24 @@ struct MarkViewApp: App {
         }
 
         .commands {
-            // Standard Find menu — SwiftUI doesn't provide this by default,
-            // so Cmd+F/Cmd+G won't work without it. These send the standard
-            // performFindPanelAction: to the responder chain (NSTextView, WKWebView).
+            // Find bar commands — post notifications so ContentView's @StateObject
+            // FindBarController can respond. Direct reference isn't possible here
+            // because App-level CommandGroups can't hold references to view @StateObjects.
+            // Single-window app: notifications always reach the one ContentView.
             CommandGroup(after: .textEditing) {
                 Section {
-                    Button(Strings.find) { FindHelper.send(.showFindPanel) }
-                        .keyboardShortcut("f", modifiers: .command)
-                    Button(Strings.findAndReplace) { FindHelper.send(.showFindPanel, replace: true) }
-                        .keyboardShortcut("f", modifiers: [.command, .option])
-                    Button(Strings.findNext) { FindHelper.send(.next) }
-                        .keyboardShortcut("g", modifiers: .command)
-                    Button(Strings.findPrevious) { FindHelper.send(.previous) }
-                        .keyboardShortcut("g", modifiers: [.command, .shift])
-                    Button(Strings.useSelectionForFind) { FindHelper.send(.setFindString) }
+                    Button(Strings.find) {
+                        NotificationCenter.default.post(name: .openFindBar, object: nil)
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+                    Button(Strings.findNext) {
+                        NotificationCenter.default.post(name: .findBarNext, object: nil)
+                    }
+                    .keyboardShortcut("g", modifiers: .command)
+                    Button(Strings.findPrevious) {
+                        NotificationCenter.default.post(name: .findBarPrev, object: nil)
+                    }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
                 }
             }
         }
@@ -215,6 +219,12 @@ extension Notification.Name {
     static let exportHTML = Notification.Name("exportHTML")
     static let exportPDF = Notification.Name("exportPDF")
     static let saveDocument = Notification.Name("saveDocument")
+    // Find bar — ContentView listens on these to drive FindBarController.
+    // NotificationCenter is used here because MarkViewApp's CommandGroup cannot
+    // hold a direct reference to ContentView's @StateObject.
+    static let openFindBar = Notification.Name("com.markview.openFindBar")
+    static let findBarNext = Notification.Name("com.markview.findBarNext")
+    static let findBarPrev = Notification.Name("com.markview.findBarPrev")
 }
 
 /// Sends performFindPanelAction: through the responder chain using a tagged NSMenuItem.

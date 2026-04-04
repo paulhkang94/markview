@@ -118,6 +118,20 @@ enum Strings {
         return label
     }
 
+    // MARK: - Find Bar
+    static let findBarPlaceholder = "Find…"
+    static let findBarClose = "Done"
+    static let findBarCaseSensitiveLabel = "Match Case"
+    static func findBarCaseSensitiveA11y(_ on: Bool) -> String {
+        on ? "Match Case: on" : "Match Case: off"
+    }
+    static let findBarPrevA11y = "Find previous match"
+    static let findBarNextA11y = "Find next match"
+    static func findBarMatchCount(_ current: Int, _ total: Int) -> String {
+        "\(current) of \(total)"
+    }
+    static let findBarNoResults = "No Results"
+
     // MARK: - Document
     static let untitled = "Untitled"
 }

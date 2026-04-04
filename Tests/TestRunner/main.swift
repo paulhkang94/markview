@@ -3557,6 +3557,109 @@ runner.test("inlineLocalImages: resolves ../ relative paths (golden-corpus regre
 
 // =============================================================================
 
+// =============================================================================
+// MARK: - diff2html Injection Tests
+// =============================================================================
+// Unit tests for HTMLPipeline.hasDiffBlocks (pure function) and
+// HTMLPipeline.injectDiff2HTML (conditional injection).
+// These run in SPM test context where diff2html-bundle.min.js may not be
+// present — see injectDiff2HTML notes on nil-guard behaviour.
+// =============================================================================
+
+print("\n=== diff2html Injection Tests ===")
+
+runner.test("hasDiffBlocks — true for language-diff block") {
+    let html = #"<pre><code class="language-diff">diff content</code></pre>"#
+    try expect(HTMLPipeline.hasDiffBlocks(html) == true,
+        "hasDiffBlocks must return true when HTML contains class=\"language-diff\"")
+}
+
+runner.test("hasDiffBlocks — false for non-diff language block") {
+    let html = #"<pre><code class="language-swift">let x = 1</code></pre>"#
+    try expect(HTMLPipeline.hasDiffBlocks(html) == false,
+        "hasDiffBlocks must return false for non-diff language class")
+}
+
+runner.test("hasDiffBlocks — false for empty string") {
+    try expect(HTMLPipeline.hasDiffBlocks("") == false,
+        "hasDiffBlocks must return false for empty input")
+}
+
+runner.test("injectDiff2HTML — injects d2h markers when diff blocks present") {
+    // loadFromBundle() may not find diff2html-bundle.min.js in the SPM test environment
+    // (the resource file may not exist yet). If diff2htmlJS is nil the method returns input
+    // unchanged — that is the documented behaviour and is covered by the nil-guard test below.
+    // When the bundle IS present, injection should add recognisable diff2html markers.
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let input = """
+    <html><body>
+    <pre><code class="language-diff">--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new</code></pre>
+    </body></html>
+    """
+    let result = pipeline.injectDiff2HTML(input)
+    if pipeline.diff2htmlJS != nil {
+        // Bundle present: injection must have happened
+        let injected = result.contains("diff2html") || result.contains("d2h-wrapper") || result.contains("__diff2htmlCSS")
+        try expect(injected,
+            "injectDiff2HTML must inject diff2html markers when diff2htmlJS is loaded and diff blocks are present")
+    } else {
+        // Bundle absent (CI / fresh checkout): method must return input unchanged
+        try expect(result == input,
+            "injectDiff2HTML must return input unchanged when diff2htmlJS is nil")
+    }
+}
+
+runner.test("injectDiff2HTML — skips injection when no diff blocks present") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let input = """
+    <html><body>
+    <pre><code class="language-swift">let x = 1</code></pre>
+    </body></html>
+    """
+    let result = pipeline.injectDiff2HTML(input)
+    // hasDiffBlocks returns false → method must return input unchanged regardless of bundle
+    try expect(result == input,
+        "injectDiff2HTML must return input unchanged when no language-diff blocks are present")
+}
+
+runner.test("injectDiff2HTML — preserves non-diff code blocks unchanged") {
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let swiftBlock = #"<pre><code class="language-swift">func hello() {}</code></pre>"#
+    let input = """
+    <html><body>
+    \(swiftBlock)
+    <pre><code class="language-diff">--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old\n+new</code></pre>
+    </body></html>
+    """
+    let result = pipeline.injectDiff2HTML(input)
+    // The swift code block must survive unchanged regardless of whether injection ran
+    try expect(result.contains(#"class="language-swift""#),
+        "injectDiff2HTML must preserve non-diff code blocks (language-swift class must remain)")
+    try expect(result.contains("func hello()"),
+        "injectDiff2HTML must preserve non-diff code block content")
+}
+
+runner.test("diff.md fixture renders through full pipeline — well-formed HTML") {
+    let md = try loadFixture("diff.md")
+    let bodyHTML = MarkdownRenderer.renderHTML(from: md)
+    let wrapped = MarkdownRenderer.wrapInTemplate(bodyHTML)
+    let pipeline = HTMLPipeline.loadFromBundle()
+    let assembled = pipeline.assemble(wrapped)
+    try expect(assembled.contains("<html"),   "Assembled diff.md must contain <html>")
+    try expect(assembled.contains("<body"),   "Assembled diff.md must contain <body>")
+    try expect(assembled.contains("</html>"), "Assembled diff.md must contain </html>")
+}
+
+runner.test("diff.md fixture renders through full pipeline — diff block parsed by cmark-gfm") {
+    let md = try loadFixture("diff.md")
+    let bodyHTML = MarkdownRenderer.renderHTML(from: md)
+    // cmark-gfm must output class="language-diff" for fenced ```diff blocks
+    try expect(bodyHTML.contains("language-diff"),
+        "cmark-gfm must produce class=\"language-diff\" for fenced diff blocks in diff.md")
+}
+
+// =============================================================================
+
 print("")
 runner.summary()
 exit(runner.failed > 0 ? 1 : 0)

@@ -2,16 +2,25 @@ import SwiftUI
 import MarkViewCore
 import WebKit
 
+/// Reference-type wrapper so the NSEvent monitor can be stored in a @State.
+/// Swift structs can't mutate stored var properties from closure captures,
+/// but a class-based holder works cleanly as a @State reference.
+private final class EscMonitorHolder {
+    var monitor: Any?
+}
+
 struct ContentView: View {
     let initialFilePath: String?
     var errorPresenter: ErrorPresenter
 
     @StateObject private var viewModel = PreviewViewModel()
+    @StateObject private var findBar = FindBarController()
     @ObservedObject private var settings = AppSettings.shared
     /// Direct coordinator-to-coordinator scroll sync — bypasses SwiftUI entirely.
     @State private var syncController = ScrollSyncController()
     @State private var showEditor = false
     @State private var showExternalChangeAlert = false
+    @State private var escMonitorHolder = EscMonitorHolder()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -38,6 +47,7 @@ struct ContentView: View {
                                     previewWidth: settings.previewWidth.cssValue,
                                     theme: settings.theme,
                                     syncController: syncController,
+                                    findBar: findBar,
                                     onWebViewCreated: { webView in viewModel.previewWebView = webView }
                                 )
                                 .id(viewModel.currentFilePath ?? "")
@@ -53,6 +63,7 @@ struct ContentView: View {
                                 previewWidth: settings.previewWidth.cssValue,
                                 theme: settings.theme,
                                 syncController: syncController,
+                                findBar: findBar,
                                 onWebViewCreated: { webView in viewModel.previewWebView = webView }
                             )
                             .id(viewModel.currentFilePath ?? "")
@@ -75,6 +86,16 @@ struct ContentView: View {
                         onFixAll: { viewModel.autoFixLint() }
                     )
                 }
+            }
+            .overlay(alignment: .bottom) {
+                if findBar.isVisible {
+                    FindBarView(findBar: findBar)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: findBar.isVisible)
+            .onChange(of: findBar.isVisible) { visible in
+                if visible { installEscMonitor() } else { removeEscMonitor() }
             }
             .navigationTitle(viewModel.fileName)
             .toolbar {
@@ -157,6 +178,15 @@ struct ContentView: View {
                     errorPresenter.show("Auto-save failed", detail: error.localizedDescription)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openFindBar)) { _ in
+                findBar.show()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findBarNext)) { _ in
+                findBar.findNext()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .findBarPrev)) { _ in
+                findBar.findPrev()
+            }
 
             if let notification = errorPresenter.currentNotification {
                 ErrorBanner(
@@ -190,6 +220,25 @@ struct ContentView: View {
             guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow })
                     ?? NSApplication.shared.windows.first(where: { $0.isVisible }) else { return }
             WindowFileTracker.shared.register(window: window, filePath: path)
+        }
+    }
+
+    /// Install an app-level NSEvent monitor that consumes Esc when the find bar is visible.
+    /// NSEvent.addLocalMonitorForEvents fires regardless of which view has focus,
+    /// unlike TextField.onKeyPress which only fires when the TextField is first responder.
+    private func installEscMonitor() {
+        guard escMonitorHolder.monitor == nil else { return }
+        escMonitorHolder.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53, self.findBar.isVisible else { return event }
+            DispatchQueue.main.async { self.findBar.hide() }
+            return nil  // consume event — prevents Esc from closing the window
+        }
+    }
+
+    private func removeEscMonitor() {
+        if let monitor = escMonitorHolder.monitor {
+            NSEvent.removeMonitor(monitor)
+            escMonitorHolder.monitor = nil
         }
     }
 

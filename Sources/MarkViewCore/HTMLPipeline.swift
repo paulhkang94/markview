@@ -21,17 +21,20 @@ enum PHKDebug {
 public struct HTMLPipeline {
 
     public let prismJS: String?
+    public let diff2htmlJS: String?
     public let mermaidJS: String?
     public let katexJS: String?
     public let katexAutoRenderJS: String?
 
     public init(
         prismJS: String? = nil,
+        diff2htmlJS: String? = nil,
         mermaidJS: String? = nil,
         katexJS: String? = nil,
         katexAutoRenderJS: String? = nil
     ) {
         self.prismJS = prismJS
+        self.diff2htmlJS = diff2htmlJS
         self.mermaidJS = mermaidJS
         // Require both KaTeX bundles — one without the other is unusable
         self.katexJS = katexAutoRenderJS == nil ? nil : katexJS
@@ -62,11 +65,12 @@ public struct HTMLPipeline {
         }
         let pipeline = HTMLPipeline(
             prismJS: load("prism-bundle.min"),
+            diff2htmlJS: load("diff2html-bundle.min"),
             mermaidJS: load("mermaid.min"),
             katexJS: load("katex.min"),
             katexAutoRenderJS: load("auto-render.min")
         )
-        PHKDebug.log("loadFromBundle() done — prism:\(pipeline.prismJS != nil) mermaid:\(pipeline.mermaidJS != nil) katex:\(pipeline.katexJS != nil)")
+        PHKDebug.log("loadFromBundle() done — prism:\(pipeline.prismJS != nil) diff2html:\(pipeline.diff2htmlJS != nil) mermaid:\(pipeline.mermaidJS != nil) katex:\(pipeline.katexJS != nil)")
         return pipeline
     }
 
@@ -139,15 +143,28 @@ public struct HTMLPipeline {
     }
 
     /// Produce the fully assembled HTML document: template with all JS injected.
+    /// Injection order: prism → injectDiff2HTML → injectMermaid → injectKaTeX
+    /// diff2html reads code.textContent (not .innerHTML) after Prism has already
+    /// written its token spans — textContent strips those spans cleanly. Placing
+    /// diff2html before Mermaid/KaTeX prevents any namespace conflict.
     public func assemble(_ templateHTML: String) -> String {
         var html = templateHTML
         html = injectPrism(html)
+        html = injectDiff2HTML(html)
         html = injectMermaid(html)
         html = injectKaTeX(html)
         return html
     }
 
     // MARK: - Injection helpers (public for testing — no AppKit consumers outside this module)
+
+    /// Returns true when the rendered HTML contains at least one fenced diff code block.
+    /// Pure function — no side effects, suitable for unit testing in isolation.
+    /// Used as the conditional guard in injectDiff2HTML to skip injection overhead
+    /// when the document contains no diff blocks.
+    public static func hasDiffBlocks(_ html: String) -> Bool {
+        html.contains("class=\"language-diff\"")
+    }
 
     /// Replace only the final `</body>` tag. Must use backwards search — bundled
     /// JS (mermaid.min.js bundles DOMPurify) contains `</body>` as a string literal.
@@ -164,6 +181,85 @@ public struct HTMLPipeline {
         guard let js = prismJS else { return html }
         let scriptTag = "<script>\(js)\nPrism.manual = false; Prism.highlightAll();</script>"
         return insertBeforeBodyClose(scriptTag, into: html)
+    }
+
+    /// Conditionally inject diff2html-bundle (UI-base + CSS) when the document contains
+    /// at least one fenced ```diff code block. The bundle embeds CSS as __diff2htmlCSS const;
+    /// the bridge injects it as a <style> tag and replaces each pre>code.language-diff with
+    /// a .d2h-wrapper div. Uses .textContent (not .innerHTML) to read diff text so Prism
+    /// token spans (already written synchronously before DOMContentLoaded) are stripped cleanly.
+    /// The data-diff2html-rendered idempotency guard prevents double-render on fast-path calls.
+    /// window._markviewRenderDiff is exposed for live-edit updates (mirrors Mermaid pattern).
+    public func injectDiff2HTML(_ html: String) -> String {
+        guard let js = diff2htmlJS else { return html }
+        guard Self.hasDiffBlocks(html) else {
+            PHKDebug.log("injectDiff2HTML() — skipped (no language-diff blocks)")
+            return html
+        }
+        PHKDebug.log("injectDiff2HTML() — injecting diff2html-bundle (conditional)")
+
+        // diff2html-bundle.min.js may contain "</script>" string literals —
+        // escape them so the HTML parser doesn't close the <script> tag prematurely.
+        // "<\/script>" is treated identically by JS engines but is invisible to the HTML parser.
+        let safeJS = js.replacingOccurrences(of: "</script>", with: "<\\/script>")
+
+        // CSS is embedded as __diff2htmlCSS const in the bundle — inject dynamically as <style>.
+        let bridge = """
+        <script>
+        \(safeJS)
+        (function() {
+            // Inject CSS from embedded const
+            var style = document.createElement('style');
+            style.textContent = typeof __diff2htmlCSS !== 'undefined' ? __diff2htmlCSS : '';
+            document.head.appendChild(style);
+
+            function renderDiffBlocks() {
+                var blocks = document.querySelectorAll('pre code.language-diff');
+                if (!blocks.length) return;
+                blocks.forEach(function(code, i) {
+                    var pre = code.parentElement;
+                    if (pre.getAttribute('data-diff2html-rendered')) return; // idempotency guard
+                    var diffStr = code.textContent || ''; // textContent, NOT innerHTML — strips Prism token spans
+                    if (!diffStr.trim()) return;
+                    try {
+                        var diffHtml = Diff2Html.html(diffStr, {
+                            drawFileList: false,
+                            matching: 'lines',
+                            outputFormat: 'side-by-side'
+                        });
+                        // Diff2Html.html() already returns <div class="d2h-wrapper ..."> —
+                        // insert it directly to avoid double-wrapping (which creates 2 .d2h-wrapper
+                        // per block and breaks selector-count assertions).
+                        var tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = diffHtml;
+                        var inner = tempDiv.firstElementChild;
+                        if (inner) {
+                            inner.setAttribute('data-diff2html-rendered', '1');
+                            pre.parentNode.replaceChild(inner, pre);
+                        }
+                        if (window._PHK_DEBUG) console.log('[PHK] diff2html: rendered block ' + i + ' (side-by-side)');
+                    } catch(e) {
+                        if (window._PHK_DEBUG) console.log('[PHK] diff2html: error on block ' + i + ': ' + e.message);
+                    }
+                });
+            }
+
+            // Expose for JS fast-path (called by updateContentViaJS after innerHTML swap)
+            window._markviewRenderDiff = function() {
+                renderDiffBlocks();
+                if (window._PHK_DEBUG) console.log('[PHK] _markviewRenderDiff() called (fast-path)');
+            };
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', renderDiffBlocks);
+            } else {
+                renderDiffBlocks();
+            }
+        })();
+        </script>
+        """
+
+        return insertBeforeBodyClose(bridge, into: html)
     }
 
     public func injectMermaid(_ html: String) -> String {

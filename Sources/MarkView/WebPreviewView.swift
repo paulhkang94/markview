@@ -15,6 +15,9 @@ struct WebPreviewView: NSViewRepresentable {
     var theme: AppTheme = .system
     /// Direct reference to the scroll sync controller (not a SwiftUI binding).
     var syncController: ScrollSyncController?
+    /// Find bar controller — set by ContentView and passed to the Coordinator
+    /// so WKWebView.find() calls can be driven from SwiftUI and results written back.
+    var findBar: FindBarController? = nil
     /// Called once when the WKWebView is created. Use to store the reference for export.
     /// Prefer this over view-hierarchy search at export time.
     var onWebViewCreated: ((WKWebView) -> Void)? = nil
@@ -39,6 +42,13 @@ struct WebPreviewView: NSViewRepresentable {
         // Register coordinator with the sync controller for direct calls
         syncController?.previewCoordinator = context.coordinator
 
+        // Wire FindBarController callbacks so the Coordinator drives WKWebView.find()
+        // in response to user actions in FindBarView.
+        if let findBar = findBar {
+            context.coordinator.findBar = findBar
+            context.coordinator.wireFindBarCallbacks(findBar)
+        }
+
         // Notify caller so it can store a direct reference (used for PDF export).
         onWebViewCreated?(webView)
 
@@ -62,6 +72,13 @@ struct WebPreviewView: NSViewRepresentable {
         context.coordinator.theme = theme
         context.coordinator.syncController = syncController
         syncController?.previewCoordinator = context.coordinator
+
+        // Re-wire callbacks if findBar reference changed (e.g. split-pane toggle recreates view)
+        if let findBar = findBar, context.coordinator.findBar !== findBar {
+            context.coordinator.findBar = findBar
+            context.coordinator.wireFindBarCallbacks(findBar)
+        }
+
         context.coordinator.updateContent(html, in: webView)
     }
 
@@ -77,6 +94,9 @@ struct WebPreviewView: NSViewRepresentable {
         var previewWidth: String = "900px"
         var theme: AppTheme = .system
         weak var syncController: ScrollSyncController?
+        /// Find bar controller — passed from ContentView. Strong reference is safe
+        /// because ContentView owns it via @StateObject (longer lifetime than Coordinator).
+        var findBar: FindBarController?
         private var hasLoadedInitialPage = false
         private var lastHTML: String = ""
         private var lastCSS: String = ""
@@ -136,6 +156,90 @@ struct WebPreviewView: NSViewRepresentable {
             } else {
                 AppLogger.render.warning("KaTeX auto-render bundle resource not found")
                 AppLogger.breadcrumb("KaTeX auto-render resource missing", category: "render", level: .warning)
+            }
+        }
+
+        // MARK: - Find Bar
+
+        /// Wire FindBarController callbacks to this Coordinator's find methods.
+        /// Called from makeNSView (initial wire) and updateNSView (re-wire on reference change).
+        func wireFindBarCallbacks(_ findBar: FindBarController) {
+            findBar.onFindNext = { [weak self] query, caseSensitive in
+                self?.performFind(query: query, forward: true, caseSensitive: caseSensitive)
+            }
+            findBar.onFindPrev = { [weak self] query, caseSensitive in
+                self?.performFind(query: query, forward: false, caseSensitive: caseSensitive)
+            }
+            findBar.onClear = { [weak self] in
+                self?.clearFind()
+            }
+            findBar.onQueryChanged = { [weak self] query, caseSensitive in
+                guard !query.isEmpty else {
+                    self?.clearFind()
+                    return
+                }
+                self?.performFind(query: query, forward: true, caseSensitive: caseSensitive)
+            }
+        }
+
+        /// Execute a WKWebView.find() and update FindBarController with the result.
+        /// Requires macOS 14+ for WKWebView.find(_:configuration:completionHandler:).
+        @available(macOS 14.0, *)
+        private func performFindModern(query: String, forward: Bool, caseSensitive: Bool) {
+            guard let webView = webView, !query.isEmpty else { return }
+            let config = WKFindConfiguration()
+            config.backwards = !forward
+            config.caseSensitive = caseSensitive
+            config.wraps = true
+            webView.find(query, configuration: config) { [weak self] result in
+                guard let self, let findBar = self.findBar else { return }
+                self.countMatches(query: query, caseSensitive: caseSensitive, in: webView) { count in
+                    DispatchQueue.main.async {
+                        findBar.updateResult(matchCount: count, found: result.matchFound)
+                    }
+                }
+            }
+        }
+
+        func performFind(query: String, forward: Bool, caseSensitive: Bool) {
+            if #available(macOS 14.0, *) {
+                performFindModern(query: query, forward: forward, caseSensitive: caseSensitive)
+            }
+            // Below macOS 14: WKWebView.find() is unavailable; find bar degrades gracefully
+            // (match count stays 0, no visual highlight). Keyboard shortcut still opens bar.
+        }
+
+        func clearFind() {
+            guard let webView = webView else { return }
+            if #available(macOS 14.0, *) {
+                let config = WKFindConfiguration()
+                webView.find("", configuration: config) { _ in }
+            }
+        }
+
+        /// Count total matches for `query` via JS innerText search on `#markview-content`.
+        /// Scoping to the content element avoids over-counting Mermaid SVG label text.
+        /// Uses JSONSerialization to produce a safe JS string literal — avoids any injection risk.
+        private func countMatches(query: String, caseSensitive: Bool, in webView: WKWebView, completion: @escaping (Int) -> Void) {
+            guard !query.isEmpty,
+                  let jsonData = try? JSONSerialization.data(withJSONObject: query, options: .fragmentsAllowed),
+                  let escapedQuery = String(data: jsonData, encoding: .utf8) else {
+                completion(0)
+                return
+            }
+            let flags = caseSensitive ? "g" : "gi"
+            let js = """
+            (function() {
+                function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\\\\]\\\\]/g, '\\\\$&'); }
+                try {
+                    var el = document.getElementById('\(TemplateConstants.contentElementID)') || document.body;
+                    var matches = (el.innerText || '').match(new RegExp(escapeRegex(\(escapedQuery)), '\(flags)'));
+                    return matches ? matches.length : 0;
+                } catch(e) { return 0; }
+            })()
+            """
+            webView.evaluateJavaScript(js) { result, _ in
+                DispatchQueue.main.async { completion(result as? Int ?? 0) }
             }
         }
 
@@ -597,6 +701,16 @@ struct WebPreviewView: NSViewRepresentable {
             """
             webView.evaluateJavaScript(js)
             webView.evaluateJavaScript(Self.scrollListenerJS)
+
+            // Re-apply active find after innerHTML swap — the swap clears WKWebView's
+            // current find highlight. Forward=true re-seeks from the top of the document.
+            if let findBar = findBar, findBar.isVisible, !findBar.query.isEmpty {
+                let query = findBar.query
+                let caseSensitive = findBar.caseSensitive
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.performFind(query: query, forward: true, caseSensitive: caseSensitive)
+                }
+            }
         }
 
         private static var systemIsDarkMode: Bool {

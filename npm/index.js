@@ -51,6 +51,94 @@ const TOOLS = [
       required: ["path"],
     },
   },
+  {
+    name: "lint_file",
+    description:
+      "Lint a markdown file using MarkView's built-in linter. Returns line-by-line " +
+      "diagnostics (warnings and errors) for 9 rules: inconsistent-headings, " +
+      "trailing-whitespace, missing-blank-lines, duplicate-headings, broken-links, " +
+      "unclosed-fences, unclosed-formatting, mismatched-brackets, invalid-tables.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path to the markdown file to lint",
+        },
+        rules: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional list of rule names to enable. Defaults to all rules.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "render_diff_file",
+    description:
+      "Run git diff on a repository and render the output in MarkView with diff2html " +
+      "syntax highlighting. Supports side-by-side and line-by-line views.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path to the git repository root",
+        },
+        format: {
+          type: "string",
+          enum: ["side-by-side", "line-by-line", "unified"],
+          description: "Diff display format (default: side-by-side)",
+        },
+        range: {
+          type: "string",
+          description:
+            "Git range, e.g. 'HEAD~1..HEAD' or 'main..feature'. Default '' = uncommitted changes.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "render_diff_raw",
+    description:
+      "Render a raw unified diff string in MarkView with diff2html syntax highlighting. " +
+      "Pass the output of 'git diff' or any unified diff directly.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        diff: {
+          type: "string",
+          description:
+            "Raw unified diff string (output of git diff or similar)",
+        },
+        format: {
+          type: "string",
+          enum: ["side-by-side", "line-by-line", "unified"],
+          description: "Diff display format (default: side-by-side)",
+        },
+      },
+      required: ["diff"],
+    },
+  },
+  {
+    name: "get_changed_files",
+    description:
+      "List all changed files in a git repository (staged, unstaged, and untracked). " +
+      "Returns structured JSON and a markdown table.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Absolute path to the git repository root",
+        },
+      },
+      required: ["path"],
+    },
+  },
 ];
 
 /**

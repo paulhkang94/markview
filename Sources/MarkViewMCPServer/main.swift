@@ -7,7 +7,7 @@ struct MarkViewMCPServer {
     static func main() async throws {
         let server = Server(
             name: "markview",
-            version: "1.3.0",
+            version: "1.4.0",
             capabilities: .init(
                 resources: .init(subscribe: false, listChanged: false),
                 tools: .init(listChanged: false)
@@ -136,6 +136,62 @@ struct MarkViewMCPServer {
                         "required": .array([.string("path")])
                     ])
                 ),
+                Tool(
+                    name: "render_diff_file",
+                    description: "Run git diff on a repository and render the output in MarkView with diff2html syntax highlighting. Supports side-by-side and line-by-line views.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "path": .object([
+                                "type": .string("string"),
+                                "description": .string("Absolute path to the git repository root")
+                            ]),
+                            "format": .object([
+                                "type": .string("string"),
+                                "enum": .array([.string("side-by-side"), .string("line-by-line"), .string("unified")]),
+                                "description": .string("Diff display format (default: side-by-side)")
+                            ]),
+                            "range": .object([
+                                "type": .string("string"),
+                                "description": .string("Git range, e.g. 'HEAD~1..HEAD' or 'main..feature'. Default '' = uncommitted changes.")
+                            ])
+                        ]),
+                        "required": .array([.string("path")])
+                    ])
+                ),
+                Tool(
+                    name: "render_diff_raw",
+                    description: "Render a raw unified diff string in MarkView with diff2html syntax highlighting. Pass the output of 'git diff' or any unified diff directly.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "diff": .object([
+                                "type": .string("string"),
+                                "description": .string("Raw unified diff string (output of git diff or similar)")
+                            ]),
+                            "format": .object([
+                                "type": .string("string"),
+                                "enum": .array([.string("side-by-side"), .string("line-by-line"), .string("unified")]),
+                                "description": .string("Diff display format (default: side-by-side)")
+                            ])
+                        ]),
+                        "required": .array([.string("diff")])
+                    ])
+                ),
+                Tool(
+                    name: "get_changed_files",
+                    description: "List all changed files in a git repository (staged, unstaged, and untracked). Returns structured JSON and a markdown table.",
+                    inputSchema: .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "path": .object([
+                                "type": .string("string"),
+                                "description": .string("Absolute path to the git repository root")
+                            ])
+                        ]),
+                        "required": .array([.string("path")])
+                    ])
+                ),
             ])
         }
 
@@ -147,6 +203,12 @@ struct MarkViewMCPServer {
                 return try handleOpenFile(params)
             case "lint_file":
                 return try handleLintFile(params)
+            case "render_diff_file":
+                return try handleRenderDiffFile(params)
+            case "render_diff_raw":
+                return try handleRenderDiffRaw(params)
+            case "get_changed_files":
+                return try handleGetChangedFiles(params)
             default:
                 return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
             }
@@ -289,5 +351,225 @@ struct MarkViewMCPServer {
         }
         let summary = "\(diagnostics.count) issue(s) found in \(resolvedPath):\n" + lines.joined(separator: "\n")
         return .init(content: [.text(summary)], isError: false)
+    }
+
+    // MARK: - render_diff_file
+
+    static func handleRenderDiffFile(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let path = params.arguments?["path"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: path")], isError: true)
+        }
+
+        let resolvedPath = (path as NSString).standardizingPath
+        guard FileManager.default.fileExists(atPath: resolvedPath) else {
+            return .init(content: [.text("File not found: \(resolvedPath)")], isError: true)
+        }
+
+        guard FileManager.default.fileExists(atPath: resolvedPath + "/.git") else {
+            return .init(content: [.text("Not a git repository: \(resolvedPath)")], isError: true)
+        }
+
+        let format = params.arguments?["format"]?.stringValue ?? "side-by-side"
+        let range = params.arguments?["range"]?.stringValue ?? ""
+
+        fputs("[PHK] render_diff_file: path=\(resolvedPath) range=\(range) format=\(format)\n", stderr)
+
+        var gitArgs = ["git", "-C", resolvedPath, "diff"]
+        if !range.isEmpty {
+            gitArgs.append(range)
+        }
+
+        let (output, _) = runProcess(gitArgs, timeoutSeconds: 10.0)
+
+        if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .init(content: [.text("No changes found")], isError: false)
+        }
+
+        fputs("[PHK] render_diff_file: git diff output \(output.count)b → writing to cache\n", stderr)
+
+        let diffContent = "```diff\n\(output)\n```\n"
+        let fileURL = try writePreviewCache(content: diffContent, filename: "diff-preview.md")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "MarkView", fileURL.path]
+        try process.run()
+        process.waitUntilExit()
+
+        return .init(
+            content: [.text("Diff rendered in MarkView: \(fileURL.path)")],
+            isError: false
+        )
+    }
+
+    // MARK: - render_diff_raw
+
+    static func handleRenderDiffRaw(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let diff = params.arguments?["diff"]?.stringValue, !diff.isEmpty else {
+            return .init(content: [.text("Missing required parameter: diff")], isError: true)
+        }
+
+        let format = params.arguments?["format"]?.stringValue ?? "side-by-side"
+
+        fputs("[PHK] render_diff_raw: diffSize=\(diff.count)b format=\(format)\n", stderr)
+
+        let diffContent = "```diff\n\(diff)\n```\n"
+        let fileURL = try writePreviewCache(content: diffContent, filename: "diff-preview.md")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "MarkView", fileURL.path]
+        try process.run()
+        process.waitUntilExit()
+
+        return .init(
+            content: [.text("Diff rendered in MarkView: \(fileURL.path)")],
+            isError: false
+        )
+    }
+
+    // MARK: - get_changed_files
+
+    static func handleGetChangedFiles(_ params: CallTool.Parameters) throws -> CallTool.Result {
+        guard let path = params.arguments?["path"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: path")], isError: true)
+        }
+
+        let resolvedPath = (path as NSString).standardizingPath
+        guard FileManager.default.fileExists(atPath: resolvedPath) else {
+            return .init(content: [.text("File not found: \(resolvedPath)")], isError: true)
+        }
+
+        guard FileManager.default.fileExists(atPath: resolvedPath + "/.git") else {
+            return .init(content: [.text("Not a git repository: \(resolvedPath)")], isError: true)
+        }
+
+        let (output, _) = runProcess(["git", "-C", resolvedPath, "status", "--porcelain=v1"])
+
+        // Parse porcelain v1 output: "XY filename" (X=staged, Y=unstaged)
+        struct FileEntry: Encodable {
+            let path: String
+            let status: String
+        }
+
+        var staged: [FileEntry] = []
+        var unstaged: [FileEntry] = []
+        var untracked: [FileEntry] = []
+
+        for line in output.components(separatedBy: "\n") {
+            guard line.count >= 3 else { continue }
+            let x = String(line[line.startIndex])   // staged status
+            let y = String(line[line.index(line.startIndex, offsetBy: 1)])  // unstaged status
+            let filePath = String(line.dropFirst(3))
+            guard !filePath.isEmpty else { continue }
+
+            if x == "?" && y == "?" {
+                untracked.append(FileEntry(path: filePath, status: "?"))
+            } else {
+                if x != " " && x != "?" {
+                    staged.append(FileEntry(path: filePath, status: x))
+                }
+                if y != " " && y != "?" {
+                    unstaged.append(FileEntry(path: filePath, status: y))
+                }
+            }
+        }
+
+        fputs("[PHK] get_changed_files: path=\(resolvedPath) staged=\(staged.count) unstaged=\(unstaged.count) untracked=\(untracked.count)\n", stderr)
+
+        // Build JSON output
+        struct ChangedFilesResult: Encodable {
+            let staged: [FileEntry]
+            let unstaged: [FileEntry]
+            let untracked: [FileEntry]
+            let summary: String
+        }
+
+        let result = ChangedFilesResult(
+            staged: staged,
+            unstaged: unstaged,
+            untracked: untracked,
+            summary: "\(staged.count + unstaged.count) changed, \(untracked.count) untracked"
+        )
+
+        let jsonData = (try? JSONEncoder().encode(result)) ?? Data()
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+
+        // Build markdown pipe table
+        var tableLines = ["| Status | File |", "|--------|------|"]
+        for entry in staged {
+            tableLines.append("| \(entry.status) staged | \(entry.path) |")
+        }
+        for entry in unstaged {
+            tableLines.append("| \(entry.status) unstaged | \(entry.path) |")
+        }
+        for entry in untracked {
+            tableLines.append("| ? untracked | \(entry.path) |")
+        }
+        let tableString = tableLines.joined(separator: "\n")
+
+        let combinedOutput = jsonString + "\n\n" + tableString
+
+        return .init(
+            content: [.text(combinedOutput)],
+            isError: false
+        )
+    }
+
+    // MARK: - Helpers
+
+    /// Write content to the persistent preview cache and return the file URL.
+    @discardableResult
+    static func writePreviewCache(content: String, filename: String) throws -> URL {
+        let safeName = filename
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "..", with: "_")
+        let cacheDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache/markview/previews", isDirectory: true)
+        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let fileURL = cacheDir.appendingPathComponent(safeName)
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    /// Run a subprocess and return (stdout, exitCode). Enforces a timeout and a 2MB output cap.
+    static func runProcess(_ args: [String], timeoutSeconds: Double = 10.0) -> (output: String, exitCode: Int32) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = args
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        let watchdog = DispatchWorkItem { process.terminate() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds, execute: watchdog)
+
+        do {
+            try process.run()
+            var outputData = Data()
+            let maxBytes = 2_000_000
+            while process.isRunning {
+                let chunk = pipe.fileHandleForReading.availableData
+                if !chunk.isEmpty {
+                    outputData.append(chunk)
+                    if outputData.count > maxBytes {
+                        process.terminate()
+                        break
+                    }
+                }
+            }
+            // Drain any remaining buffered bytes (up to cap)
+            let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
+            let remainingCapped = remaining.prefix(max(0, maxBytes - outputData.count))
+            outputData.append(contentsOf: remainingCapped)
+            process.waitUntilExit()
+            watchdog.cancel()
+            var output = String(data: outputData, encoding: .utf8) ?? ""
+            if outputData.count >= maxBytes { output += "\n[Output truncated at 2MB]" }
+            return (output, process.terminationStatus)
+        } catch {
+            watchdog.cancel()
+            return ("", 1)
+        }
     }
 }

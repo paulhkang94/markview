@@ -24,6 +24,7 @@ let package = Package(
             resources: [
                 .process("Resources/template.html"),
                 .process("Resources/prism-bundle.min.js"),
+                .process("Resources/diff2html-bundle.min.js"),
                 .process("Resources/mermaid.min.js"),
                 .process("Resources/katex.min.js"),
                 .process("Resources/auto-render.min.js"),

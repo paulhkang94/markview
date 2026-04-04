@@ -1376,6 +1376,109 @@ runner.test("Large file → toggle editor → no hang (<3s for editor to appear)
 
 print("")
 
+// ========== Find Bar Tests (require AX permission — run manually) ==========
+// These tests require Accessibility permissions and an open MarkView window with
+// a document loaded. They exercise FindBarController via real UI automation.
+// Run with: swift run MarkViewE2ETester --filter find
+// All stubs below are intentional — implementation follows P0a (FindBarController) shipping.
+
+print("--- Find Bar Tests (AX — manual) ---")
+
+runner.skip("findBar_opensOnCmdF", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that pressing Cmd+F opens the find bar and the search TextField gains first responder.
+// Steps:
+//   1. withAppAndFile("# Hello\nhello world hello") { window, _ in
+//   2. AXHelper.cmdF()
+//   3. Thread.sleep(forTimeInterval: 0.3)
+//   4. Find the find bar TextField via AX (role: AXTextField, placeholder "Find")
+//   5. expect(findTextField != nil, "Find bar TextField must appear on Cmd+F")
+//   6. expect(AXHelper.isFocused(findTextField), "Find bar TextField must be first responder")
+
+runner.skip("findBar_closesOnEsc", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that pressing Esc closes the find bar regardless of which element has focus.
+// Steps:
+//   1. Open find bar (Cmd+F), then click somewhere else in the window to move focus
+//   2. Press Esc (keyCode 53 via CGEvent or AXHelper.pressEsc())
+//   3. Thread.sleep(forTimeInterval: 0.3)
+//   4. expect(findTextField == nil, "Find bar must dismiss on Esc from any focus state")
+
+runner.skip("findBar_closesOnDoneButton", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that clicking the Done/X button closes the find bar.
+// Steps:
+//   1. Open find bar (Cmd+F)
+//   2. Find the close button via AX (role: AXButton, title "Done" or label "close find bar")
+//   3. AXHelper.click(closeButton)
+//   4. Thread.sleep(forTimeInterval: 0.3)
+//   5. expect(findTextField == nil, "Find bar must dismiss on Done button click")
+
+runner.skip("findBar_matchCountForKnownDocument", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that searching for a term with 3 known occurrences shows "3 of 3".
+// Steps:
+//   1. withAppAndFile("hello world\nhello again\nhello last") { window, _ in
+//   2. AXHelper.cmdF()
+//   3. Type "hello" into the find TextField
+//   4. Thread.sleep(forTimeInterval: 0.5)  // allow JS countMatches to complete
+//   5. Find the match-count label via AX (role: AXStaticText near the find bar)
+//   6. expect(countLabel?.contains("3"), "Match count label must show 3 occurrences")
+
+runner.skip("findBar_wrapAroundForward", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that pressing Cmd+G on the last match wraps forward to the first match.
+// Steps:
+//   1. Open document with 2 occurrences of "hello"
+//   2. Cmd+F, type "hello" → advances to match 1
+//   3. Cmd+G → advances to match 2 (last)
+//   4. Cmd+G → wraps to match 1 (first)
+//   5. Read match-count label, expect "1 of 2"
+
+runner.skip("findBar_wrapAroundBackward", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that pressing Shift+Cmd+G on the first match wraps backward to the last match.
+// Steps:
+//   1. Open document with 2 occurrences of "hello"
+//   2. Cmd+F, type "hello" → match index = 1
+//   3. Shift+Cmd+G → wraps to match 2 (last)
+//   4. Read match-count label, expect "2 of 2"
+
+runner.skip("findBar_caseSensitiveToggle", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that the Aa (case-sensitive) toggle changes the match count.
+// Steps:
+//   1. Open document with "Hello hello Hello" (2 uppercase, 1 lowercase)
+//   2. Cmd+F, type "Hello"
+//   3. Case-insensitive (default): expect count label "3 of 3"
+//   4. Click the Aa toggle button to enable case-sensitive mode
+//   5. Thread.sleep(forTimeInterval: 0.3)
+//   6. expect count label "2 of 2" (only uppercase "Hello" matches)
+
+runner.skip("findBar_survivesJSContentUpdate", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that the find bar stays active and highlights survive a live-edit content update.
+// Steps:
+//   1. Open file with editor visible (Cmd+E)
+//   2. Cmd+F, search for "hello"
+//   3. Type in editor to trigger a JS content update (updateContentViaJS path)
+//   4. Thread.sleep(forTimeInterval: 0.5)
+//   5. expect(findTextField != nil, "Find bar must remain visible after JS content update")
+//   6. Match count label should reflect the updated document (reapplyFind was called)
+
+runner.skip("findBar_zeroResultsShowsRedBorder", reason: "requires FindBarController (P0a) — not yet implemented")
+// TODO: implement
+// Verify that searching for a term with no matches produces the red-border flash.
+// Steps:
+//   1. Cmd+F, type a query that won't appear in the document (e.g. "xyzzy12345")
+//   2. Thread.sleep(forTimeInterval: 0.5)
+//   3. Read the find TextField's AXValue / border style
+//   4. expect(noResultsIndicator, "No-results state must be visible (red border or similar AX signal)")
+//   Note: the red border is a transient 0.4s animation — timing-sensitive. May need
+//   to check FindBarController.noResults published property via AX description instead.
+
+print("")
+
 // ========== PDF Export E2E (Skipped — Interactive Dialog Required) ==========
 // ⊘ skipped: PDF export menu → NSPrintPanel interaction requires interactive
 //   dialog automation. NSPrintPanel has no headless/accessibility API.
