@@ -262,3 +262,25 @@ Starting with `preview_markdown(content)` and `open_file(path)` covers the core 
 ### Auto-open workflow ("AI generates → app launches") is the killer differentiator
 
 The most compelling UX: Claude Desktop user writes markdown → calls `preview_markdown` tool → temp file created → `open -a MarkView` launches app with live preview in ~200ms. Zero user interaction, instant results. This workflow doesn't exist in any other markdown preview tool.
+
+---
+
+## Playwright / HTMLPipeline Testing
+
+### `gen-playwright-fixtures.sh --no-build` uses stale release binary
+
+`--no-build` skips rebuilding `MarkViewHTMLGen`. If `HTMLPipeline.swift`, `template.html`, or any injected JS changed since the last build, the fixture HTML will not reflect those changes. All Playwright tests that assert on the new behavior will time out waiting for DOM state that never appears.
+
+**Rule:** Always run `make playwright` (full build) after any `HTMLPipeline.swift` or `template.html` change. Only use `--no-build` when you've verified the binary is current (e.g., you just ran a successful `make playwright` and only changed test spec files).
+
+### `.mermaid svg` selector catches injected SVG control icons
+
+After injecting pan/zoom/reset/copy buttons inside `.mermaid`, each button's SVG icon matches `.mermaid svg`. Tests that used `.mermaid svg` to find the Mermaid diagram now match the first icon instead.
+
+**Fix:** Use `.mermaid-inner svg` (the diagram container) for diagram assertions. Use `.mermaid-controls svg` for icon assertions. Never use bare `.mermaid svg` when controls are injected.
+
+### `Tests/` vs `tests/` casing — macOS merges, Linux fails
+
+macOS filesystem is case-insensitive: `Tests/` and `tests/` resolve to the same directory. SPM test targets and Playwright tests can accidentally share a directory on macOS with no visible error. Linux CI is case-sensitive and will fail with "directory not found".
+
+**Rule:** Keep all Playwright tests in lowercase `tests/` (project root). Keep all SPM test sources in `Tests/` (SPM convention, uppercase). Never cross-reference them. Audit with `ls -la` and verify both directories are distinct before assuming the split is correct.
