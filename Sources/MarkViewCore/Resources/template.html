@@ -157,10 +157,51 @@
             .alert-caution   { background: #300b0b; border-color: #da3633; color: #ffa198; }
         }
 
+        /* TOC sidebar */
+        #toc-sidebar {
+            position: fixed; top: 0; right: 0; width: 220px; height: 100vh;
+            overflow-y: auto; padding: 20px 14px;
+            font-size: 12.5px; line-height: 1.5;
+            background: rgba(255,255,255,0.92); backdrop-filter: blur(8px);
+            border-left: 1px solid #d0d7de;
+            box-sizing: border-box; z-index: 100;
+            transition: opacity 0.2s;
+        }
+        #toc-sidebar.hidden { display: none; }
+        #toc-sidebar ul { list-style: none; margin: 0; padding: 0; }
+        #toc-sidebar li { margin: 0; }
+        #toc-sidebar a {
+            display: block; padding: 2px 0 2px 0;
+            color: #57606a; text-decoration: none;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        #toc-sidebar a:hover { color: #0969da; }
+        #toc-sidebar a.active { color: #0969da; font-weight: 600; }
+        #toc-sidebar .toc-h1 { padding-left: 0; }
+        #toc-sidebar .toc-h2 { padding-left: 10px; }
+        #toc-sidebar .toc-h3 { padding-left: 20px; font-size: 12px; }
+        #toc-sidebar .toc-h4 { padding-left: 30px; font-size: 11.5px; color: #8c959f; }
+        #toc-sidebar .toc-title {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.06em; color: #8c959f; margin-bottom: 8px;
+        }
+        body.has-toc { padding-right: 240px; }
+        @media (prefers-color-scheme: dark) {
+            #toc-sidebar {
+                background: rgba(13,17,23,0.92);
+                border-left-color: #3d444d;
+            }
+            #toc-sidebar a { color: #8b949e; }
+            #toc-sidebar a:hover, #toc-sidebar a.active { color: #58a6ff; }
+            #toc-sidebar .toc-h4 { color: #6e7681; }
+            #toc-sidebar .toc-title { color: #6e7681; }
+        }
+
         /* Print */
         @media print {
             body { max-width: none; padding: 0; }
             pre { white-space: pre-wrap; }
+            #toc-sidebar { display: none; }
         }
     </style>
 </head>
@@ -194,6 +235,70 @@
             });
         })();
         // Inline Prism.js will be loaded here by the app
+
+        // TOC sidebar: build from headings, highlight on scroll
+        (function() {
+            var headings = Array.from(document.querySelectorAll('article h1,article h2,article h3,article h4'));
+            if (headings.length < 3) return; // don't show TOC for short docs
+
+            // Assign IDs
+            var slugCounts = {};
+            headings.forEach(function(h) {
+                if (!h.id) {
+                    var slug = h.textContent.toLowerCase()
+                        .replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+                    slugCounts[slug] = (slugCounts[slug] || 0) + 1;
+                    h.id = slugCounts[slug] > 1 ? slug + '-' + (slugCounts[slug] - 1) : slug;
+                }
+            });
+
+            // Build sidebar
+            var sidebar = document.createElement('nav');
+            sidebar.id = 'toc-sidebar';
+            sidebar.setAttribute('aria-label', 'Table of contents');
+            var title = document.createElement('div');
+            title.className = 'toc-title';
+            title.textContent = 'Contents';
+            sidebar.appendChild(title);
+            var ul = document.createElement('ul');
+            var links = [];
+            headings.forEach(function(h) {
+                var level = parseInt(h.tagName[1]);
+                var li = document.createElement('li');
+                var a = document.createElement('a');
+                a.href = '#' + h.id;
+                a.textContent = h.textContent;
+                a.className = 'toc-h' + level;
+                a.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    h.scrollIntoView({behavior: 'smooth', block: 'start'});
+                });
+                li.appendChild(a);
+                ul.appendChild(li);
+                links.push({el: h, a: a});
+            });
+            sidebar.appendChild(ul);
+            document.body.appendChild(sidebar);
+            document.body.classList.add('has-toc');
+
+            // Highlight active section on scroll
+            var ticking = false;
+            function updateActive() {
+                var scrollY = window.scrollY + 80;
+                var active = links[0];
+                for (var i = 0; i < links.length; i++) {
+                    if (links[i].el.offsetTop <= scrollY) active = links[i];
+                    else break;
+                }
+                links.forEach(function(l) { l.a.classList.remove('active'); });
+                if (active) active.a.classList.add('active');
+                ticking = false;
+            }
+            window.addEventListener('scroll', function() {
+                if (!ticking) { requestAnimationFrame(updateActive); ticking = true; }
+            }, {passive: true});
+            updateActive();
+        })();
     </script>
 </body>
 </html>

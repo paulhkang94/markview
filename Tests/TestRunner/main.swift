@@ -4393,6 +4393,15 @@ runner.test("gfm-alerts.md fixture: alert blockquotes render") {
     try expect(html.contains("[!TIP]"), "[!TIP] content not found in rendered HTML")
 }
 
+runner.test("TOC: template.html source contains toc-sidebar CSS and JS") {
+    // swift run sets cwd to the package root — use that to locate the source file
+    let templatePath = FileManager.default.currentDirectoryPath + "/Sources/MarkViewCore/Resources/template.html"
+    let template = try String(contentsOfFile: templatePath, encoding: .utf8)
+    try expect(template.contains("toc-sidebar"), "TOC sidebar CSS/JS not in template.html")
+    try expect(template.contains("has-toc"), "has-toc body class not in template.html")
+    try expect(template.contains("alert-note"), "GFM alert CSS not in template.html (regression check)")
+}
+
 runner.test("gfm-alerts: regular blockquote is unaffected") {
     let md = "> This is a regular blockquote without an alert prefix."
     let html = MarkdownRenderer.renderHTML(from: md)

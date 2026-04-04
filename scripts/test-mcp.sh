@@ -517,6 +517,54 @@ console.log(JSON.stringify({hasCorrectPath}));
     fi
 fi
 
+# --- Step N: resources Tests ---
+echo ""
+echo "--- Resources Tests ---"
+
+python3 - "$MCP_BIN" << 'PYEOF'
+import subprocess, json, sys, os, tempfile
+
+MCP_BIN = sys.argv[1]
+passes = 0; fails = 0
+
+def test(name, condition):
+    global passes, fails
+    if condition: print(f"  \u2713 {name}"); passes += 1
+    else: print(f"  \u2717 {name}"); fails += 1
+
+def send_recv(proc, req):
+    proc.stdin.write((json.dumps(req) + "\n").encode()); proc.stdin.flush()
+    line = proc.stdout.readline()
+    return json.loads(line) if line else {}
+
+proc = subprocess.Popen([MCP_BIN], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+send_recv(proc, {"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})
+proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}\n'); proc.stdin.flush()
+
+# resources/list returns latest preview resource
+r = send_recv(proc, {"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}})
+resources = r.get("result",{}).get("resources",[])
+uris = [res.get("uri","") for res in resources]
+test("resources/list returns response", len(resources) > 0)
+test("resources/list includes markview://preview/latest", "markview://preview/latest" in uris)
+
+# resources/read unknown URI returns content
+r = send_recv(proc, {"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"markview://unknown/resource"}})
+result = r.get("result",{})
+test("resources/read unknown URI returns result", "contents" in result)
+
+# resources/read markview://preview/latest returns content (may be empty if no previews exist)
+r = send_recv(proc, {"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"markview://preview/latest"}})
+result = r.get("result",{})
+test("resources/read latest returns contents array", "contents" in result)
+
+proc.terminate()
+print(f"\n  resources subtests: {passes} passed, {fails} failed")
+sys.exit(0 if fails == 0 else 1)
+PYEOF
+
+if [ $? -eq 0 ]; then PASS=$((PASS + 4)); else FAIL=$((FAIL + 1)); fi
+
 # --- Step N: lint_file Tool Tests ---
 echo ""
 echo "--- lint_file Tool Tests ---"
