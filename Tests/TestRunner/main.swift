@@ -4372,6 +4372,45 @@ runner.test("Performance: Markdown with many code blocks (100) renders in <1000m
 //   Tested manually during development; regression requires E2E with AX.
 
 // =============================================================================
+// Golden Corpus — exercises every supported feature
+// =============================================================================
+
+runner.test("golden-corpus.md renders all major sections") {
+    let md = try loadFixture("golden-corpus.md")
+    let html = MarkdownRenderer.renderHTML(from: md)
+    try expect(!html.isEmpty, "golden corpus rendered to empty string")
+    // Typography
+    try expect(html.contains("<strong>"), "Missing bold")
+    try expect(html.contains("<em>"), "Missing italic")
+    try expect(html.contains("<del>"), "Missing strikethrough")
+    // Tables
+    try expect(html.contains("<table"), "Missing table")
+    try expect(html.contains("<th"), "Missing table header")
+    // Task lists
+    try expect(html.contains("type=\"checkbox\""), "Missing task list checkboxes")
+    try expect(html.contains("checked"), "Missing checked task item")
+    // Code blocks
+    try expect(html.contains("language-swift"), "Missing Swift code block")
+    try expect(html.contains("language-python"), "Missing Python code block")
+    try expect(html.contains("language-mermaid"), "Missing Mermaid code block")
+    // Math passes through as raw text (KaTeX runs client-side)
+    try expect(html.contains("mc^2"), "Math content not preserved")
+    try expect(html.contains("sqrt"), "Math sqrt not preserved")
+    // Mermaid code blocks
+    try expect(html.contains("flowchart"), "Missing Mermaid flowchart")
+    try expect(html.contains("sequenceDiagram"), "Missing Mermaid sequence")
+    // GFM alerts as blockquotes (JS transforms client-side)
+    try expect(html.contains("[!NOTE]"), "Missing NOTE alert")
+    try expect(html.contains("[!WARNING]"), "Missing WARNING alert")
+    try expect(html.contains("[!TIP]"), "Missing TIP alert")
+    // Footnotes
+    try expect(html.contains("fn") || html.contains("footnote"), "Missing footnotes")
+    // Unicode
+    try expect(html.contains("マークビュー"), "Missing Japanese unicode")
+    try expect(html.contains("\u{1F680}"), "Missing emoji")
+}
+
+// =============================================================================
 // KaTeX + GFM Alerts
 // =============================================================================
 
