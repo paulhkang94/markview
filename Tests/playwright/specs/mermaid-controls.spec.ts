@@ -205,7 +205,7 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
       expect(tx).toBe(-40);
     });
 
-    test("reset (⟳) returns transform to identity after pan", async ({
+    test("reset (↺) returns transform to identity after pan", async ({
       page,
     }) => {
       await hoverMermaid(page);
@@ -297,7 +297,7 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
       expect(s).toBeGreaterThanOrEqual(0.1);
     });
 
-    test("zoom in then reset (⟳) returns scale to 1", async ({ page }) => {
+    test("zoom in then reset (↺) returns scale to 1", async ({ page }) => {
       await hoverMermaid(page);
       await clickControl(page, "zi");
       await clickControl(page, "zi");
@@ -310,7 +310,7 @@ test.describe("Mermaid pan/zoom/copy controls", () => {
       expect(s).toBe(1);
     });
 
-    test("zoom out then reset (⟳) returns scale to 1", async ({ page }) => {
+    test("zoom out then reset (↺) returns scale to 1", async ({ page }) => {
       await hoverMermaid(page);
       await clickControl(page, "zo");
       await clickControl(page, "r0");

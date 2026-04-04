@@ -376,7 +376,11 @@ var _self="undefined"!=typeof window?window:"undefined"!=typeof WorkerGlobalScop
 Prism.manual = false; Prism.highlightAll();</script>
 <style>
 /* Mermaid pan/zoom/copy controls — shown on diagram hover, matches GitHub UX */
-/* Sizing: 32px buttons (Material/Apple standard for pointer-driven macOS) */
+/* Sizing: clamp-based responsive — scales from 32px (small window) to 42px (full screen) */
+:root {
+    --mv-btn: clamp(32px, 3.5vh, 42px);
+    --mv-icon: clamp(14px, 1.4vh, 18px);
+}
 .mermaid { position: relative; overflow: hidden; }
 .mermaid-inner { transform-origin: 50% 50%; transition: transform 0.1s ease; }
 .mermaid-controls {
@@ -393,17 +397,17 @@ Prism.manual = false; Prism.highlightAll();</script>
     border-radius: 6px; padding: 6px;
     backdrop-filter: blur(6px);
 }
-.mermaid-ctrl-nav { grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(3, 32px); }
-.mermaid-ctrl-zoom { grid-template-columns: 32px; grid-template-rows: repeat(3, 32px); }
+.mermaid-ctrl-nav { grid-template-columns: repeat(3, var(--mv-btn)); grid-template-rows: repeat(3, var(--mv-btn)); }
+.mermaid-ctrl-zoom { grid-template-columns: var(--mv-btn); grid-template-rows: repeat(3, var(--mv-btn)); }
 .mermaid-btn {
-    width: 32px; height: 32px; padding: 0; margin: 0;
+    width: var(--mv-btn); height: var(--mv-btn); padding: 0; margin: 0;
     background: rgba(128,128,128,0.1); border: none; border-radius: 4px;
-    cursor: pointer; font-size: 14px; line-height: 1;
+    cursor: pointer; font-size: var(--mv-icon); line-height: 1;
     display: flex; align-items: center; justify-content: center;
     color: inherit;
 }
 .mermaid-btn:hover { background: rgba(128,128,128,0.25); }
-.mermaid-btn-spacer { width: 32px; height: 32px; }
+.mermaid-btn-spacer { width: var(--mv-btn); height: var(--mv-btn); }
 @media (prefers-color-scheme: dark) {
     .mermaid-ctrl-group { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.15); }
     .mermaid-btn { background: rgba(255,255,255,0.1); }
@@ -3347,7 +3351,7 @@ globalThis["mermaid"] = globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;
                 controls.innerHTML =
                     '<div class="mermaid-ctrl-group mermaid-ctrl-nav">' +
                         SP + B + 'u" title="Pan up">↑</button>' + SP +
-                        B + 'l" title="Pan left">←</button>' + B + 'r0" title="Reset">⟳</button>' + B + 'ri" title="Pan right">→</button>' +
+                        B + 'l" title="Pan left">←</button>' + B + 'r0" title="Reset">↺</button>' + B + 'ri" title="Pan right">→</button>' +
                         SP + B + 'd" title="Pan down">↓</button>' + SP +
                     '</div>' +
                     '<div class="mermaid-ctrl-group mermaid-ctrl-zoom">' +
