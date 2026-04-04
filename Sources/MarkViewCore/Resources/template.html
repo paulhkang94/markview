@@ -316,6 +316,10 @@
             }, {passive: true});
             updateActive();
         })();
+        // Playwright/WKWebView sentinel: signals that all synchronous transforms are complete.
+        // Mermaid (async) overrides this via HTMLPipeline.injectMermaid -> window.rendered = true.
+        // 1200ms is generous enough for KaTeX + Prism on slow CI runners.
+        setTimeout(function() { if (!window.rendered) window.rendered = true; }, 1200);
     </script>
 </body>
 </html>

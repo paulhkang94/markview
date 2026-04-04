@@ -64,3 +64,11 @@ node_modules/
 npm/node_modules/
 npm/package-lock.json
 npm/bin/
+
+# Playwright
+Tests/playwright/node_modules/
+Tests/playwright/playwright-report/
+Tests/playwright/test-results/
+Tests/playwright/fixtures/.generated-at
+# Commit fixtures (*.html) to git so CI runs without Swift build
+# Regenerate with: bash scripts/gen-playwright-fixtures.sh

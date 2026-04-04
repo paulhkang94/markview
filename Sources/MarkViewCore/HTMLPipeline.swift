@@ -51,6 +51,24 @@ public struct HTMLPipeline {
 
     // MARK: - Public assembly
 
+    /// Convenience: render markdown → fully assembled HTML document in one call.
+    /// Loads the template and all JS bundles from MarkViewCore's resource bundle.
+    /// Used by MarkViewHTMLGen CLI and test fixtures.
+    public static func assembleFullDocument(from markdown: String) -> String {
+        let bodyHTML = MarkdownRenderer.renderHTML(from: markdown)
+        let accessibleHTML = MarkdownRenderer.postProcessForAccessibility(bodyHTML)
+        let template: String?
+        if let url = Bundle.module.url(forResource: "template", withExtension: "html") {
+            template = try? String(contentsOf: url, encoding: .utf8)
+        } else if let url = Bundle.module.url(forResource: "template", withExtension: "html", subdirectory: "Resources") {
+            template = try? String(contentsOf: url, encoding: .utf8)
+        } else {
+            template = nil
+        }
+        let baseHTML = MarkdownRenderer.wrapInTemplate(accessibleHTML, template: template)
+        return HTMLPipeline.loadFromBundle().assemble(baseHTML)
+    }
+
     /// Produce the fully assembled HTML document: template with all JS injected.
     public func assemble(_ templateHTML: String) -> String {
         var html = templateHTML
@@ -158,7 +176,8 @@ public struct HTMLPipeline {
                             } catch(e) {}
                         });
                     });
-                }).catch(function() {});
+                    window.rendered = true;  // Mermaid async complete — unblock Playwright/WKWebView sentinel
+                }).catch(function() { window.rendered = true; });  // unblock on error too
             };
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', window._markviewRenderMermaid);

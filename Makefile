@@ -1,4 +1,4 @@
-.PHONY: build test run clean verify
+.PHONY: build test run clean verify playwright playwright-fixtures playwright-install playwright-headed
 
 build:
 	swift build
@@ -20,3 +20,18 @@ verify-build:
 
 resolve:
 	swift package resolve
+
+playwright-install:
+	cd Tests/playwright && npm ci && npx playwright install chromium
+
+playwright-fixtures:
+	bash scripts/gen-playwright-fixtures.sh
+
+playwright: playwright-fixtures
+	cd Tests/playwright && npx playwright test && date +%s > ../.last-render-verify-at
+
+playwright-headed: playwright-fixtures
+	cd Tests/playwright && npx playwright test --headed
+
+playwright-update-snapshots: playwright-fixtures
+	cd Tests/playwright && npx playwright test --update-snapshots
