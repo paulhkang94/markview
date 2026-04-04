@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Canonical MarkView gradient: purple → blue, top-left to bottom-right -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#5B9BD5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!--
+    SF Pro Bold M glyph — extracted from /System/Library/Fonts/SFNS.ttf via fonttools.
+    Authentic typographic proportions (not a custom approximation).
+    28% padding: M occupies 44% of canvas width, centered.
+
+    Font coordinates (UPM=2048, y-up):
+      path = M140 0V1443H348L848 227H854L1354 1443H1562V0H1394V1115H1312L1507 1403L927 0H775L195 1403L390 1115H308V0Z
+      bbox: (140,0)→(1562,1443), advance_width=1702
+
+    SVG transform derivation:
+      target_w = 1024 × 0.44 = 450.6px  →  scale = 450.6 / 1422 = 0.3168
+      center_x = (1024 - 450.6) / 2 = 286.7  →  tx = 286.7 - 140 × 0.3168 = 242.36
+      center_y = (1024 - 457.2) / 2 = 283.4  →  ty = 283.4 + 1443 × 0.3168 = 740.61
+      transform = translate(242.36, 740.61) scale(0.3168, -0.3168)   [flip y: font y-up → SVG y-down]
+  -->
+  <path
+    fill="white"
+    transform="translate(242.36,740.61) scale(0.3168,-0.3168)"
+    d="M140 0V1443H348L848 227H854L1354 1443H1562V0H1394V1115H1312L1507 1403L927 0H775L195 1403L390 1115H308V0Z"
+  />
+</svg>

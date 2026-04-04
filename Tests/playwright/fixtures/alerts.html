@@ -9,7 +9,16 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            /* system-ui triggers OS-level font cascade for ALL scripts (CJK, Arabic, emoji).
+               -apple-system alone maps to San Francisco which has limited non-Latin coverage.
+               Explicit CJK/Arabic fallbacks ensure rendering in iOS WKWebView loadHTMLString. */
+            font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                         "PingFang SC", "PingFang TC", "PingFang HK",
+                         "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+                         "Noto Sans CJK SC", "Noto Sans",
+                         "Geeza Pro",
+                         "Segoe UI", Helvetica, Arial, sans-serif,
+                         "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
             font-size: 16px;
             line-height: 1.5;
             word-wrap: break-word;
@@ -65,7 +74,7 @@
 
         /* Code */
         code:not([class*="language-"]) {
-            background: #eff1f3;
+            background: rgba(175, 184, 193, 0.2);  /* GitHub Primer: visible on both light+dark bg */
             padding: 0.2em 0.4em;
             border-radius: 6px;
             font-size: 85%;
@@ -195,6 +204,12 @@
             #toc-sidebar a:hover, #toc-sidebar a.active { color: #58a6ff; }
             #toc-sidebar .toc-h4 { color: #6e7681; }
             #toc-sidebar .toc-title { color: #6e7681; }
+        }
+
+        /* Narrow screens (mobile / narrow macOS window) — hide TOC to reclaim space */
+        @media (max-width: 768px) {
+            #toc-sidebar { display: none; }
+            body.has-toc { padding-right: 16px; } /* reset the 240px TOC gutter */
         }
 
         /* Print */
