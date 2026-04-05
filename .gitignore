@@ -23,17 +23,15 @@ Package.resolved
 # App bundles (built artifacts)
 *.app
 
-# Claude / LOOP infrastructure (private — never expose in public repo)
-# These files can live on disk and work locally; git must never see them.
-# Pattern: gitignore is primary protection; pre-push hook is secondary.
+# Development tooling (local only — not for distribution)
 .claude/
 CLAUDE.md
-hooks/                           # All hooks/ are LOOP private
-scripts/cl-*.sh                  # CL learning scripts (cl-check, cl-seed, etc.)
-scripts/claude-*.sh              # LOOP adapter scripts (claude-log-failure, etc.)
-scripts/check-path-safety.sh    # LOOP path safety validator
-scripts/test-launchd-env.sh     # LOOP launchd test utility
-*.last-render-verify-at          # LOOP TV stamp files
+hooks/
+scripts/cl-*.sh
+scripts/claude-*.sh
+scripts/check-path-safety.sh
+scripts/test-launchd-env.sh
+*.last-render-verify-at
 
 # Session files — internal dev context, may contain PII (emails, account IDs)
 SESSION-RESUME.md
