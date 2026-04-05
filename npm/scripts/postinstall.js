@@ -25,12 +25,12 @@ const GITHUB_REPO = "markview";
 // BINARY_VERSION pins the macOS app release to download.
 // This is intentionally decoupled from the npm package version —
 // npm patches (JS-only changes) don't require a new macOS binary release.
-const BINARY_VERSION = "1.2.6";
+const BINARY_VERSION = "1.4.0";
 const ARCHIVE_NAME = `MarkView-${BINARY_VERSION}.tar.gz`;
 const DOWNLOAD_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${BINARY_VERSION}/${ARCHIVE_NAME}`;
 
 // Path inside the tar.gz where the MCP server binary lives
-const BINARY_IN_ARCHIVE = `MarkView.app/Contents/MacOS/markview-mcp-server`;
+const BINARY_IN_ARCHIVE = `./MarkView.app/Contents/MacOS/markview-mcp-server`;
 
 // Destination: placed next to the shell wrapper in bin/
 const PKG_ROOT = path.resolve(__dirname, "..");
@@ -167,7 +167,7 @@ async function main() {
       [
         "-xzf",
         archivePath,
-        "--strip-components=3",
+        "--strip-components=4",
         "-C",
         path.dirname(DEST_BINARY),
         BINARY_IN_ARCHIVE,
