@@ -9,8 +9,8 @@ pending work, and key architectural decisions.
 
 | | |
 |---|---|
-| **App version** | v1.4.0 (build 263) |
-| **npm package** | mcp-server-markview v1.3.0 (npm publish pending) |
+| **App version** | v1.4.0 (build 273) |
+| **npm package** | mcp-server-markview v1.4.1 (published 2026-04-04) |
 | **BINARY_VERSION** | 1.2.6 (intentionally decoupled — points to last notarized binary) |
 | **MCP registry** | `io.github.paulhkang94/markview` — active |
 | **Tag** | `v1.4.0` pushed 2026-04-04 |
@@ -38,15 +38,18 @@ pending work, and key architectural decisions.
 | Find & Replace in editor | ✅ | Cmd+F/H |
 | Find in preview | ✅ | Cmd+F in preview pane |
 
-### MCP Server (6 tools)
+### MCP Server (9 tools)
 | Tool | Description |
 |------|-------------|
 | `preview_markdown` | Render content in native window |
 | `open_file` | Open .md file with live reload |
 | `lint_file` | 9-rule linter, returns line diagnostics |
+| `lint_content` | Lint raw markdown string (no file path required) |
 | `render_diff_file` | Run git diff on a repo and render with diff2html |
 | `render_diff_raw` | Render raw unified diff string with diff2html |
 | `get_changed_files` | List changed files in a git repo (staged/unstaged/untracked) |
+| `get_word_count` | Return word/char/line counts for a markdown string or file |
+| `outline` | Extract heading outline (TOC) from markdown content |
 | **Resources** | `markview://preview/latest` — read back rendered content |
 
 ### App
@@ -64,10 +67,10 @@ pending work, and key architectural decisions.
 ## Test Pyramid
 
 ```
-Tier 1 — Swift unit tests (cmark-gfm output)          280 tests  SPM, fast
+Tier 1 — Swift unit tests (cmark-gfm output)          292 tests  SPM, fast
 Tier 2 — Golden HTML body snapshots                    8 fixtures  git-committed
 Tier 3 — Full-pipeline structural tests (HTMLPipeline) 9 tests    extracted for testability Apr 2026
-Tier 4 — MCP protocol tests (JSON-RPC)                21 tests   --skip-e2e in CI
+Tier 4 — MCP protocol tests (JSON-RPC)                91 tests   --skip-e2e in CI (covers 9 tools)
 Tier 5 — Playwright DOM tests (post-JS DOM state)      66 tests   `make playwright`, Chromium
           alerts (7), mermaid (19), katex (5), prism (5), controls (35)
 
@@ -163,10 +166,10 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 | Channel | Status | Notes |
 |---------|--------|-------|
-| GitHub releases | ✅ | v1.3.0 latest |
+| GitHub releases | ✅ | v1.4.0 latest |
 | Homebrew cask | ✅ | `paulhkang94/markview/markview` |
-| npm | ✅ | mcp-server-markview v1.3.0 |
-| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.3.0 |
+| npm | ✅ | mcp-server-markview v1.4.1 |
+| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.4.0 |
 | awesome-mcp-servers | ✅ | PR #2139 merged 2026-03-14 |
 | Glama.ai | ✅ | Listed |
 | mcp.so | ⏳ | Submitted |
@@ -183,7 +186,7 @@ Last snapshot: 2026-04-04
 - npm downloads (7d): 29 | (30d): 512 | YTD: 894
 - Apr 3 spike: 444 downloads — 4 npm versions published in 45 min, registry mirrors
 - Top referrer: reddit.com
-- v1.3.0 just published — next metrics check in 48h
+- v1.4.1 published 2026-04-04 — next metrics check 48h after publish
 
 ---
 

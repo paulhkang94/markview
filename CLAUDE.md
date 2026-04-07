@@ -2,7 +2,7 @@
 
 ## Quick Reference
 - **Build**: `swift build`
-- **Test**: `swift run MarkViewTestRunner` (350 tests)
+- **Test**: `swift run MarkViewTestRunner` (292 Swift tests + 91 MCP tests)
 - **Playwright e2e**: `make playwright` (66 tests — builds fixture binary, runs Playwright, installs MarkView.app)
 - **Verify all**: `bash verify.sh`
 - **App bundle**: `bash scripts/bundle.sh --install`
@@ -65,7 +65,7 @@ swift run MarkViewTestRunner          # Unit + integration (350 tests)
 swift run MarkViewFuzzTester          # 10K random inputs
 swift run MarkViewDiffTester          # Compare vs cmark-gfm CLI
 swift run MarkViewE2ETester           # UI tests (requires .app + AX permissions)
-bash scripts/test-mcp.sh              # MCP protocol tests (21 tests)
+bash scripts/test-mcp.sh              # MCP protocol tests (91 tests — 9 tools)
 make playwright                       # Playwright e2e DOM tests (66 tests) — rebuilds MarkViewHTMLGen, runs Chromium
 ```
 
@@ -93,6 +93,10 @@ make playwright                       # Playwright e2e DOM tests (66 tests) — 
 1. `make playwright` — builds MarkViewHTMLGen, generates fixtures, runs 66 Playwright tests, installs MarkView.app
 2. Tests live in `tests/` (Node.js/Playwright, Chromium)
 3. After any `HTMLPipeline.swift` change, always use `make playwright` not `--no-build`
+
+**Run adoption metrics:**
+1. `bash scripts/metrics.sh` — fetches npm download stats for `mcp-server-markview`
+2. The npm package name is `mcp-server-markview` (NOT `markview-mcp`, `markview`, or `mcp-server-markview-mcp`). Never curl the npm registry with a guessed name — always run the script.
 
 **Debug HTML pipeline issues:**
 1. Set `PHK_DEBUG=1` before any swift run command for verbose injection logs
