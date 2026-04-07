@@ -198,6 +198,11 @@ fi
 echo ""
 echo "=== All checks passed ==="
 
+# Write per-repo verify stamp so commit-gate allows the next commit without a
+# separate manual date +%s > stamp call. The commit-gate checks this file first
+# alongside the global claude-loop stamp.
+date +%s > "$PROJECT_DIR/.last-verify-at"
+
 # Extended tests (fuzz + differential) — only with --extended flag
 if [ "$PHASE" = "--extended" ]; then
     echo ""
