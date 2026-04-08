@@ -31,7 +31,8 @@ scripts/cl-*.sh
 scripts/claude-*.sh
 scripts/check-path-safety.sh
 scripts/test-launchd-env.sh
-*.last-render-verify-at
+.last-verify-at
+.release-preflight-passed-*
 
 # Session files — internal dev context, may contain PII (emails, account IDs)
 SESSION-RESUME.md

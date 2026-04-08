@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Warn if template.html or HTMLPipeline.swift was recently modified but
-# render-verify stamp (.last-render-verify-at) hasn't been refreshed.
+# the verify stamp (.last-verify-at) hasn't been refreshed.
 # Wired as a PreToolUse Bash hook in .claude/settings.json.
 
 set -euo pipefail
 
 REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)"
-STAMP="$REPO_ROOT/.last-render-verify-at"
+STAMP="$REPO_ROOT/.last-verify-at"
 THRESHOLD=600  # 10 minutes
 
 # Read the stdin JSON to check if this is a git commit command

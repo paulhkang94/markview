@@ -396,7 +396,6 @@ if [ "$PHASE" = "--extended" ]; then
     if [ -d "$PROJECT_DIR/Tests/playwright/node_modules" ]; then
         if [ -f "$PROJECT_DIR/Tests/playwright/fixtures/golden-corpus.html" ]; then
             (cd "$PROJECT_DIR/Tests/playwright" && npx playwright test 2>&1) && \
-                date +%s > "$PROJECT_DIR/.last-render-verify-at" && \
                 bash "$PROJECT_DIR/scripts/bundle.sh" --install 2>/dev/null && \
                 echo "  ✓ Playwright tests passed + MarkView.app updated" || \
                 echo "  ✗ Playwright tests failed"
