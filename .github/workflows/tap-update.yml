@@ -96,7 +96,7 @@ jobs:
               "https://raw.githubusercontent.com/paulhkang94/homebrew-markview/main/Casks/markview.rb" \
               2>/dev/null || echo "")
             TAP_VER=$(echo "$CASK" | grep -oE 'version "[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
-            TAP_SHA=$(echo "$CASK" | grep -oE 'sha256 "[a-f0-9]+"' | grep -oE '[a-f0-9]+' || echo "")
+            TAP_SHA=$(echo "$CASK" | grep 'sha256' | grep -oE '[a-f0-9]{64}' || echo "")
             if [[ "$TAP_VER" == "$VERSION" && "$TAP_SHA" == "$SHA256" ]]; then
               echo "✓ Homebrew tap verified: v${VERSION} (attempt ${i})"
               exit 0
