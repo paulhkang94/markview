@@ -9,20 +9,29 @@ pending work, and key architectural decisions.
 
 | | |
 |---|---|
-| **App version** | v1.4.0 (build 273) |
-| **npm package** | mcp-server-markview v1.4.1 (published 2026-04-04) |
-| **BINARY_VERSION** | 1.2.6 (intentionally decoupled — points to last notarized binary) |
+| **App version** | v1.4.2 (build 275) |
+| **npm package** | mcp-server-markview v1.4.2 (published 2026-04-08) |
+| **BINARY_VERSION** | 1.4.2 (synced — binary + npm back in alignment as of v1.4.2) |
 | **MCP registry** | `io.github.paulhkang94/markview` — active |
-| **Tag** | `v1.4.0` pushed 2026-04-04 |
+| **Tag** | `v1.4.2` pushed 2026-04-08 |
 
 > **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
 > successfully notarized GitHub Release binary. It is intentionally decoupled from
 > the npm package version. npm patches (JS wrapper changes) do NOT bump BINARY_VERSION.
 > Only run `release.sh --bump-binary` when a new notarized binary is published to GitHub.
 
+### v1.4.2 Changes (2026-04-08)
+- **KaTeX fix**: Removed `$...$` inline delimiter — was garbling financial prose (`$10,000`). Kept `$$...$$`, `\(...\)`, `\[...\]`.
+- **math.md fixture fix**: `\(...\)` and `\[...\]` examples now use raw HTML blocks to survive cmark-gfm backslash escape processing.
+- **Regression test**: `katex.spec.ts` now asserts `$10,000` and `$500` render as plain text.
+- **Stamp SSOT**: Consolidated `.last-render-verify-at` + `.last-verify-at` → single `.last-verify-at`. All gates read the same file.
+- **Tracked pre-commit hook**: `scripts/pre-commit-hook.sh` committed as SSOT. `.git/hooks/pre-commit` is a thin shim.
+- **Version sync**: Added `npm/server.json` as a 5th version file to `release.sh` and `check-version-sync.sh`.
+- **Binary+npm re-sync**: Binary had drifted to 1.4.0, npm to 1.4.1. Both now at 1.4.2.
+
 ---
 
-## Feature Set (v1.4.0)
+## Feature Set (v1.4.2)
 
 ### Rendering
 | Feature | Status | Notes |
@@ -30,7 +39,7 @@ pending work, and key architectural decisions.
 | GitHub Flavored Markdown | ✅ | cmark-gfm, all extensions |
 | Syntax highlighting | ✅ | Prism.js, 18+ languages |
 | Mermaid diagrams | ✅ | 6 types: flowchart, sequence, class, Gantt, ER, pie — pan/zoom/reset/copy controls |
-| KaTeX math | ✅ | `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, MathML output |
+| KaTeX math | ✅ | `$$...$$`, `\(...\)`, `\[...\]`, MathML output. `$...$` removed (conflicts with financial prose) |
 | GFM alerts (`> [!NOTE]`) | ✅ | All 5 types, dark mode, handles GitHub-standard format |
 | TOC sidebar | ✅ | h1–h4, scroll-spy, ≥3 headings threshold |
 | Quick Look (Finder spacebar) | ✅ | Full rendering pipeline |
@@ -71,8 +80,8 @@ Tier 1 — Swift unit tests (cmark-gfm output)          292 tests  SPM, fast
 Tier 2 — Golden HTML body snapshots                    8 fixtures  git-committed
 Tier 3 — Full-pipeline structural tests (HTMLPipeline) 9 tests    extracted for testability Apr 2026
 Tier 4 — MCP protocol tests (JSON-RPC)                91 tests   --skip-e2e in CI (covers 9 tools)
-Tier 5 — Playwright DOM tests (post-JS DOM state)      66 tests   `make playwright`, Chromium
-          alerts (7), mermaid (19), katex (5), prism (5), controls (35)
+Tier 5 — Playwright DOM tests (post-JS DOM state)     154 tests   `make playwright`, Chromium
+          alerts (7), mermaid (19), katex (6+), prism (5), controls (35), other (+)
 
 MISSING (planned):
 Tier 6 — DOM snapshot goldens (rendered/*.dom.json)    0 files    Step 2 below
@@ -82,6 +91,8 @@ Tier 6 — DOM snapshot goldens (rendered/*.dom.json)    0 files    Step 2 below
 `WebPreviewView.swift` (AppKit) into `MarkViewCore` (SPM-testable). The injection
 pipeline (`injectPrism` → `injectMermaid` → `injectKaTeX`) is now unit-testable.
 Previously 413 tests passed while the app rendered broken output.
+
+**KaTeX delimiter fix Apr 8 2026**: `$...$` delimiter removed from auto-render config — conflicts with financial prose. cmark-gfm backslash escape processing destroys `\(...\)` in markdown source; fixture now uses raw HTML blocks. Playwright regression test added for `$10,000` plain-text assertion.
 
 **Root cause of Apr 4 bugs (both missed by tests):**
 1. `mermaid.min.js` bundles DOMPurify which contains `</body>` as a JS string literal.
@@ -166,10 +177,10 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 | Channel | Status | Notes |
 |---------|--------|-------|
-| GitHub releases | ✅ | v1.4.0 latest |
+| GitHub releases | ✅ | v1.4.2 latest |
 | Homebrew cask | ✅ | `paulhkang94/markview/markview` |
-| npm | ✅ | mcp-server-markview v1.4.1 |
-| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.4.0 |
+| npm | ✅ | mcp-server-markview v1.4.2 |
+| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.4.2 |
 | awesome-mcp-servers | ✅ | PR #2139 merged 2026-03-14 |
 | Glama.ai | ✅ | Listed |
 | mcp.so | ⏳ | Submitted |
@@ -181,7 +192,7 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 Run `bash scripts/metrics.sh` for current snapshot.
 
-Last snapshot: 2026-04-04
+Last snapshot: 2026-04-08
 - GitHub stars: 25 | Forks: 3
 - npm downloads (7d): 29 | (30d): 512 | YTD: 894
 - Apr 3 spike: 444 downloads — 4 npm versions published in 45 min, registry mirrors
