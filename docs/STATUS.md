@@ -192,12 +192,29 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 Run `bash scripts/metrics.sh` for current snapshot.
 
-Last snapshot: 2026-04-08
-- GitHub stars: 25 | Forks: 3
-- npm downloads (7d): 29 | (30d): 512 | YTD: 894
-- Apr 3 spike: 444 downloads — 4 npm versions published in 45 min, registry mirrors
+Last snapshot: 2026-04-11
+- GitHub stars: **26** | Forks: 3 | Watchers: 26
+- npm downloads: **1,807 all-time** (+148 since Apr 8 v1.4.2 release)
+- Organic baseline: ~20-25/day (up from ~15/day pre-breakout)
+- Binary all-time: ~198 (Homebrew unmeasured, estimated hundreds)
+- v1.4.2 release-day spike (Apr 8): 109 npm + 137 clones, ~75 extra above baseline
+- Apr 3 breakout trigger: MCP registry discovery (star conversion ~1.4% explains zero star increase on massive install growth)
 - Top referrer: reddit.com
-- v1.4.1 published 2026-04-04 — next metrics check 48h after publish
+- Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-04-11.md`
+
+---
+
+## Mobile (iOS + Android)
+
+> Full state and blockers: **[docs/MOBILE.md](MOBILE.md)**
+
+| Platform | Version | State | Key Blocker |
+|----------|---------|-------|-------------|
+| iOS | v1.0.0/build 2 | Functional on real iPad | Distribution cert + XCUITest suite |
+| Android | v1.0.0/build 2 | Functional on Galaxy S25 Ultra | Play identity verification (pending) |
+
+**Decision (2026-04-11): SHIP to both stores.** Android first.
+See MOBILE.md for per-platform blocker lists and release plan.
 
 ---
 
