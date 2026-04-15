@@ -24,21 +24,25 @@ public final class FileWatcher: @unchecked Sendable {
 
     public func stop() {
         source?.cancel()
+        // Do NOT close fileDescriptor here — the cancel handler (set up in startWatching)
+        // captures the fd by value and is responsible for closing it. Closing here AND in
+        // the cancel handler races: if startWatching() is called between stop() and the
+        // cancel handler firing, self.fileDescriptor already refers to the NEW fd, and the
+        // old handler would close the wrong one — leaving the new DispatchSource on an
+        // invalid fd and silently disabling all future file-change events.
         source = nil
-        if fileDescriptor >= 0 {
-            close(fileDescriptor)
-            fileDescriptor = -1
-        }
+        fileDescriptor = -1
     }
 
     private func startWatching() {
         stop()
 
-        fileDescriptor = open(path, O_EVTONLY)
-        guard fileDescriptor >= 0 else { return }
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        fileDescriptor = fd
 
         let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDescriptor,
+            fileDescriptor: fd,
             eventMask: [.write, .rename, .delete, .attrib],
             queue: queue
         )
@@ -58,12 +62,12 @@ public final class FileWatcher: @unchecked Sendable {
             }
         }
 
-        source.setCancelHandler { [weak self] in
-            guard let self = self else { return }
-            if self.fileDescriptor >= 0 {
-                close(self.fileDescriptor)
-                self.fileDescriptor = -1
-            }
+        // Capture fd by value — never read self.fileDescriptor here.
+        // By the time this handler fires, self.fileDescriptor may already point to a
+        // newer fd (opened by the next startWatching() call). We must close the specific
+        // fd this source was created for, not whatever self.fileDescriptor happens to be.
+        source.setCancelHandler {
+            close(fd)
         }
 
         self.source = source

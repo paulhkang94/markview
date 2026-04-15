@@ -631,6 +631,46 @@ runner.test("FileWatcher stop prevents notifications") {
     try expect(!called, "Received notification after stop")
 }
 
+runner.test("FileWatcher detects second atomic save — cancel handler race") {
+    // Regression for cancel-handler fd race: after an atomic save triggers a .rename
+    // event, startWatching() opens a new fd before the old cancel handler fires. The
+    // old handler was reading self.fileDescriptor — which by then points to the new fd —
+    // and closing it, leaving the new DispatchSource watching an invalid fd. All subsequent
+    // saves were silently dropped. Fix: cancel handler now captures fd by value at setup time.
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mvtest-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let file = dir.appendingPathComponent("test.md")
+    try "# v0".write(to: file, atomically: false, encoding: .utf8)
+
+    var callCount = 0
+    let sem = DispatchSemaphore(value: 0)
+    let watcher = FileWatcher(path: file.path) {
+        callCount += 1
+        sem.signal()
+    }
+    watcher.start()
+    Thread.sleep(forTimeInterval: 0.2)
+
+    // First atomic save
+    let tmp1 = dir.appendingPathComponent("test.md.tmp1")
+    try "# v1".write(to: tmp1, atomically: false, encoding: .utf8)
+    _ = try FileManager.default.replaceItemAt(file, withItemAt: tmp1)
+    let r1 = sem.wait(timeout: .now() + 3.0)
+    try expect(r1 == .success, "FileWatcher did not detect first atomic save")
+
+    // Second atomic save — this is where the bug bit: fd was closed by the old cancel
+    // handler, so the DispatchSource was dead and this event was never delivered.
+    let tmp2 = dir.appendingPathComponent("test.md.tmp2")
+    try "# v2".write(to: tmp2, atomically: false, encoding: .utf8)
+    _ = try FileManager.default.replaceItemAt(file, withItemAt: tmp2)
+    let r2 = sem.wait(timeout: .now() + 3.0)
+    watcher.stop()
+    try expect(r2 == .success, "FileWatcher did not detect second atomic save (cancel handler fd race)")
+    try expect(callCount >= 2, "Expected at least 2 callbacks, got \(callCount)")
+}
+
 // MARK: - Word Count / Stats Tests
 
 print("\n=== Tier 1: Word Count / Stats Tests ===")
