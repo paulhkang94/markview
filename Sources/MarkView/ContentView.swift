@@ -69,8 +69,9 @@ struct ContentView: View {
                             .id(viewModel.currentFilePath ?? "")
                         }
                     } else {
-                        DropTargetView { url in
+                        HomeScreenView { url in
                             viewModel.loadFile(at: url.path)
+                            registerFileInWindow(url.path)
                         }
                     }
                 }
@@ -262,42 +263,3 @@ struct ContentView: View {
     }
 }
 
-struct DropTargetView: View {
-    let onDrop: (URL) -> Void
-    @State private var isTargeted = false
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.richtext")
-                .font(.system(size: 64))
-                .foregroundColor(.secondary)
-            Text(Strings.dropPrompt)
-                .font(.title2)
-                .foregroundColor(.secondary)
-            Text(Strings.dropSubprompt)
-                .font(.body)
-                .foregroundColor(.secondary.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(isTargeted ? Color.accentColor.opacity(0.1) : Color.clear)
-        .accessibilityLabel(Strings.dropA11yLabel)
-        .accessibilityHint(Strings.dropA11yHint)
-        .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
-            guard let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url = url, isMarkdownFile(url) {
-                    DispatchQueue.main.async {
-                        onDrop(url)
-                    }
-                }
-            }
-            return true
-        }
-    }
-
-}
-
-private func isMarkdownFile(_ url: URL) -> Bool {
-    let ext = url.pathExtension.lowercased()
-    return ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "txt"].contains(ext)
-}

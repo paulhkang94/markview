@@ -12,6 +12,18 @@ enum Strings {
     static let decreaseFontSize = "Decrease Font Size"
     static let resetFontSize = "Reset Font Size"
 
+    // MARK: - Home Screen
+    static let homeScreenTitle = "MarkView"
+    static let homeScreenSubtitle = "Markdown File Viewer"
+    static let openFileButton = "Open File..."
+    static let openRecent = "Open Recent"
+    static let recentFilesHeader = "Recent Files"
+    static let dropHint = "Drop a file anywhere to open"
+    static let dragToOpen = "Drop to Open"
+    static let removeFromRecents = "Remove from Recents"
+    static let showInFinder = "Show in Finder"
+    static let contextMenuOpen = "Open"
+
     // MARK: - Drop Target
     static let dropPrompt = "Drop a Markdown file here"
     static let dropSubprompt = "or use File → Open (⌘O)"

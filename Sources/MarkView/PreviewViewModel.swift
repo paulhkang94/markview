@@ -43,6 +43,10 @@ final class PreviewViewModel: ObservableObject {
         currentFilePath = path
         fileName = URL(fileURLWithPath: path).lastPathComponent
 
+        // Register in recents — covers all open paths (drag, menu ⌘O, MCP, CLI, auto-reopen).
+        let fileURL = URL(fileURLWithPath: path)
+        RecentFilesManager.shared.recordOpen(url: fileURL)
+
         loadTemplate()
         loadContent(from: path)
         watchFile(at: path)

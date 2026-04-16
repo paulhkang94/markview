@@ -10,13 +10,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// File path requested by Finder — observed by MarkViewApp via @Published.
     @Published var pendingFilePath: String?
 
+    /// True during the cold-launch restoration window (first 0.8s after launch).
+    /// macOS calls `application(_:open:)` during this window to restore the last
+    /// document. We suppress that when the user has opted out of window restore.
+    private var isInLaunchRestorationPhase = true
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent automatic window tabbing (Cmd+T creating tabs)
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Mark end of launch restoration window after a short delay.
+        // Any open events after this are genuine user-initiated opens.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            self?.isInLaunchRestorationPhase = false
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first, url.isFileURL else { return }
+        // Suppress macOS launch-restoration opens when the user opted out.
+        // Use UserDefaults directly (thread-safe) to avoid @MainActor dependency.
+        // Default is true when the key has never been set.
+        let windowRestore: Bool
+        if UserDefaults.standard.object(forKey: "windowRestore") != nil {
+            windowRestore = UserDefaults.standard.bool(forKey: "windowRestore")
+        } else {
+            windowRestore = true
+        }
+        if isInLaunchRestorationPhase && !windowRestore {
+            return
+        }
         pendingFilePath = url.path
     }
 
@@ -78,9 +101,15 @@ struct MarkViewApp: App {
                 .onAppear {
                     let args = CommandLine.arguments
                     if args.count > 1 {
+                        // CLI argument takes precedence over auto-reopen
                         let path = args[1]
                         if FileManager.default.fileExists(atPath: path) {
                             filePath = path
+                        }
+                    } else {
+                        // No CLI arg — auto-reopen last file if "Restore last file on launch" is enabled
+                        if let lastURL = RecentFilesManager.shared.lastOpenedURL {
+                            filePath = lastURL.path
                         }
                     }
 
@@ -114,6 +143,10 @@ struct MarkViewApp: App {
             CommandGroup(replacing: .newItem) {
                 Button(Strings.openFile) { openFile() }
                     .keyboardShortcut("o", modifiers: .command)
+
+                Menu(Strings.openRecent) {
+                    OpenRecentMenuItems { path in filePath = path }
+                }
 
                 Button(Strings.closeWindow) {
                     NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
@@ -211,6 +244,25 @@ struct MarkViewApp: App {
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
             filePath = url.path
+        }
+    }
+}
+
+/// Renders "Open Recent" submenu items backed by RecentFilesManager.
+/// Placed in `CommandGroup(replacing: .openRecent)`.
+private struct OpenRecentMenuItems: View {
+    let onOpen: (String) -> Void
+    @ObservedObject private var recents = RecentFilesManager.shared
+
+    var body: some View {
+        if recents.recentFileURLs.isEmpty {
+            Text("No Recent Items").disabled(true)
+        } else {
+            ForEach(recents.recentFileURLs, id: \.path) { url in
+                Button(url.lastPathComponent) { onOpen(url.path) }
+            }
+            Divider()
+            Button("Clear Menu") { recents.clearAll() }
         }
     }
 }
