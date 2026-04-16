@@ -2,7 +2,7 @@
 
 ## Quick Reference
 - **Build**: `swift build`
-- **Test**: `swift run MarkViewTestRunner` (292 Swift tests + 91 MCP tests)
+- **Test**: `swift run MarkViewTestRunner` (294 Swift tests + 91 MCP tests)
 - **Playwright e2e**: `make playwright` (66 tests — builds fixture binary, runs Playwright, installs MarkView.app)
 - **Verify all**: `bash verify.sh`
 - **App bundle**: `bash scripts/bundle.sh --install`
