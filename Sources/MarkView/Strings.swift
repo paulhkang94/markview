@@ -5,6 +5,7 @@ import MarkViewCore
 enum Strings {
     // MARK: - Menu Items
     static let openFile = "Open..."
+    static let closeFile = "Close File"
     static let closeWindow = "Close Window"
     static let exportHTML = "Export as HTML..."
     static let exportPDF = "Print / Save as PDF..."

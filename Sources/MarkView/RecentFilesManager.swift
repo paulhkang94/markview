@@ -21,6 +21,7 @@ final class RecentFilesManager: ObservableObject {
 
     private let pathsKey = "recentFilePaths"
     private let lastFileKey = "lastOpenedFilePath"
+    private let explicitlyClosedKey = "didExplicitlyCloseFile"
     static let maxItems = 15
 
     // MARK: - Public Interface
@@ -36,6 +37,8 @@ final class RecentFilesManager: ObservableObject {
         }
         UserDefaults.standard.set(paths, forKey: pathsKey)
         UserDefaults.standard.set(url.path, forKey: lastFileKey)
+        // Clear the explicit-close flag so next launch auto-reopens this file.
+        UserDefaults.standard.set(false, forKey: explicitlyClosedKey)
         pruneAndPublish()
     }
 
@@ -62,6 +65,12 @@ final class RecentFilesManager: ObservableObject {
         pruneAndPublish()
     }
 
+    /// Mark that the user explicitly closed the current file.
+    /// Suppresses auto-reopen on the next cold launch.
+    func markExplicitlyClosed() {
+        UserDefaults.standard.set(true, forKey: explicitlyClosedKey)
+    }
+
     /// The file to auto-reopen on cold launch, or nil if disabled or no history.
     var lastOpenedURL: URL? {
         // Read directly from UserDefaults (not @AppStorage) to ensure the value
@@ -74,6 +83,8 @@ final class RecentFilesManager: ObservableObject {
             windowRestore = true  // key absent → use default
         }
         guard windowRestore else { return nil }
+        // Don't auto-reopen if the user explicitly closed the file last session.
+        if UserDefaults.standard.bool(forKey: explicitlyClosedKey) { return nil }
         // Prefer the explicit last-opened path over recentFileURLs[0] because
         // the user might remove items from recents without changing the last-opened.
         if let path = UserDefaults.standard.string(forKey: lastFileKey) {

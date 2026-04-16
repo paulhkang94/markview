@@ -37,7 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         } else {
             windowRestore = true
         }
-        if isInLaunchRestorationPhase && !windowRestore {
+        let didExplicitlyClose = UserDefaults.standard.bool(forKey: "didExplicitlyCloseFile")
+        if isInLaunchRestorationPhase && (!windowRestore || didExplicitlyClose) {
             return
         }
         pendingFilePath = url.path
@@ -96,7 +97,7 @@ struct MarkViewApp: App {
         // File opens are routed via AppDelegate.pendingFilePath, not by
         // SwiftUI creating new windows.
         Window("MarkView", id: "main") {
-            ContentView(initialFilePath: filePath, errorPresenter: errorPresenter)
+            ContentView(filePath: $filePath, errorPresenter: errorPresenter)
                 .frame(minWidth: 600, minHeight: 400)
                 .onAppear {
                     let args = CommandLine.arguments
@@ -148,8 +149,8 @@ struct MarkViewApp: App {
                     OpenRecentMenuItems { path in filePath = path }
                 }
 
-                Button(Strings.closeWindow) {
-                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                Button(Strings.closeFile) {
+                    NotificationCenter.default.post(name: .closeFile, object: nil)
                 }
                 .keyboardShortcut("w", modifiers: .command)
 
@@ -268,6 +269,7 @@ private struct OpenRecentMenuItems: View {
 }
 
 extension Notification.Name {
+    static let closeFile = Notification.Name("com.markview.closeFile")
     static let exportHTML = Notification.Name("exportHTML")
     static let exportPDF = Notification.Name("exportPDF")
     static let saveDocument = Notification.Name("saveDocument")

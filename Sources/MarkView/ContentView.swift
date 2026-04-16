@@ -10,7 +10,7 @@ private final class EscMonitorHolder {
 }
 
 struct ContentView: View {
-    let initialFilePath: String?
+    @Binding var filePath: String?
     var errorPresenter: ErrorPresenter
 
     @StateObject private var viewModel = PreviewViewModel()
@@ -103,6 +103,15 @@ struct ContentView: View {
                 ToolbarItemGroup(placement: .automatic) {
                     if viewModel.isLoaded {
                         Button {
+                            viewModel.unloadFile()
+                            showEditor = false
+                            filePath = nil
+                        } label: {
+                            Image(systemName: "xmark.circle")
+                        }
+                        .help(Strings.closeFile)
+
+                        Button {
                             toggleEditor()
                         } label: {
                             Image(systemName: showEditor ? "doc.plaintext" : "rectangle.split.2x1")
@@ -113,15 +122,15 @@ struct ContentView: View {
                     }
                 }
             }
-            .onChange(of: initialFilePath) {
-                if let path = initialFilePath {
+            .onChange(of: filePath) {
+                if let path = filePath {
                     viewModel.loadFile(at: path)
                     syncController.reset()
                     registerFileInWindow(path)
                 }
             }
             .onAppear {
-                if let path = initialFilePath {
+                if let path = filePath {
                     viewModel.loadFile(at: path)
                     registerFileInWindow(path)
                 }
@@ -187,6 +196,15 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .findBarPrev)) { _ in
                 findBar.findPrev()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .closeFile)) { _ in
+                if viewModel.isLoaded {
+                    viewModel.unloadFile()
+                    showEditor = false
+                    filePath = nil
+                } else {
+                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                }
             }
 
             if let notification = errorPresenter.currentNotification {

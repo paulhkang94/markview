@@ -121,6 +121,29 @@ final class PreviewViewModel: ObservableObject {
         autoSaveTimer = nil
     }
 
+    /// Unload the current file and return the app to the home screen.
+    /// Records an explicit close so the next cold launch does not auto-reopen.
+    func unloadFile() {
+        fileWatcher?.stop()
+        fileWatcher = nil
+        stopAutoSaveTimer()
+        renderTask?.cancel()
+        lintTask?.cancel()
+        currentFilePath = nil
+        fileName = "MarkView"
+        renderedHTML = ""
+        editorContent = ""
+        originalContent = ""
+        isDirty = false
+        isLoaded = false
+        externalChangeConflict = false
+        lintDiagnostics = []
+        lintWarnings = 0
+        lintErrors = 0
+        previewWebView = nil
+        RecentFilesManager.shared.markExplicitlyClosed()
+    }
+
     // MARK: - Private
 
     private func loadTemplate() {
