@@ -12,6 +12,7 @@ import SwiftUI
 /// UserDefaults.standard. The list is in MRU order (most recently opened first).
 @MainActor
 final class RecentFilesManager: ObservableObject {
+    // Swift 6: final @MainActor class is implicitly Sendable; static let is safe without annotation.
     static let shared = RecentFilesManager()
     private init() { pruneAndPublish() }
 
@@ -75,9 +76,9 @@ final class RecentFilesManager: ObservableObject {
         guard windowRestore else { return nil }
         // Prefer the explicit last-opened path over recentFileURLs[0] because
         // the user might remove items from recents without changing the last-opened.
-        if let path = UserDefaults.standard.string(forKey: lastFileKey),
-           FileManager.default.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
+        if let path = UserDefaults.standard.string(forKey: lastFileKey) {
+            let url = URL(fileURLWithPath: path)
+            if (try? url.checkResourceIsReachable()) == true { return url }
         }
         return recentFileURLs.first
     }
@@ -89,9 +90,12 @@ final class RecentFilesManager: ObservableObject {
     }
 
     /// Filter out missing files and publish the result.
+    /// Uses `checkResourceIsReachable()` (Apple-recommended over `fileExists(atPath:)`)
+    /// — handles symlinks, packages, and volumes correctly.
     private func pruneAndPublish() {
-        let fm = FileManager.default
-        let live = storedPaths().filter { fm.fileExists(atPath: $0) }
-        recentFileURLs = live.map { URL(fileURLWithPath: $0) }
+        recentFileURLs = storedPaths().compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+            return (try? url.checkResourceIsReachable()) == true ? url : nil
+        }
     }
 }

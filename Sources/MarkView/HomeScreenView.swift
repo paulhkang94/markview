@@ -1,11 +1,12 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The home screen shown when no file is loaded.
 ///
 /// Two states:
 ///  - **Empty** (no recents): centered icon + prompt + "Open File..." button.
-///  - **Recents** (has history): header bar, MRU file list, drop-hint footer.
+///  - **Recents** (has history): header bar, SwiftUI `List`, drop-hint footer.
 ///
 /// The entire view is a drag target; a full-screen overlay appears when a
 /// file is dragged over the window.
@@ -15,6 +16,7 @@ struct HomeScreenView: View {
 
     @ObservedObject private var recents = RecentFilesManager.shared
     @State private var isDragTargeted = false
+    @State private var isFileImporterPresented = false
 
     var body: some View {
         ZStack {
@@ -35,6 +37,16 @@ struct HomeScreenView: View {
                 DispatchQueue.main.async { onFileSelected(url) }
             }
             return true
+        }
+        // .fileImporter is the SwiftUI-native file picker (avoids runModal on main thread)
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: markdownContentTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                onFileSelected(url)
+            }
         }
         .accessibilityLabel(Strings.dropA11yLabel)
         .accessibilityHint(Strings.dropA11yHint)
@@ -57,17 +69,17 @@ struct HomeScreenView: View {
         VStack(spacing: 16) {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 64))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(Strings.dropPrompt)
                 .font(.title2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
 
             Text(Strings.dropSubprompt)
                 .font(.body)
-                .foregroundColor(.secondary.opacity(0.7))
+                .foregroundStyle(.secondary.opacity(0.7))
 
-            Button(Strings.openFileButton) { openFilePicker() }
+            Button(Strings.openFileButton) { isFileImporterPresented = true }
                 .buttonStyle(.borderedProminent)
                 .padding(.top, 4)
         }
@@ -90,19 +102,19 @@ struct HomeScreenView: View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 20, weight: .medium))
-                .foregroundColor(.accentColor)
+                .foregroundStyle(.tint)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(Strings.homeScreenTitle)
                     .font(.title3.weight(.semibold))
                 Text(Strings.homeScreenSubtitle)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Button(Strings.openFileButton) { openFilePicker() }
+            Button(Strings.openFileButton) { isFileImporterPresented = true }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
         }
@@ -113,39 +125,45 @@ struct HomeScreenView: View {
     private var sectionLabel: some View {
         Text(Strings.recentFilesHeader)
             .font(.caption.weight(.semibold))
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 28)
             .padding(.top, 14)
             .padding(.bottom, 6)
     }
 
     private var fileList: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(recents.recentFileURLs.enumerated()), id: \.element.path) { idx, url in
-                    RecentFileRow(url: url) {
-                        onFileSelected(url)
-                    } onRemove: {
+        // SwiftUI List provides:
+        //  - Automatic accessibility (VoiceOver, keyboard navigation)
+        //  - swipeActions for per-row delete
+        //  - Correct macOS row separator and selection styling
+        List {
+            ForEach(recents.recentFileURLs, id: \.path) { url in
+                RecentFileRow(url: url) {
+                    onFileSelected(url)
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
                         recents.removeFromRecents(url: url)
-                    }
-                    // Divider only between rows, not after the last one
-                    if idx < recents.recentFileURLs.count - 1 {
-                        Divider()
-                            .padding(.leading, 28 + 24 + 10) // aligned past icon column
+                    } label: {
+                        Label(Strings.removeFromRecents, systemImage: "trash")
                     }
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     private var dropFooter: some View {
         HStack(spacing: 5) {
             Image(systemName: "arrow.down.to.line")
                 .font(.caption2)
-                .foregroundColor(.secondary.opacity(0.4))
+                .foregroundStyle(.secondary.opacity(0.4))
             Text(Strings.dropHint)
                 .font(.caption)
-                .foregroundColor(.secondary.opacity(0.4))
+                .foregroundStyle(.secondary.opacity(0.4))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -164,27 +182,11 @@ struct HomeScreenView: View {
             VStack(spacing: 10) {
                 Image(systemName: "arrow.down.circle.fill")
                     .font(.system(size: 44))
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.tint)
                 Text(Strings.dragToOpen)
                     .font(.title3.weight(.semibold))
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.tint)
             }
-        }
-    }
-
-    // MARK: - File picker
-
-    private func openFilePicker() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [
-            .init(filenameExtension: "md")!,
-            .init(filenameExtension: "markdown")!,
-            .plainText,
-        ]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        if panel.runModal() == .OK, let url = panel.url {
-            onFileSelected(url)
         }
     }
 }
@@ -194,43 +196,38 @@ struct HomeScreenView: View {
 private struct RecentFileRow: View {
     let url: URL
     let onOpen: () -> Void
-    let onRemove: () -> Void
 
     @State private var isHovered = false
-    /// Cached modification date — loaded once in onAppear to avoid repeated disk I/O on render.
+    /// Cached modification date — loaded once in onAppear to avoid repeated disk I/O.
     @State private var modDate: Date?
 
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 10) {
-                // File-type icon
                 Image(systemName: "doc.text")
                     .font(.system(size: 18))
-                    .foregroundColor(.accentColor)
+                    .foregroundStyle(.tint)
                     .frame(width: 24, alignment: .center)
 
-                // Filename + directory
                 VStack(alignment: .leading, spacing: 3) {
                     Text(url.lastPathComponent)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     Text(abbreviatedDirectory(for: url))
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
 
                 Spacer()
 
-                // Relative modification date
                 if let date = modDate {
-                    Text(relativeDate(from: date))
+                    Text(RelativeDateTimeFormatter.shared.localizedString(for: date, relativeTo: .now))
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
             }
@@ -246,7 +243,9 @@ private struct RecentFileRow: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .onAppear {
-            modDate = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            // Use URL-based resource value lookup (Apple-recommended over path-based APIs)
+            modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate
         }
         .contextMenu {
             Button(Strings.contextMenuOpen) { onOpen() }
@@ -255,10 +254,13 @@ private struct RecentFileRow: View {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
             Divider()
-            Button(Strings.removeFromRecents) { onRemove() }
+            Button(Strings.removeFromRecents, role: .destructive) {
+                RecentFilesManager.shared.removeFromRecents(url: url)
+            }
         }
+        // HIG: accessibilityLabel = what it is; accessibilityHint = imperative action verb
         .accessibilityLabel("\(url.lastPathComponent), \(abbreviatedDirectory(for: url))")
-        .accessibilityHint("Double-click or press Space to open")
+        .accessibilityHint("Opens this file in the viewer")
     }
 
     // MARK: - Helpers
@@ -272,23 +274,35 @@ private struct RecentFileRow: View {
         }
         return dir
     }
-
-    private func relativeDate(from date: Date) -> String {
-        let diff = Date().timeIntervalSince(date)
-        if diff < 60 { return "Now" }
-        if diff < 3600 { return "\(Int(diff / 60))m ago" }
-        if diff < 86400 { return "\(Int(diff / 3600))h ago" }
-        if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
-        let formatter = DateFormatter()
-        let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
-        formatter.dateFormat = sameYear ? "MMM d" : "MMM d, yyyy"
-        return formatter.string(from: date)
-    }
 }
 
-// MARK: - Helpers
+// MARK: - Module-level helpers
+
+/// UTTypes for all Markdown-like file extensions MarkView accepts.
+/// Computed once; avoids repeated dynamic UTType construction per open call.
+private let markdownContentTypes: [UTType] = {
+    var types: [UTType] = [.plainText]
+    for ext in ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn"] {
+        if let t = UTType(filenameExtension: ext) { types.append(t) }
+    }
+    return types
+}()
 
 private func isMarkdownURL(_ url: URL) -> Bool {
     ["md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "txt"]
         .contains(url.pathExtension.lowercased())
+}
+
+// MARK: - RelativeDateTimeFormatter singleton
+
+private extension RelativeDateTimeFormatter {
+    /// Shared formatter — `RelativeDateTimeFormatter` is expensive to create; reuse it.
+    /// nonisolated(unsafe): RelativeDateTimeFormatter is a non-Sendable NSObject subclass.
+    /// Safe here because the formatter is only configured at initialization and treated as read-only.
+    nonisolated(unsafe) static let shared: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated   // "2h ago", "3d ago"
+        f.dateTimeStyle = .named      // "yesterday" instead of "1 day ago"
+        return f
+    }()
 }
