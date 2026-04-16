@@ -61,7 +61,7 @@ Opens the file in MarkView. File must exist and have a markdown extension.
 
 ## Testing
 ```bash
-swift run MarkViewTestRunner          # Unit + integration (350 tests)
+swift run MarkViewTestRunner          # Unit + integration (294 tests)
 swift run MarkViewFuzzTester          # 10K random inputs
 swift run MarkViewDiffTester          # Compare vs cmark-gfm CLI
 swift run MarkViewE2ETester           # UI tests (requires .app + AX permissions)
