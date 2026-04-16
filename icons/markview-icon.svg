@@ -1,33 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!--
+    MarkView icon — hybrid M glyph
+    Glyph: SF Mono SFNSMono.ttf  bbox=(120,0)->(1146,1443)  1026x1443
+    V notch y=515/1443 (shallower than SF Pro y=227 — reads as M not W at small sizes)
+    scaleX=0.43914  scaleY=0.31721  tx=234.02  ty=740.86
+  -->
   <defs>
-    <!-- Canonical MarkView gradient: purple → blue, top-left to bottom-right -->
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%"   stop-color="#7B68EE"/>
       <stop offset="100%" stop-color="#5B9BD5"/>
     </linearGradient>
   </defs>
-
-  <!-- Background -->
   <rect width="1024" height="1024" fill="url(#bg)"/>
-
-  <!--
-    SF Pro Bold M glyph — extracted from /System/Library/Fonts/SFNS.ttf via fonttools.
-    Authentic typographic proportions (not a custom approximation).
-    28% padding: M occupies 44% of canvas width, centered.
-
-    Font coordinates (UPM=2048, y-up):
-      path = M140 0V1443H348L848 227H854L1354 1443H1562V0H1394V1115H1312L1507 1403L927 0H775L195 1403L390 1115H308V0Z
-      bbox: (140,0)→(1562,1443), advance_width=1702
-
-    SVG transform derivation:
-      target_w = 1024 × 0.44 = 450.6px  →  scale = 450.6 / 1422 = 0.3168
-      center_x = (1024 - 450.6) / 2 = 286.7  →  tx = 286.7 - 140 × 0.3168 = 242.36
-      center_y = (1024 - 457.2) / 2 = 283.4  →  ty = 283.4 + 1443 × 0.3168 = 740.61
-      transform = translate(242.36, 740.61) scale(0.3168, -0.3168)   [flip y: font y-up → SVG y-down]
-  -->
-  <path
-    fill="white"
-    transform="translate(291.39,699.04) scale(0.2592,-0.2592)"
-    d="M140 0V1443H348L848 227H854L1354 1443H1562V0H1394V1115H1312L1507 1403L927 0H775L195 1403L390 1115H308V0Z"
-  />
+  <g transform="translate(234.02,740.86) scale(0.43914,-0.31721)">
+    <path fill="white" d="M248 589V0H120V1443H281L628 515H639L984 1443H1146V0H1018V589V1177H1008L692 339H574L258 1177H248Z"/>
+  </g>
 </svg>
