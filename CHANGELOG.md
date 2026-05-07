@@ -2,7 +2,7 @@
 
 ## v1.4.3
 
-- Fix linter false positive: `**` inside backtick code spans (e.g., `` `src/**/*.swift` ``) no longer triggers an "unclosed bold formatting" warning. The same fix applies to `__` and `~~` inside backticks.
+- Fix linter false positive ([#28](https://github.com/paulhkang94/markview/issues/28)): `**` inside backtick code spans (e.g., `` `src/**/*.swift` ``) no longer triggers an "unclosed bold formatting" warning. The same fix applies to `__` and `~~` inside backticks.
 - Fix FileWatcher: file descriptor captured by value in cancel handler, preventing silent watcher death after atomic saves (VS Code, Vim)
 - Fix ToC: links rebuild correctly after innerHTML swap — clicking headings no longer scrolls to top
 - Fix: Close File action added — previously no way to return to the home screen without quitting
