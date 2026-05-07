@@ -330,68 +330,91 @@ This is a caution callout.</p>
         })();
         // Inline Prism.js will be loaded here by the app
 
-        // TOC sidebar: build from headings, highlight on scroll
+        // TOC sidebar: build from headings, highlight on scroll.
+        // _markviewRebuildTOC() is exposed so updateContentViaJS() can re-init after
+        // an innerHTML swap — without it, click handlers hold stale detached-element
+        // refs whose offsetTop returns 0, scrolling to the top instead of the section.
         (function() {
-            var headings = Array.from(document.querySelectorAll('article h1,article h2,article h3,article h4'));
-            if (headings.length < 3) return; // don't show TOC for short docs
+            var _tocScrollHandler = null; // keep ref so we can remove on re-init
 
-            // Assign IDs
-            var slugCounts = {};
-            headings.forEach(function(h) {
-                if (!h.id) {
-                    var slug = h.textContent.toLowerCase()
-                        .replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-                    slugCounts[slug] = (slugCounts[slug] || 0) + 1;
-                    h.id = slugCounts[slug] > 1 ? slug + '-' + (slugCounts[slug] - 1) : slug;
+            function _tocInit() {
+                // Remove existing sidebar and scroll listener (re-render safe)
+                var oldSidebar = document.getElementById('toc-sidebar');
+                if (oldSidebar) { oldSidebar.remove(); }
+                document.body.classList.remove('has-toc');
+                if (_tocScrollHandler) {
+                    window.removeEventListener('scroll', _tocScrollHandler);
+                    _tocScrollHandler = null;
                 }
-            });
 
-            // Build sidebar
-            var sidebar = document.createElement('nav');
-            sidebar.id = 'toc-sidebar';
-            sidebar.setAttribute('aria-label', 'Table of contents');
-            var title = document.createElement('div');
-            title.className = 'toc-title';
-            title.textContent = 'Contents';
-            sidebar.appendChild(title);
-            var ul = document.createElement('ul');
-            var links = [];
-            headings.forEach(function(h) {
-                var level = parseInt(h.tagName[1]);
-                var li = document.createElement('li');
-                var a = document.createElement('a');
-                a.href = '#' + h.id;
-                a.textContent = h.textContent;
-                a.className = 'toc-h' + level;
-                a.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    h.scrollIntoView({behavior: 'smooth', block: 'start'});
+                var headings = Array.from(document.querySelectorAll('article h1,article h2,article h3,article h4'));
+                if (headings.length < 3) return; // don't show TOC for short docs
+
+                // Assign IDs
+                var slugCounts = {};
+                headings.forEach(function(h) {
+                    if (!h.id) {
+                        var slug = h.textContent.toLowerCase()
+                            .replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+                        slugCounts[slug] = (slugCounts[slug] || 0) + 1;
+                        h.id = slugCounts[slug] > 1 ? slug + '-' + (slugCounts[slug] - 1) : slug;
+                    }
                 });
-                li.appendChild(a);
-                ul.appendChild(li);
-                links.push({el: h, a: a});
-            });
-            sidebar.appendChild(ul);
-            document.body.appendChild(sidebar);
-            document.body.classList.add('has-toc');
 
-            // Highlight active section on scroll
-            var ticking = false;
-            function updateActive() {
-                var scrollY = window.scrollY + 80;
-                var active = links[0];
-                for (var i = 0; i < links.length; i++) {
-                    if (links[i].el.offsetTop <= scrollY) active = links[i];
-                    else break;
+                // Build sidebar
+                var sidebar = document.createElement('nav');
+                sidebar.id = 'toc-sidebar';
+                sidebar.setAttribute('aria-label', 'Table of contents');
+                var title = document.createElement('div');
+                title.className = 'toc-title';
+                title.textContent = 'Contents';
+                sidebar.appendChild(title);
+                var ul = document.createElement('ul');
+                var links = [];
+                headings.forEach(function(h) {
+                    var level = parseInt(h.tagName[1]);
+                    var li = document.createElement('li');
+                    var a = document.createElement('a');
+                    a.href = '#' + h.id;
+                    a.textContent = h.textContent;
+                    a.className = 'toc-h' + level;
+                    a.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        // Use window.scrollTo() rather than scrollIntoView() — scrollIntoView()
+                        // is unreliable in WKWebView when a navigation delegate is present.
+                        // offsetTop matches the scroll-spy calculation (window.scrollY + 80).
+                        window.scrollTo({top: Math.max(0, h.offsetTop - 16), behavior: 'smooth'});
+                    });
+                    li.appendChild(a);
+                    ul.appendChild(li);
+                    links.push({el: h, a: a});
+                });
+                sidebar.appendChild(ul);
+                document.body.appendChild(sidebar);
+                document.body.classList.add('has-toc');
+
+                // Highlight active section on scroll
+                var ticking = false;
+                function updateActive() {
+                    var scrollY = window.scrollY + 80;
+                    var active = links[0];
+                    for (var i = 0; i < links.length; i++) {
+                        if (links[i].el.offsetTop <= scrollY) active = links[i];
+                        else break;
+                    }
+                    links.forEach(function(l) { l.a.classList.remove('active'); });
+                    if (active) active.a.classList.add('active');
+                    ticking = false;
                 }
-                links.forEach(function(l) { l.a.classList.remove('active'); });
-                if (active) active.a.classList.add('active');
-                ticking = false;
+                _tocScrollHandler = function() {
+                    if (!ticking) { requestAnimationFrame(updateActive); ticking = true; }
+                };
+                window.addEventListener('scroll', _tocScrollHandler, {passive: true});
+                updateActive();
             }
-            window.addEventListener('scroll', function() {
-                if (!ticking) { requestAnimationFrame(updateActive); ticking = true; }
-            }, {passive: true});
-            updateActive();
+
+            _tocInit();
+            window._markviewRebuildTOC = _tocInit;
         })();
         // Playwright/WKWebView sentinel: signals that all synchronous transforms are complete.
         // Mermaid (async) overrides this via HTMLPipeline.injectMermaid -> window.rendered = true.

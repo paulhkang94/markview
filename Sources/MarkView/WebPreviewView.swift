@@ -696,6 +696,12 @@ struct WebPreviewView: NSViewRepresentable {
                     if (typeof window._markviewRebuildCache === 'function') {
                         window._markviewRebuildCache();
                     }
+                    // Re-init TOC: innerHTML swap detaches old heading refs captured in
+                    // click-handler closures; offsetTop on detached elements returns 0,
+                    // causing every link to scroll to the top. Re-init wires fresh refs.
+                    if (typeof window._markviewRebuildTOC === 'function') {
+                        window._markviewRebuildTOC();
+                    }
                 });
             })();
             """
