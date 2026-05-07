@@ -265,8 +265,12 @@ public final class MarkdownLinter {
             if line.hasPrefix("```") { inFence.toggle(); continue }
             if inFence { continue }
 
+            // Strip inline code spans before counting — prevents false positives when
+            // `**`, `__`, or `~~` appear inside backtick-delimited code (e.g. `src/**/*.swift`).
+            let stripped = stripInlineCode(from: line)
+
             // Check for unclosed ** (bold)
-            let boldCount = countOccurrences(of: "**", in: line)
+            let boldCount = countOccurrences(of: "**", in: stripped)
             if boldCount % 2 != 0 {
                 diagnostics.append(LintDiagnostic(
                     severity: .warning,
@@ -279,7 +283,7 @@ public final class MarkdownLinter {
             }
 
             // Check for unclosed __ (bold alt)
-            let underscoreBoldCount = countOccurrences(of: "__", in: line)
+            let underscoreBoldCount = countOccurrences(of: "__", in: stripped)
             if underscoreBoldCount % 2 != 0 {
                 diagnostics.append(LintDiagnostic(
                     severity: .warning,
@@ -292,7 +296,7 @@ public final class MarkdownLinter {
             }
 
             // Check for unclosed ~~ (strikethrough)
-            let strikeCount = countOccurrences(of: "~~", in: line)
+            let strikeCount = countOccurrences(of: "~~", in: stripped)
             if strikeCount % 2 != 0 {
                 diagnostics.append(LintDiagnostic(
                     severity: .warning,
@@ -444,6 +448,21 @@ public final class MarkdownLinter {
             searchRange = range.upperBound..<string.endIndex
         }
         return count
+    }
+
+    /// Returns `line` with all inline backtick code spans removed, so that formatting
+    /// markers (`**`, `__`, `~~`) inside code spans don't trigger false positives.
+    /// Each backtick toggles the in-code state; unclosed spans treat the rest of the
+    /// line as code (safe — produces no false positives). Double-backtick spans (`` ` ``)
+    /// are not handled; they're rare and can be addressed in a follow-up.
+    private func stripInlineCode(from line: String) -> String {
+        var result = ""
+        var inCode = false
+        for ch in line {
+            if ch == "`" { inCode.toggle(); continue }
+            if !inCode { result.append(ch) }
+        }
+        return result
     }
 
     private func pipeCount(_ line: String) -> Int {

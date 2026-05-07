@@ -1348,6 +1348,24 @@ runner.test("linter clean: balanced formatting") {
     try expect(diags.isEmpty, "Balanced formatting should produce no diagnostics")
 }
 
+runner.test("linter clean: ** inside backtick code span (issue #28)") {
+    let md = "`sources/**/*.swift` is a glob pattern\n"
+    let diags = linter.lint(md, rules: [.unclosedFormatting])
+    try expect(diags.isEmpty, "** inside backtick code span should not trigger bold warning, got: \(diags.map { $0.message })")
+}
+
+runner.test("linter clean: multiple formatting markers inside backticks") {
+    let md = "Use `a**b` glob and `c__d` and `e~~f` patterns\n"
+    let diags = linter.lint(md, rules: [.unclosedFormatting])
+    try expect(diags.isEmpty, "Formatting markers inside backticks should not trigger warnings")
+}
+
+runner.test("linter still detects unclosed ** outside backtick spans") {
+    let md = "This line has **unclosed bold formatting here.\n"
+    let diags = linter.lint(md, rules: [.unclosedFormatting])
+    try expect(!diags.isEmpty, "Genuinely unclosed ** outside code spans must still be flagged")
+}
+
 runner.test("linter clean: valid links") {
     let md = "A [valid link](https://example.com) works.\n"
     let diags = linter.lint(md, rules: [.mismatchedBrackets])
