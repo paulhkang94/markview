@@ -195,6 +195,17 @@ else
     echo "⚠ mdpreview not installed or is not a shell script (run: bash scripts/install-cli.sh)"
 fi
 
+# Script unit tests (metrics.py + check_traction.py — Tier 2 behavioral, no live API)
+echo ""
+echo "--- Script Tests (metrics + traction) ---"
+if python3 "$PROJECT_DIR/scripts/test-metrics.py" 2>&1 | tail -3 | grep -q "^OK"; then
+    echo "✓ metrics + check_traction tests passed (19 tests)"
+else
+    python3 "$PROJECT_DIR/scripts/test-metrics.py"
+    echo "=== Script tests failed ==="
+    exit 1
+fi
+
 echo ""
 echo "=== All checks passed ==="
 

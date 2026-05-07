@@ -95,8 +95,10 @@ make playwright                       # Playwright e2e DOM tests (66 tests) — 
 3. After any `HTMLPipeline.swift` change, always use `make playwright` not `--no-build`
 
 **Run adoption metrics:**
-1. `bash scripts/metrics.sh` — fetches npm download stats for `mcp-server-markview`
-2. The npm package name is `mcp-server-markview` (NOT `markview-mcp`, `markview`, or `mcp-server-markview-mcp`). Never curl the npm registry with a guessed name — always run the script.
+1. `bash scripts/metrics.sh` — full snapshot (delegates to `scripts/metrics.py`): npm + GitHub traffic + releases + MCP registry. Saves JSONL to `.claude/memory/traction-snapshots.jsonl`.
+2. `bash scripts/check-traction.sh [--json]` — quick traction check (delegates to `scripts/check_traction.py`): stars, clones, views, referrers, releases.
+3. The npm package name is `mcp-server-markview`. Never curl the npm registry with a guessed name — always run the script.
+4. GitHub traffic API: `traffic/popular/referrers` and `traffic/popular/paths` require the `popular/` prefix. `traffic/clones` and `traffic/views` do not. Never call `traffic/referrers` directly — it 404s.
 
 **Debug HTML pipeline issues:**
 1. Set `PHK_DEBUG=1` before any swift run command for verbose injection logs
