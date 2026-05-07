@@ -9,11 +9,19 @@ pending work, and key architectural decisions.
 
 | | |
 |---|---|
-| **App version** | v1.4.2 (build 275) |
+| **App version** | v1.4.2 (build 275) — latest released |
 | **npm package** | mcp-server-markview v1.4.2 (published 2026-04-08) |
 | **BINARY_VERSION** | 1.4.2 (synced — binary + npm back in alignment as of v1.4.2) |
 | **MCP registry** | `io.github.paulhkang94/markview` — active |
 | **Tag** | `v1.4.2` pushed 2026-04-08 |
+
+### Unreleased (v1.4.3 pending)
+
+Changes since v1.4.2 not yet shipped:
+- **Metrics migration**: `metrics.sh` + `check-traction.sh` → thin bash wrappers delegating to `scripts/metrics.py` + `scripts/check_traction.py` (Python). 19 Tier-2 behavioral tests added in `scripts/test-metrics.py`. Wired into verify.sh script tier.
+- **CL fingerprints**: 8 new fingerprints added across markview + flow DBs (GitHub traffic API paths, input() credentials, Node.js `__dirname`, git+gh api chain, Playwright `--update-snapshots`).
+- **Open issues**: 3 open GitHub issues (as of 2026-05-07).
+- **Adoption floor**: Post-breakout organic baseline did NOT hold at 20-25/day. Current floor: 4-6/day.
 
 > **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
 > successfully notarized GitHub Release binary. It is intentionally decoupled from
@@ -76,12 +84,13 @@ pending work, and key architectural decisions.
 ## Test Pyramid
 
 ```
-Tier 1 — Swift unit tests (cmark-gfm output)          292 tests  SPM, fast
+Tier 1 — Swift unit tests (cmark-gfm output)          294 tests  SPM, fast
 Tier 2 — Golden HTML body snapshots                    8 fixtures  git-committed
 Tier 3 — Full-pipeline structural tests (HTMLPipeline) 9 tests    extracted for testability Apr 2026
 Tier 4 — MCP protocol tests (JSON-RPC)                91 tests   --skip-e2e in CI (covers 9 tools)
 Tier 5 — Playwright DOM tests (post-JS DOM state)     154 tests   `make playwright`, Chromium
           alerts (7), mermaid (19), katex (6+), prism (5), controls (35), other (+)
+Tier 2b — Script unit tests (metrics.py + check_traction) 19 tests  python3 scripts/test-metrics.py, no live API
 
 MISSING (planned):
 Tier 6 — DOM snapshot goldens (rendered/*.dom.json)    0 files    Step 2 below
@@ -192,14 +201,15 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 Run `bash scripts/metrics.sh` for current snapshot.
 
-Last snapshot: 2026-04-11
-- GitHub stars: **26** | Forks: 3 | Watchers: 26
-- npm downloads: **1,807 all-time** (+148 since Apr 8 v1.4.2 release)
-- Organic baseline: ~20-25/day (up from ~15/day pre-breakout)
-- Binary all-time: ~198 (Homebrew unmeasured, estimated hundreds)
-- v1.4.2 release-day spike (Apr 8): 109 npm + 137 clones, ~75 extra above baseline
-- Apr 3 breakout trigger: MCP registry discovery (star conversion ~1.4% explains zero star increase on massive install growth)
+Last snapshot: 2026-05-07
+- GitHub stars: **26** | Forks: 3 | Open issues: 3
+- npm downloads: **2,107 all-time** (up from 1,807 on 2026-04-11)
+- Organic baseline: **4-6/day** (post-breakout floor did NOT hold at 20-25/day)
 - Top referrer: reddit.com
+- Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-05-07.md`
+
+Previous snapshot: 2026-04-11
+- npm: 1,807 all-time | Organic: ~20-25/day | Binary: ~198
 - Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-04-11.md`
 
 ---
