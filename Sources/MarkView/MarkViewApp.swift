@@ -69,7 +69,7 @@ final class WindowFileTracker {
 @main
 struct MarkViewApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var filePath: String?
+    @StateObject private var tabManager = TabManager()
     @State private var errorPresenter = ErrorPresenter()
 
     init() {
@@ -97,7 +97,7 @@ struct MarkViewApp: App {
         // File opens are routed via AppDelegate.pendingFilePath, not by
         // SwiftUI creating new windows.
         Window("MarkView", id: "main") {
-            ContentView(filePath: $filePath, errorPresenter: errorPresenter)
+            ContentView(tabManager: tabManager, errorPresenter: errorPresenter)
                 .frame(minWidth: 600, minHeight: 400)
                 .onAppear {
                     let args = CommandLine.arguments
@@ -105,12 +105,12 @@ struct MarkViewApp: App {
                         // CLI argument takes precedence over auto-reopen
                         let path = args[1]
                         if FileManager.default.fileExists(atPath: path) {
-                            filePath = path
+                            tabManager.openFile(URL(fileURLWithPath: path))
                         }
                     } else {
                         // No CLI arg — auto-reopen last file if "Restore last file on launch" is enabled
                         if let lastURL = RecentFilesManager.shared.lastOpenedURL {
-                            filePath = lastURL.path
+                            tabManager.openFile(lastURL)
                         }
                     }
 
@@ -129,12 +129,12 @@ struct MarkViewApp: App {
                 }
                 .onOpenURL { url in
                     if url.isFileURL {
-                        filePath = url.path
+                        tabManager.openFile(url)
                     }
                 }
                 .onReceive(appDelegate.$pendingFilePath) { path in
                     if let path = path {
-                        filePath = path
+                        tabManager.openFile(URL(fileURLWithPath: path))
                     }
                 }
         }
@@ -145,9 +145,18 @@ struct MarkViewApp: App {
                 Button(Strings.openFile) { openFile() }
                     .keyboardShortcut("o", modifiers: .command)
 
+                Button("New Tab") { openFile() }
+                    .keyboardShortcut("t", modifiers: .command)
+
                 Menu(Strings.openRecent) {
-                    OpenRecentMenuItems { path in filePath = path }
+                    OpenRecentMenuItems { path in tabManager.openFile(URL(fileURLWithPath: path)) }
                 }
+
+                Button("Select Next Tab") { tabManager.selectNext() }
+                    .keyboardShortcut("]", modifiers: [.command, .shift])
+
+                Button("Select Previous Tab") { tabManager.selectPrevious() }
+                    .keyboardShortcut("[", modifiers: [.command, .shift])
 
                 Button(Strings.closeFile) {
                     NotificationCenter.default.post(name: .closeFile, object: nil)
@@ -244,7 +253,7 @@ struct MarkViewApp: App {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
-            filePath = url.path
+            tabManager.openFile(url)
         }
     }
 }

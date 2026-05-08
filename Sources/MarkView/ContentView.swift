@@ -9,14 +9,46 @@ private final class EscMonitorHolder {
     var monitor: Any?
 }
 
+/// Outer shell: renders the always-visible tab bar and switches between
+/// the active tab's content view and the home screen.
 struct ContentView: View {
-    @Binding var filePath: String?
+    @ObservedObject var tabManager: TabManager
     var errorPresenter: ErrorPresenter
 
-    @StateObject private var viewModel = PreviewViewModel()
+    var body: some View {
+        VStack(spacing: 0) {
+            TabBarView(tabManager: tabManager)
+
+            if let tab = tabManager.selectedTab {
+                // .id(tab.id) forces SwiftUI to create a fresh ActiveTabView on tab switch,
+                // giving each tab isolated @StateObjects (findBar, syncController, etc.).
+                ActiveTabView(
+                    viewModel: tab.viewModel,
+                    tabID: tab.id,
+                    tabManager: tabManager,
+                    errorPresenter: errorPresenter
+                )
+                .id(tab.id)
+            } else {
+                HomeScreenView { url in
+                    tabManager.openFile(url)
+                }
+            }
+        }
+    }
+}
+
+/// Per-tab content view. @ObservedObject on the specific tab's PreviewViewModel
+/// so SwiftUI re-renders when that viewModel's @Published properties change.
+/// Recreated on tab switch (via .id()) — per-tab UI state (@StateObjects) is isolated.
+private struct ActiveTabView: View {
+    @ObservedObject var viewModel: PreviewViewModel
+    let tabID: UUID
+    @ObservedObject var tabManager: TabManager
+    var errorPresenter: ErrorPresenter
+
     @StateObject private var findBar = FindBarController()
     @ObservedObject private var settings = AppSettings.shared
-    /// Direct coordinator-to-coordinator scroll sync — bypasses SwiftUI entirely.
     @State private var syncController = ScrollSyncController()
     @State private var showEditor = false
     @State private var showExternalChangeAlert = false
@@ -25,36 +57,17 @@ struct ContentView: View {
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                Group {
-                    if viewModel.isLoaded {
-                        if showEditor {
-                            HSplitView {
-                                EditorView(
-                                    text: $viewModel.editorContent,
-                                    onChange: { newText in
-                                        viewModel.contentDidChange(newText)
-                                    },
-                                    syncController: syncController
-                                )
-                                .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
-                                .accessibilityElement(children: .contain)
+                if viewModel.isLoaded {
+                    if showEditor {
+                        HSplitView {
+                            EditorView(
+                                text: $viewModel.editorContent,
+                                onChange: { viewModel.contentDidChange($0) },
+                                syncController: syncController
+                            )
+                            .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
+                            .accessibilityElement(children: .contain)
 
-                                WebPreviewView(
-                                    html: viewModel.renderedHTML,
-                                    baseDirectoryURL: viewModel.currentFileDirectoryURL,
-                                    fileIdentifier: viewModel.currentFilePath,
-                                    previewFontSize: settings.previewFontSize,
-                                    previewWidth: settings.previewWidth.cssValue,
-                                    theme: settings.theme,
-                                    syncController: syncController,
-                                    findBar: findBar,
-                                    onWebViewCreated: { webView in viewModel.previewWebView = webView }
-                                )
-                                .id(viewModel.currentFilePath ?? "")
-                                .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
-                                .accessibilityElement(children: .contain)
-                            }
-                        } else {
                             WebPreviewView(
                                 html: viewModel.renderedHTML,
                                 baseDirectoryURL: viewModel.currentFileDirectoryURL,
@@ -64,15 +77,30 @@ struct ContentView: View {
                                 theme: settings.theme,
                                 syncController: syncController,
                                 findBar: findBar,
-                                onWebViewCreated: { webView in viewModel.previewWebView = webView }
+                                onWebViewCreated: { viewModel.previewWebView = $0 }
                             )
                             .id(viewModel.currentFilePath ?? "")
+                            .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
+                            .accessibilityElement(children: .contain)
                         }
                     } else {
-                        HomeScreenView { url in
-                            viewModel.loadFile(at: url.path)
-                            registerFileInWindow(url.path)
-                        }
+                        WebPreviewView(
+                            html: viewModel.renderedHTML,
+                            baseDirectoryURL: viewModel.currentFileDirectoryURL,
+                            fileIdentifier: viewModel.currentFilePath,
+                            previewFontSize: settings.previewFontSize,
+                            previewWidth: settings.previewWidth.cssValue,
+                            theme: settings.theme,
+                            syncController: syncController,
+                            findBar: findBar,
+                            onWebViewCreated: { viewModel.previewWebView = $0 }
+                        )
+                        .id(viewModel.currentFilePath ?? "")
+                    }
+                } else {
+                    HomeScreenView { url in
+                        viewModel.loadFile(at: url.path)
+                        registerFileInWindow(url.path)
                     }
                 }
 
@@ -103,9 +131,7 @@ struct ContentView: View {
                 ToolbarItemGroup(placement: .automatic) {
                     if viewModel.isLoaded {
                         Button {
-                            viewModel.unloadFile()
-                            showEditor = false
-                            filePath = nil
+                            closeCurrentTab()
                         } label: {
                             Image(systemName: "xmark.circle")
                         }
@@ -120,19 +146,6 @@ struct ContentView: View {
                         .accessibilityLabel(showEditor ? Strings.hideEditorPanel : Strings.showEditorPanel)
                         .keyboardShortcut("e", modifiers: .command)
                     }
-                }
-            }
-            .onChange(of: filePath) {
-                if let path = filePath {
-                    viewModel.loadFile(at: path)
-                    syncController.reset()
-                    registerFileInWindow(path)
-                }
-            }
-            .onAppear {
-                if let path = filePath {
-                    viewModel.loadFile(at: path)
-                    registerFileInWindow(path)
                 }
             }
             .alert(Strings.fileChanged, isPresented: $showExternalChangeAlert) {
@@ -153,7 +166,6 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
-                AppLogger.export.info("exportHTML notification received — isLoaded=\(viewModel.isLoaded)")
                 guard viewModel.isLoaded else {
                     errorPresenter.show("Export failed", detail: "No file loaded — open a markdown file first")
                     return
@@ -165,12 +177,10 @@ struct ContentView: View {
                 )
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportPDF)) { _ in
-                AppLogger.export.info("exportPDF notification received — isLoaded=\(viewModel.isLoaded) hasWebView=\(viewModel.previewWebView != nil)")
                 guard viewModel.isLoaded else {
                     errorPresenter.show("PDF export failed", detail: "No file loaded — open a markdown file first")
                     return
                 }
-                // Prefer direct reference stored at view creation; fall back to hierarchy search.
                 let resolvedWebView: WKWebView? = viewModel.previewWebView ?? findPreviewWebView()
                 guard let webView = resolvedWebView else {
                     errorPresenter.show("PDF export failed", detail: "Preview not loaded")
@@ -182,7 +192,6 @@ struct ContentView: View {
                     errorPresenter: errorPresenter
                 )
             }
-
             .onReceive(viewModel.$lastError) { error in
                 if let error = error {
                     errorPresenter.show("Auto-save failed", detail: error.localizedDescription)
@@ -198,28 +207,38 @@ struct ContentView: View {
                 findBar.findPrev()
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeFile)) { _ in
-                if viewModel.isLoaded {
-                    viewModel.unloadFile()
-                    showEditor = false
-                    filePath = nil
-                } else {
-                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
-                }
+                closeCurrentTab()
             }
 
             if let notification = errorPresenter.currentNotification {
                 ErrorBanner(
                     notification: notification,
                     onDismiss: { errorPresenter.dismiss() },
-                    onReport: { url in NSWorkspace.shared.open(url) }
+                    onReport: { NSWorkspace.shared.open($0) }
                 )
             }
         }
         .animation(.easeInOut(duration: 0.3), value: errorPresenter.currentNotification?.id)
     }
 
-    /// Find the WKWebView in the key window's view hierarchy.
-    /// Used to pass the live webView to ExportManager at export time.
+    // MARK: - Actions
+
+    /// Close the current tab. If multiple tabs are open, removes this tab and selects
+    /// the adjacent one. If this is the last tab, unloads the file and shows the home
+    /// screen by removing the tab from TabManager (which sets selectedTabID to nil).
+    private func closeCurrentTab() {
+        if tabManager.tabs.count > 1 {
+            tabManager.closeTab(tabID)
+        } else if viewModel.isLoaded {
+            // Last tab — unload to home screen but keep the tab shell so the tab bar stays.
+            // Actually per UX decision: all-tabs-closed → home screen.
+            tabManager.closeTab(tabID)
+        } else {
+            // Already on home screen — close window.
+            NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+        }
+    }
+
     private func findPreviewWebView() -> WKWebView? {
         func search(in view: NSView) -> WKWebView? {
             if let wk = view as? WKWebView { return wk }
@@ -232,8 +251,6 @@ struct ContentView: View {
         return search(in: contentView)
     }
 
-    /// Register the current file path with the window tracker.
-    /// Window dedup is handled at the AppDelegate layer — this only tracks the mapping.
     private func registerFileInWindow(_ path: String) {
         DispatchQueue.main.async {
             guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow })
@@ -242,15 +259,12 @@ struct ContentView: View {
         }
     }
 
-    /// Install an app-level NSEvent monitor that consumes Esc when the find bar is visible.
-    /// NSEvent.addLocalMonitorForEvents fires regardless of which view has focus,
-    /// unlike TextField.onKeyPress which only fires when the TextField is first responder.
     private func installEscMonitor() {
         guard escMonitorHolder.monitor == nil else { return }
         escMonitorHolder.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.keyCode == 53, self.findBar.isVisible else { return event }
             DispatchQueue.main.async { self.findBar.hide() }
-            return nil  // consume event — prevents Esc from closing the window
+            return nil
         }
     }
 
@@ -261,23 +275,13 @@ struct ContentView: View {
         }
     }
 
-    /// Toggle editor pane and resize window to target screen percentages.
-    /// Preview-only: 55% screen width. Editor+preview: 80% screen width.
-    /// Conservative: slightly wide is better than too narrow for readability.
     private func toggleEditor() {
         showEditor.toggle()
-
         guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
-
         let screen = window.screen ?? NSScreen.main
         let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
-        let currentFrame = window.frame
-
         let newWidth = WindowLayout.width(showEditor: showEditor, in: screenFrame)
-
-        // Center horizontally, keep vertical position
         let newX = screenFrame.origin.x + (screenFrame.width - newWidth) / 2
-        window.setFrame(NSRect(x: newX, y: currentFrame.origin.y, width: newWidth, height: currentFrame.height), display: true, animate: true)
+        window.setFrame(NSRect(x: newX, y: window.frame.origin.y, width: newWidth, height: window.frame.height), display: true, animate: true)
     }
 }
-
