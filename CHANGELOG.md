@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.5.0
+
+- Add multi-tab support: open multiple files simultaneously, each with independent file watching, lint, and preview state
+- Tab bar is always visible; each tab shows filename, dirty indicator (dot for unsaved changes), and a close button
+- Cmd+T / Cmd+O: open file in a new tab (switches to existing tab if the file is already open)
+- Cmd+W: close current tab; closing the last tab returns to the home screen
+- Cmd+Shift+] / Cmd+Shift+[: navigate between tabs with wraparound
+- MCP `open_file` tool now opens files in new tabs without replacing the current file
+
 ## v1.4.3
 
 - Fix linter false positive ([#28](https://github.com/paulhkang94/markview/issues/28)): `**` inside backtick code spans (e.g., `` `src/**/*.swift` ``) no longer triggers an "unclosed bold formatting" warning. The same fix applies to `__` and `~~` inside backticks.

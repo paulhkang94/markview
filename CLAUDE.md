@@ -2,7 +2,7 @@
 
 ## Quick Reference
 - **Build**: `swift build`
-- **Test**: `swift run MarkViewTestRunner` (294 Swift tests + 91 MCP tests + 19 script tests)
+- **Test**: `swift run MarkViewTestRunner` (304 Swift tests + 91 MCP tests + 19 script tests)
 - **Playwright e2e**: `make playwright` (66 tests — builds fixture binary, runs Playwright, installs MarkView.app)
 - **Verify all**: `python3 scripts/verify.py` (writes verify stamp automatically on pass)
 - **App bundle**: `bash scripts/bundle.sh --install`
@@ -61,7 +61,7 @@ Opens the file in MarkView. File must exist and have a markdown extension.
 
 ## Testing
 ```bash
-swift run MarkViewTestRunner          # Unit + integration (294 tests)
+swift run MarkViewTestRunner          # Unit + integration (304 tests)
 swift run MarkViewFuzzTester          # 10K random inputs
 swift run MarkViewDiffTester          # Compare vs cmark-gfm CLI
 swift run MarkViewE2ETester           # UI tests (requires .app + AX permissions)

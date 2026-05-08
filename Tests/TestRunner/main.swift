@@ -3738,6 +3738,71 @@ runner.test("diff.md fixture renders through full pipeline — diff block parsed
 }
 
 // =============================================================================
+// MARK: - TabManager source-inspection tests
+// TabManager is @MainActor and lives in the app target (not MarkViewCore), so it
+// can't be imported here. Source inspection verifies structural invariants; behavioral
+// coverage (open 2 files, Cmd+W, wrap-around) is in MarkViewE2ETester.
+// =============================================================================
+
+let tabManagerSource = try! String(contentsOfFile: "Sources/MarkView/TabManager.swift", encoding: .utf8)
+let tabBarSource     = try! String(contentsOfFile: "Sources/MarkView/TabBarView.swift", encoding: .utf8)
+
+print("\n--- TabManager source-inspection tests ---")
+
+runner.test("TabManager: class is @MainActor isolated") {
+    try expect(tabManagerSource.contains("@MainActor\nfinal class TabManager"),
+        "TabManager must be @MainActor — required for @Published mutation on main thread")
+}
+
+runner.test("TabManager: openFile deduplicates by resolvingSymlinksInPath") {
+    try expect(tabManagerSource.contains("resolvingSymlinksInPath()"),
+        "openFile must resolve symlinks before dedup — different paths to the same file must not open duplicate tabs")
+}
+
+runner.test("TabManager: closeTab selects adjacent tab on removal") {
+    // After closing, the code clamps to the nearest remaining tab (never out-of-bounds).
+    try expect(tabManagerSource.contains("tabs.remove(at:"),
+        "closeTab must remove the closed tab from the tabs array")
+    // min(idx, tabs.count - 1) selects the tab at the same position (or last if at end)
+    try expect(tabManagerSource.contains("min(idx, tabs.count - 1)"),
+        "closeTab must use min(idx, tabs.count-1) to select the nearest remaining tab")
+}
+
+runner.test("TabManager: selectNext and selectPrevious wrap at boundaries") {
+    try expect(tabManagerSource.contains("func selectNext"),
+        "TabManager must expose selectNext() for Cmd+Shift+] shortcut")
+    try expect(tabManagerSource.contains("func selectPrevious"),
+        "TabManager must expose selectPrevious() for Cmd+Shift+[ shortcut")
+    // Wrap-around: next after last → first; previous before first → last
+    try expect(tabManagerSource.contains("(idx + 1) % tabs.count"),
+        "selectNext must wrap from last tab to first via modulo")
+    try expect(tabManagerSource.contains("(idx + tabs.count - 1) % tabs.count"),
+        "selectPrevious must wrap from first tab to last via (idx + count - 1) % count")
+}
+
+runner.test("TabState: each tab owns an isolated PreviewViewModel") {
+    try expect(tabManagerSource.contains("let viewModel: PreviewViewModel"),
+        "TabState must own a PreviewViewModel so each tab has independent render/lint/watch state")
+    try expect(tabManagerSource.contains("viewModel.loadFile(at:"),
+        "TabState.init must call loadFile immediately so preview is ready when tab opens")
+}
+
+runner.test("TabBarView: always visible (not gated on tab count)") {
+    // Tab bar must not have an `if tabs.count > 1` guard — it's always shown per UX spec.
+    let hasCountGate = tabBarSource.contains("tabs.count > 1") ||
+                       tabBarSource.contains("tabs.isEmpty")
+    try expect(!hasCountGate,
+        "TabBarView must be always visible — do not hide when only 1 tab is open")
+}
+
+runner.test("TabBarView: dirty indicator rendered per tab") {
+    // Dirty dot (unsaved indicator) must be present in the per-tab pill view.
+    let hasDirtyDot = tabBarSource.contains("isDirty") || tabBarSource.contains("isModified")
+    try expect(hasDirtyDot,
+        "TabBarView must render a dirty indicator per tab (unsaved-changes dot)")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
