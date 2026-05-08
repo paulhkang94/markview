@@ -25,10 +25,10 @@ swift run MarkView test.md  # Open a specific file
 swift run MarkViewTestRunner
 
 # Full verification (build + core tests)
-bash verify.sh
+python3 scripts/verify.py
 
 # Extended testing (fuzz + differential + visual + golden)
-bash verify.sh --extended
+python3 scripts/verify.py --extended
 
 # Individual test suites
 swift run MarkViewFuzzTester    # 10K random input crash tests
@@ -36,7 +36,7 @@ swift run MarkViewDiffTester    # Compare output vs cmark-gfm CLI
 swift run MarkViewVisualTester  # Visual regression + WCAG contrast
 ```
 
-Before submitting a PR, run `bash verify.sh --extended` to ensure all tests pass.
+Before submitting a PR, run `python3 scripts/verify.py --extended` to ensure all tests pass.
 
 ## Submitting Issues
 
@@ -57,7 +57,7 @@ Describe the use case and how it improves the user experience. Link to prior art
 1. **Fork** the repo and create a branch from `main`
 2. **Make changes** — follow existing code patterns (no specific linter enforced)
 3. **Add tests** — if you fix a bug, add a test that catches it; if you add a feature, cover the happy path
-4. **Run tests** — `bash verify.sh --extended` must pass
+4. **Run tests** — `python3 scripts/verify.py --extended` must pass
 5. **Commit** with a clear message (see git log for examples)
 6. **Push** to your fork and submit a PR against `main`
 7. **Respond to review** — address feedback promptly

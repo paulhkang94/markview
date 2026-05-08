@@ -4,7 +4,7 @@
 - **Build**: `swift build`
 - **Test**: `swift run MarkViewTestRunner` (294 Swift tests + 91 MCP tests + 19 script tests)
 - **Playwright e2e**: `make playwright` (66 tests — builds fixture binary, runs Playwright, installs MarkView.app)
-- **Verify all**: `bash verify.sh`
+- **Verify all**: `python3 scripts/verify.py` (writes verify stamp automatically on pass)
 - **App bundle**: `bash scripts/bundle.sh --install`
 - **MCP tests**: `bash scripts/test-mcp.sh`
 - **PHK debug logging**: `PHK_DEBUG=1 swift run MarkViewTestRunner` (verbose HTML pipeline output)

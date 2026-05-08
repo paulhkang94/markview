@@ -132,8 +132,8 @@ fi
 # Step 5: Run tests (unless --skip-tests)
 if [ "$SKIP_TESTS" = false ]; then
     echo ""
-    echo "--- Running verify.sh ---"
-    bash "$PROJECT_DIR/verify.sh"
+    echo "--- Running verification ---"
+    python3 "$PROJECT_DIR/scripts/verify.py"
     echo ""
 else
     echo ""

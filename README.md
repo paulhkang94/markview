@@ -153,8 +153,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full details.
 
 ```bash
 swift run MarkViewTestRunner    # 403 tests
-bash verify.sh                  # Full verification (build + tests)
-bash verify.sh --extended       # + fuzz + differential
+python3 scripts/verify.py       # Full verification (build + tests, writes stamp)
+python3 scripts/verify.py --extended  # + fuzz + differential
 bash scripts/test-mcp.sh        # MCP protocol tests
 ```
 
