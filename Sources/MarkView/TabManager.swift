@@ -9,7 +9,14 @@ final class TabState: ObservableObject, Identifiable {
     let url: URL
     let viewModel: PreviewViewModel
 
-    var displayName: String { url.lastPathComponent }
+    var displayName: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = url.path
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
 
     init(url: URL) {
         self.url = url
