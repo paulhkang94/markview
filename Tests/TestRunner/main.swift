@@ -3780,6 +3780,27 @@ runner.test("TabManager: selectNext and selectPrevious wrap at boundaries") {
         "selectPrevious must wrap from first tab to last via (idx + count - 1) % count")
 }
 
+runner.test("MV-001: unloadFile must not mark explicitly-closed (fires on EVERY tab close)") {
+    // Regression: markExplicitlyClosed() inside unloadFile() poisoned relaunch
+    // auto-reopen whenever ANY tab closed, even with other tabs still open.
+    let vmSource = try! String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(!vmSource.contains("markExplicitlyClosed"),
+        "PreviewViewModel must not call markExplicitlyClosed — ownership moved to TabManager.closeTab (MV-001)")
+}
+
+runner.test("MV-001: closeTab marks explicitly-closed only when the LAST tab closes") {
+    // The call must live in closeTab's body, gated on tabs.isEmpty after removal.
+    guard let start = tabManagerSource.range(of: "func closeTab") else {
+        try expect(false, "TabManager must define closeTab"); return
+    }
+    let tail = tabManagerSource[start.lowerBound...]
+    let closeBody = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(closeBody.contains("markExplicitlyClosed"),
+        "TabManager.closeTab must own the explicitly-closed signal (MV-001)")
+    try expect(closeBody.contains("tabs.isEmpty"),
+        "closeTab must gate markExplicitlyClosed on tabs.isEmpty — closing 1 of 2 tabs must NOT suppress auto-reopen")
+}
+
 runner.test("TabState: each tab owns an isolated PreviewViewModel") {
     try expect(tabManagerSource.contains("let viewModel: PreviewViewModel"),
         "TabState must own a PreviewViewModel so each tab has independent render/lint/watch state")

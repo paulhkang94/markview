@@ -141,7 +141,6 @@ final class PreviewViewModel: ObservableObject {
         lintWarnings = 0
         lintErrors = 0
         previewWebView = nil
-        RecentFilesManager.shared.markExplicitlyClosed()
     }
 
     // MARK: - Private

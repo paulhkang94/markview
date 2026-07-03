@@ -57,6 +57,12 @@ final class TabManager: ObservableObject {
         if selectedTabID == id {
             selectedTabID = tabs.isEmpty ? nil : tabs[min(idx, tabs.count - 1)].id
         }
+        // Suppress relaunch auto-reopen only when the user closed the LAST tab —
+        // firing on every close (the old unloadFile behavior) poisoned session
+        // restore while other tabs were still open (MV-001).
+        if tabs.isEmpty {
+            RecentFilesManager.shared.markExplicitlyClosed()
+        }
     }
 
     func selectNext() {
