@@ -141,6 +141,28 @@ struct E2EHelpers {
         return path
     }
 
+    /// Create a LONG temporary markdown file (default 200 numbered sections, ~1,000
+    /// lines) — scroll-position tests need real scrollable height; one-line fixtures
+    /// make "returned to the same position" assertions vacuously true. Each section
+    /// carries a unique, greppable marker heading (`## Section N of ...`).
+    func createLongTempMarkdown(sections: Int = 200, name: String = "e2e-long") -> String {
+        var content = "# Long fixture (\(sections) sections)\n\n"
+        for i in 1...sections {
+            content += """
+            ## Section \(i) of \(sections)
+
+            Paragraph for section \(i). Lorem ipsum dolor sit amet, consectetur
+            adipiscing elit — enough body text that each section occupies real
+            vertical space in the preview.
+
+            - bullet one for section \(i)
+            - bullet two for section \(i)
+
+            """
+        }
+        return createTempMarkdown(content, name: name)
+    }
+
     /// Create a read-only temporary markdown file for testing permission errors.
     func createReadOnlyMarkdown(_ content: String) -> String {
         let path = createTempMarkdown(content, name: "readonly")

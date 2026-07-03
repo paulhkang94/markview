@@ -3780,6 +3780,42 @@ runner.test("TabManager: selectNext and selectPrevious wrap at boundaries") {
         "selectPrevious must wrap from first tab to last via (idx + count - 1) % count")
 }
 
+runner.test("MV-002: assembled HTML posts renderComplete alongside every window.rendered site") {
+    // Behavioral on pipeline OUTPUT: the same sites that set the window.rendered
+    // sentinel must post to the renderComplete WKScriptMessageHandler, or Swift-side
+    // restore stays on asyncAfter timing hacks.
+    let pipeline = HTMLPipeline.loadFromBundle()
+    // Use the REAL template (the app's PreviewViewModel path) — the built-in
+    // wrapInTemplate fallback has no sentinel script and would mask a regression.
+    let realTemplate = try String(
+        contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/MarkViewCore/Resources/template.html"),
+        encoding: .utf8)
+    let mermaidBody = MarkdownRenderer.renderHTML(from: "# T\n\n```mermaid\ngraph TD; A-->B;\n```")
+    let mermaidDoc = pipeline.assemble(MarkdownRenderer.wrapInTemplate(mermaidBody, template: realTemplate))
+    // The shared gated helper must exist and actually post to the Swift handler
+    try expect(mermaidDoc.contains("messageHandlers.renderComplete"),
+        "template must define a helper that posts to the renderComplete message handler")
+    try expect(mermaidDoc.contains("_renderCompletePosted"),
+        "renderComplete posts must be gated by a _renderCompletePosted flag (once per load)")
+    // Every window.rendered site must invoke the helper: mermaid .then, .catch, timeout fallback
+    let helperCalls = mermaidDoc.components(separatedBy: "_markviewPostRenderComplete()").count - 1
+    try expect(helperCalls >= 3,
+        "mermaid doc must invoke the post helper from .then, .catch, and the template timeout fallback (found \(helperCalls) call sites)")
+    let plainDoc = pipeline.assemble(
+        MarkdownRenderer.wrapInTemplate(MarkdownRenderer.renderHTML(from: "# T"), template: realTemplate))
+    try expect(plainDoc.components(separatedBy: "_markviewPostRenderComplete()").count - 1 >= 1,
+        "plain doc must invoke the post helper from the template timeout fallback")
+}
+
+runner.test("MV-002: WebPreviewView registers renderComplete with a once-per-load guard") {
+    let wpvSource = try! String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(wpvSource.contains("TemplateConstants.renderCompleteHandler"),
+        "WebPreviewView must register the renderComplete message handler (MV-002)")
+    try expect(wpvSource.contains("renderCompleteFired"),
+        "Coordinator must dedupe renderComplete per load — it can arrive from both mermaid completion and the timeout fallback")
+}
+
 runner.test("MV-001: unloadFile must not mark explicitly-closed (fires on EVERY tab close)") {
     // Regression: markExplicitlyClosed() inside unloadFile() poisoned relaunch
     // auto-reopen whenever ANY tab closed, even with other tabs still open.

@@ -481,10 +481,12 @@ public struct HTMLPipeline {
                         });
                     });
                     window.rendered = true;  // Mermaid async complete — unblock Playwright/WKWebView sentinel
+                    window._markviewPostRenderComplete && window._markviewPostRenderComplete();
                     window._PHK_DEBUG && console.log('[PHK] mermaid.run() resolved — rendered=true (path: mermaid.then)');
                 }).catch(function(err) {
                     window._PHK_DEBUG && console.log('[PHK] mermaid.run() error — rendered=true (path: mermaid.catch)', err);
                     window.rendered = true;  // unblock on error too
+                    window._markviewPostRenderComplete && window._markviewPostRenderComplete();
                 });
             };
             if (document.readyState === 'loading') {

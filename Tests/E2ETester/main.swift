@@ -9,7 +9,22 @@ struct TestRunner {
     var failed = 0
     var skipped = 0
 
+    /// `--filter <substring>`: run only tests whose name contains the substring
+    /// (case-insensitive). Filtered-out tests are not counted. Lets a single test
+    /// be iterated on without driving the entire UI suite.
+    let filter: String? = {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--filter"), i + 1 < args.count else { return nil }
+        return args[i + 1].lowercased()
+    }()
+
+    private func matchesFilter(_ name: String) -> Bool {
+        guard let f = filter else { return true }
+        return name.lowercased().contains(f)
+    }
+
     mutating func test(_ name: String, _ body: () throws -> Void) {
+        guard matchesFilter(name) else { return }
         do {
             try body()
             passed += 1
@@ -21,6 +36,7 @@ struct TestRunner {
     }
 
     mutating func skip(_ name: String, reason: String) {
+        guard matchesFilter(name) else { return }
         skipped += 1
         print("  ⊘ \(name) (skipped: \(reason))")
     }
@@ -862,6 +878,125 @@ runner.test("Settings persistence → change theme, relaunch, verify") {
     }
 }
 
+// DEFAULTS-DOMAIN TRAP (cost a full debugging session — do not regress):
+// The app itself is UNSANDBOXED and writes ~/Library/Preferences/com.markview.app.plist.
+// But the sandboxed QuickLook EXTENSION created ~/Library/Containers/com.markview.app/,
+// and the `defaults` CLI silently redirects the bare domain name "com.markview.app" to
+// that container plist — so name-based reads NEVER see the app's writes (verified via
+// the error text: "domain/default pair of (~/Library/Containers/...) does not exist").
+// Explicit PATH-form domains bypass the redirect. App's real plist first; container
+// second (future-proofing if the app ever gets sandboxed).
+let markviewDefaultsDomains = [
+    NSString(string: "~/Library/Preferences/com.markview.app").expandingTildeInPath,
+    NSString(string: "~/Library/Containers/com.markview.app/Data/Library/Preferences/com.markview.app").expandingTildeInPath,
+]
+
+@discardableResult
+func defaultsCmd(_ args: [String]) -> String {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    p.arguments = args
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = FileHandle.nullDevice
+    try? p.run()
+    p.waitUntilExit()
+    let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    return out.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+func readDefaultsBool(_ key: String) -> Bool {
+    markviewDefaultsDomains.contains { defaultsCmd(["read", $0, key]) == "1" }
+}
+
+runner.test("MV-001: closing 1 of 2 tabs must not suppress relaunch auto-reopen") {
+    // Snapshot per-domain state, then clear the flag + force windowRestore on in BOTH
+    // domains (raw-executable launches write the bare "markview" domain).
+    var origClose: [String: String] = [:]
+    var origRestore: [String: String] = [:]
+    for d in markviewDefaultsDomains {
+        origClose[d] = defaultsCmd(["read", d, "didExplicitlyCloseFile"])
+        origRestore[d] = defaultsCmd(["read", d, "windowRestore"])
+        defaultsCmd(["delete", d, "didExplicitlyCloseFile"])
+        defaultsCmd(["write", d, "windowRestore", "-bool", "true"])
+    }
+    defer {
+        app.terminate()
+        for d in markviewDefaultsDomains {
+            if let v = origClose[d], !v.isEmpty { defaultsCmd(["write", d, "didExplicitlyCloseFile", "-bool", v == "1" ? "true" : "false"]) }
+            else { defaultsCmd(["delete", d, "didExplicitlyCloseFile"]) }
+            if let v = origRestore[d], !v.isEmpty { defaultsCmd(["write", d, "windowRestore", "-bool", v == "1" ? "true" : "false"]) }
+            else { defaultsCmd(["delete", d, "windowRestore"]) }
+        }
+    }
+
+    let file1 = helpers.createTempMarkdown("# MV001 Tab One", name: "mv001-one")
+    let file2 = helpers.createTempMarkdown("# MV001 Tab Two", name: "mv001-two")
+
+    try app.launch(args: [file1])
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+    _ = try app.waitForWindow(timeout: Timing.windowAppear)
+    Thread.sleep(forTimeInterval: Timing.fileLoadRender)
+
+    // Open the second file through the open funnel (CLI path reads only args[1])
+    let script = """
+    tell application "MarkView" to open POSIX file "\(file2)"
+    """
+    var scriptError: NSDictionary?
+    NSAppleScript(source: script)?.executeAndReturnError(&scriptError)
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+
+    // Close the selected tab (the second file) — 1 of 2. ⌘W posted straight to the
+    // app's pid: the AppleScript menu-click path needs a separate Automation grant
+    // and fails silently without it, which made this assertion pass vacuously.
+    // Key equivalents only route while the app is active, so activate first —
+    // the suite loses frontmost status whenever the user touches the machine.
+    guard let pid1 = app.pid else { throw E2EError.preconditionFailed("no app pid") }
+    NSRunningApplication(processIdentifier: pid1)?.activate(options: [])
+    Thread.sleep(forTimeInterval: 0.5)
+    AXHelper.keyPress(0x0D, modifiers: .maskCommand, toPid: pid1)  // kVK_ANSI_W
+    Thread.sleep(forTimeInterval: 0.8)
+
+    // Prove the close actually happened (selection falls back to the first file) —
+    // otherwise the flag assertion below passes vacuously when the keystroke is lost.
+    if let win = try? app.mainWindow() {
+        let titleAfterClose = helpers.windowTitle(win) ?? ""
+        try expect(titleAfterClose.contains("mv001-one"),
+            "after closing the second tab the first file must be selected (title: '\(titleAfterClose)')")
+    }
+
+    try expect(readDefaultsBool("didExplicitlyCloseFile") == false,
+        "didExplicitlyCloseFile must stay false after closing 1 of 2 tabs (MV-001 regression: flag fired on every close)")
+
+    // Quit and relaunch with NO args — auto-reopen must fire (pre-fix: home screen)
+    app.terminate()
+    try app.launch()
+    Thread.sleep(forTimeInterval: Timing.appLaunch)
+    let window2 = try app.waitForWindow(timeout: Timing.windowAppear)
+    Thread.sleep(forTimeInterval: Timing.fileLoadRender + 0.5)
+    let title = helpers.windowTitle(window2) ?? ""
+    try expect(title.contains("mv001"),
+        "relaunch must auto-reopen a file (title: '\(title)') — bare home screen means auto-reopen was wrongly suppressed")
+
+    // Close the LAST tab — now the flag must be set
+    guard let pid2 = app.pid else { throw E2EError.preconditionFailed("no app pid after relaunch") }
+    NSRunningApplication(processIdentifier: pid2)?.activate(options: [])
+    Thread.sleep(forTimeInterval: 0.5)
+    AXHelper.keyPress(0x0D, modifiers: .maskCommand, toPid: pid2)  // kVK_ANSI_W
+    Thread.sleep(forTimeInterval: 0.8)
+    let titleAfterLastClose = (try? app.mainWindow()).flatMap { helpers.windowTitle($0) } ?? "<no window>"
+    try expect(readDefaultsBool("didExplicitlyCloseFile") == true,
+        "didExplicitlyCloseFile must be true after closing the LAST tab (post-close title: '\(titleAfterLastClose)')")
+}
+
+// Spec placeholder for MV-003/MV-005 (per-tab scroll position survives tab switch):
+// open TWO long files via helpers.createLongTempMarkdown() (~1,000 lines each — real
+// scrollable height, unique "## Section N" markers), scroll tab A deep, switch A→B→A,
+// assert the preview restored to the same section (not the top). Requires TabState
+// scroll persistence (MV-003) + renderComplete-driven restore wiring (MV-005).
+runner.skip("MV-003/005: tab switch returns to the same scroll position",
+    reason: "feature pending — TabState scroll persistence (MV-003) + restore wiring (MV-005) not yet implemented; long fixtures ready via createLongTempMarkdown()")
+
 print("")
 
 // ========== Tier 5: Integration ==========
@@ -914,12 +1049,15 @@ runner.test("Quick Look preview produces output") {
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
 
-    // qlmanage -p opens a preview window — just verify it doesn't crash
+    // qlmanage -p opens a preview window — just verify it doesn't crash.
+    // Reap unconditionally (SIGTERM, then SIGKILL): a leaked qlmanage stays in the Dock.
     try process.run()
-    Thread.sleep(forTimeInterval: 2.0)
-    if process.isRunning {
-        process.terminate()
+    defer {
+        if process.isRunning { process.terminate() }
+        Thread.sleep(forTimeInterval: 0.3)
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
     }
+    Thread.sleep(forTimeInterval: 2.0)
     try expect(true, "qlmanage completed without crash")
 }
 
@@ -1106,8 +1244,26 @@ print("")
 
 print("--- Tier 5: Quick Look Preview ---")
 
+/// Kill every qlmanage instance on the system. Called before each spawn (single-instance
+/// guarantee) and at suite teardown — leaked previews otherwise pile up in the Dock.
+func killAllQL() {
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+    task.arguments = ["-x", "qlmanage"]
+    task.standardOutput = FileHandle.nullDevice
+    task.standardError = FileHandle.nullDevice
+    try? task.run()
+    task.waitUntilExit()
+    Thread.sleep(forTimeInterval: 0.3)
+}
+
 /// Launch qlmanage -p, find its window via AX, return window element + PID.
+/// Kills any pre-existing qlmanage first, and reaps its own spawn on the
+/// no-window failure path — the earlier version leaked one qlmanage instance
+/// per failed precondition (three Dock icons after one bad run).
 func launchQLPreview(file: String) -> (window: AXUIElement, pid: pid_t)? {
+    killAllQL()
+
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/qlmanage")
     process.arguments = ["-p", file]
@@ -1123,13 +1279,21 @@ func launchQLPreview(file: String) -> (window: AXUIElement, pid: pid_t)? {
     let windows: [AXUIElement] = AXHelper.children(appElement).filter {
         AXHelper.role($0) == kAXWindowRole
     }
-    guard let window = windows.first else { return nil }
+    guard let window = windows.first else {
+        killQL(pid)
+        return nil
+    }
     return (window, pid)
 }
 
 func killQL(_ pid: pid_t) {
     kill(pid, SIGTERM)
     Thread.sleep(forTimeInterval: 0.5)
+    // qlmanage occasionally ignores SIGTERM while its preview panel is animating
+    if kill(pid, 0) == 0 {
+        kill(pid, SIGKILL)
+        Thread.sleep(forTimeInterval: 0.2)
+    }
 }
 
 let qlFixturePath = FileManager.default.currentDirectoryPath + "/Tests/TestRunner/Fixtures/basic.md"
@@ -1498,6 +1662,11 @@ print("")
 // ========== Summary ==========
 
 helpers.cleanupTempFiles()
+// Suite teardown: never leave preview processes behind, regardless of which
+// tests ran or how they failed (leaked qlmanage instances pile up in the Dock).
+killAllQL()
+app.terminate()
+
 runner.summary()
 
 if runner.failed > 0 {

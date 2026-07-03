@@ -187,6 +187,20 @@ enum AXHelper {
         Thread.sleep(forTimeInterval: 0.05)
     }
 
+    /// Post a keystroke directly to a process (menu key equivalents resolve via
+    /// NSApp.sendEvent). Unlike the HID-tap variant this does not require the app
+    /// to be frontmost — immune to focus-stealing while the suite runs. Also avoids
+    /// AppleScript System Events (separate Automation permission, silent failures).
+    static func keyPress(_ keyCode: CGKeyCode, modifiers: CGEventFlags = [], toPid pid: pid_t) {
+        let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false)
+        keyDown?.flags = modifiers
+        keyUp?.flags = modifiers
+        keyDown?.postToPid(pid)
+        keyUp?.postToPid(pid)
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+
     // Common key codes
     private static let kVK_ANSI_S: CGKeyCode = 0x01
     private static let kVK_ANSI_E: CGKeyCode = 0x0E
