@@ -2,9 +2,11 @@
 """
 verify.py — MarkView full verification runner (replaces verify.sh).
 
-Runs every check tier in order and writes BOTH verify stamps on success:
-  - Per-repo:  <project>/.last-verify-at      (commit-gate primary)
-  - Global:    COMMIT_GATE_VERIFY_STAMP env    (commit-gate fallback)
+Runs every check tier in order and writes BOTH verify stamps on success
+(HA-008 format: "TIER=all\\nTS=<epoch>"):
+  - Per-repo:  <project>/.last-verify-at       (commit-gate per-repo fallback)
+  - Global:    COMMIT_GATE_VERIFY_STAMP env     (default: claude-repl-template
+               .claude/memory/.last-verify-at — commit-gate primary)
 
 Usage:
   python3 scripts/verify.py                   # standard tiers
@@ -30,7 +32,9 @@ APPEX_RSRC = (
 )
 INSTALLED_APP = Path("/Applications/MarkView.app")
 
-_GLOBAL_STAMP_DEFAULT = Path.home() / "repos/claude-loop/.claude/memory/.last-verify-at"
+_GLOBAL_STAMP_DEFAULT = (
+    Path.home() / "repos/claude-repl-template/.claude/memory/.last-verify-at"
+)
 GLOBAL_STAMP = Path(
     os.environ.get("COMMIT_GATE_VERIFY_STAMP", str(_GLOBAL_STAMP_DEFAULT))
 )
@@ -88,10 +92,12 @@ def run_filtered(cmd: list[str], cwd: Path = PROJECT_DIR) -> tuple[int, str]:
 
 
 def write_stamps() -> None:
-    ts = str(int(time.time())) + "\n"
-    PER_REPO_STAMP.write_text(ts)
+    # HA-008 tiered format: commit_gate.py requires TIER in {test, slow, all};
+    # bare-epoch stamps are no longer accepted.
+    stamp = f"TIER=all\nTS={int(time.time())}\n"
+    PER_REPO_STAMP.write_text(stamp)
     if GLOBAL_STAMP.parent.exists():
-        GLOBAL_STAMP.write_text(ts)
+        GLOBAL_STAMP.write_text(stamp)
     ok("Verify stamps written (per-repo + global, threshold=30m)")
 
 

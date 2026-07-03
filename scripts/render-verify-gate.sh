@@ -41,7 +41,10 @@ done
 
 # Check stamp freshness
 if [[ -f "$STAMP" ]]; then
-    stamp_age=$(( $(date +%s) - $(cat "$STAMP") ))
+    # HA-008 format "TIER=x\nTS=<epoch>"; fall back to legacy bare epoch
+    stamp_ts=$(grep -oE '^TS=[0-9]+' "$STAMP" | cut -d= -f2 || true)
+    [[ -z "$stamp_ts" ]] && stamp_ts=$(head -1 "$STAMP")
+    stamp_age=$(( $(date +%s) - ${stamp_ts:-0} ))
     [[ $stamp_age -lt $THRESHOLD ]] && exit 0
 fi
 
