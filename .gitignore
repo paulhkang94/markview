@@ -79,6 +79,8 @@ npm/bin/
 Tests/playwright/node_modules/
 Tests/playwright/playwright-report/
 Tests/playwright/test-results/
+test-results/
+__pycache__/
 Tests/playwright/fixtures/.generated-at
 # Commit fixtures (*.html) to git so CI runs without Swift build
 # Regenerate with: bash scripts/gen-playwright-fixtures.sh
