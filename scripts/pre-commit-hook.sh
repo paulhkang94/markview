@@ -52,7 +52,10 @@ if [[ "$RENDER_CRITICAL" -gt 0 ]]; then
     if [[ ! -f "$STAMP" ]]; then
         fail "Render-critical file changed. Run: make playwright   (then re-commit)"
     else
-        AGE=$(( $(date +%s) - $(cat "$STAMP") ))
+        # HA-008 format "TIER=x\nTS=<epoch>"; fall back to legacy bare epoch
+        STAMP_TS=$(grep -oE '^TS=[0-9]+' "$STAMP" | cut -d= -f2 || true)
+        [[ -z "$STAMP_TS" ]] && STAMP_TS=$(head -1 "$STAMP")
+        AGE=$(( $(date +%s) - ${STAMP_TS:-0} ))
         if [[ "$AGE" -gt 600 ]]; then
             fail "Playwright tests stale (${AGE}s ago). Run: make playwright   (then re-commit)"
         else

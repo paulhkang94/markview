@@ -32,7 +32,7 @@ playwright-fixtures:
 	bash scripts/gen-playwright-fixtures.sh
 
 playwright: playwright-fixtures
-	cd Tests/playwright && npx playwright test && date +%s > ../../.last-verify-at && cd ../.. && bash scripts/bundle.sh --install
+	cd Tests/playwright && npx playwright test && printf 'TIER=test\nTS=%s\n' "$$(date +%s)" > ../../.last-verify-at && cd ../.. && bash scripts/bundle.sh --install
 
 playwright-headed: playwright-fixtures
 	cd Tests/playwright && npx playwright test --headed
