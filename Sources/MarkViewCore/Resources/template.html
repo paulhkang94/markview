@@ -391,6 +391,15 @@
             _tocInit();
             window._markviewRebuildTOC = _tocInit;
         })();
+        // Post render completion to the Swift renderComplete handler (WKWebView only;
+        // window.webkit is undefined in Playwright/Chromium — the try/catch makes it a no-op).
+        // Gated to exactly one post per page load: mermaid .then, mermaid .catch, and the
+        // timeout fallback below may all fire on the same load.
+        window._markviewPostRenderComplete = function() {
+            if (window._renderCompletePosted) { return; }
+            window._renderCompletePosted = true;
+            try { window.webkit.messageHandlers.renderComplete.postMessage(true); } catch (e) {}
+        };
         // Playwright/WKWebView sentinel: signals that all synchronous transforms are complete.
         // Mermaid (async) overrides this via HTMLPipeline.injectMermaid -> window.rendered = true.
         // 1200ms is generous enough for KaTeX + Prism on slow CI runners.
@@ -399,6 +408,7 @@
                 window.rendered = true;
                 window._PHK_DEBUG && console.log('[PHK] sentinel: timeout fired (no Mermaid or Mermaid already done)');
             }
+            window._markviewPostRenderComplete();
         }, 1200);
     </script>
 </body>

@@ -39,6 +39,11 @@ final class RecentFilesManager: ObservableObject {
         UserDefaults.standard.set(url.path, forKey: lastFileKey)
         // Clear the explicit-close flag so next launch auto-reopens this file.
         UserDefaults.standard.set(false, forKey: explicitlyClosedKey)
+        if ProcessInfo.processInfo.environment["PHK_DEBUG"] != nil {
+            NSLog("[PHK] recordOpen(%@): bundleID=%@ flag-readback=%d",
+                  url.lastPathComponent, Bundle.main.bundleIdentifier ?? "nil",
+                  UserDefaults.standard.bool(forKey: explicitlyClosedKey) ? 1 : 0)
+        }
         pruneAndPublish()
     }
 
@@ -69,6 +74,11 @@ final class RecentFilesManager: ObservableObject {
     /// Suppresses auto-reopen on the next cold launch.
     func markExplicitlyClosed() {
         UserDefaults.standard.set(true, forKey: explicitlyClosedKey)
+        if ProcessInfo.processInfo.environment["PHK_DEBUG"] != nil {
+            NSLog("[PHK] markExplicitlyClosed: bundleID=%@ flag-readback=%d",
+                  Bundle.main.bundleIdentifier ?? "nil",
+                  UserDefaults.standard.bool(forKey: explicitlyClosedKey) ? 1 : 0)
+        }
     }
 
     /// The file to auto-reopen on cold launch, or nil if disabled or no history.

@@ -416,6 +416,15 @@ This is a caution callout.</p>
             _tocInit();
             window._markviewRebuildTOC = _tocInit;
         })();
+        // Post render completion to the Swift renderComplete handler (WKWebView only;
+        // window.webkit is undefined in Playwright/Chromium — the try/catch makes it a no-op).
+        // Gated to exactly one post per page load: mermaid .then, mermaid .catch, and the
+        // timeout fallback below may all fire on the same load.
+        window._markviewPostRenderComplete = function() {
+            if (window._renderCompletePosted) { return; }
+            window._renderCompletePosted = true;
+            try { window.webkit.messageHandlers.renderComplete.postMessage(true); } catch (e) {}
+        };
         // Playwright/WKWebView sentinel: signals that all synchronous transforms are complete.
         // Mermaid (async) overrides this via HTMLPipeline.injectMermaid -> window.rendered = true.
         // 1200ms is generous enough for KaTeX + Prism on slow CI runners.
@@ -424,6 +433,7 @@ This is a caution callout.</p>
                 window.rendered = true;
                 window._PHK_DEBUG && console.log('[PHK] sentinel: timeout fired (no Mermaid or Mermaid already done)');
             }
+            window._markviewPostRenderComplete();
         }, 1200);
     </script>
 <script>/**
@@ -3498,10 +3508,12 @@ globalThis["mermaid"] = globalThis.__esbuild_esm_mermaid_nm["mermaid"].default;
                 });
             });
             window.rendered = true;  // Mermaid async complete — unblock Playwright/WKWebView sentinel
+            window._markviewPostRenderComplete && window._markviewPostRenderComplete();
             window._PHK_DEBUG && console.log('[PHK] mermaid.run() resolved — rendered=true (path: mermaid.then)');
         }).catch(function(err) {
             window._PHK_DEBUG && console.log('[PHK] mermaid.run() error — rendered=true (path: mermaid.catch)', err);
             window.rendered = true;  // unblock on error too
+            window._markviewPostRenderComplete && window._markviewPostRenderComplete();
         });
     };
     if (document.readyState === 'loading') {

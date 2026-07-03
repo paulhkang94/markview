@@ -31,6 +31,9 @@ struct WebPreviewView: NSViewRepresentable {
         // Register message handler for scroll sync: JS posts source line to Swift.
         let contentController = config.userContentController
         contentController.add(context.coordinator, name: TemplateConstants.scrollSyncHandler)
+        // Render completion: page JS posts exactly once per load (mermaid .then/.catch or
+        // the template timeout fallback) — drives listener install + restore (MV-002).
+        contentController.add(context.coordinator, name: TemplateConstants.renderCompleteHandler)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -259,8 +262,13 @@ struct WebPreviewView: NSViewRepresentable {
 
         // MARK: - WKScriptMessageHandler
 
-        /// Receives source line messages from the JS scroll listener.
+        /// Receives source line messages from the JS scroll listener, plus the
+        /// once-per-load renderComplete signal.
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == TemplateConstants.renderCompleteHandler {
+                handleRenderComplete()
+                return
+            }
             guard message.name == TemplateConstants.scrollSyncHandler else { return }
 
             if suppressNextScroll {
@@ -460,9 +468,15 @@ struct WebPreviewView: NSViewRepresentable {
             }
             // Images are already inlined as data URIs, so WKWebView only needs access to the
             // temp directory. Never grant access to "/" or user home — least-privilege scope.
+            renderCompleteFired = false
             webView.loadFileURL(tempFile, allowingReadAccessTo: tempFile.deletingLastPathComponent())
-            // Install scroll listener after page loads
-            installScrollListenerAfterLoad(in: webView)
+            // The page's renderComplete message drives scroll-listener install + restore
+            // the moment all transforms finish (MV-002). The 2s timer only covers a page
+            // whose JS died before posting; the fired-flag makes the two paths converge
+            // to exactly one execution per load.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.handleRenderComplete()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 do {
                     try FileManager.default.removeItem(at: tempFile)
@@ -473,19 +487,20 @@ struct WebPreviewView: NSViewRepresentable {
             }
         }
 
-        private func installScrollListenerAfterLoad(in webView: WKWebView) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self = self else { return }
-                webView.evaluateJavaScript(Self.scrollListenerJS)
+        /// True once the current page load's post-render work ran — renderComplete can
+        /// arrive from page JS AND the fallback timer; only the first wins (MV-002).
+        private var renderCompleteFired = false
 
-                // Restore scroll position after pane toggle (view recreation).
-                // The syncController persists via @State in ContentView, so lastPreviewLine
-                // survives the destroy/recreate cycle.
-                if let line = self.syncController?.lastPreviewLine, line > 0 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                        self?.scrollToSourceLine(line)
-                    }
-                }
+        /// Deterministic post-render hook (MV-002, replaces the 0.5s+0.2s asyncAfter
+        /// timing hacks): installs the scroll listener and restores the persisted
+        /// position exactly once per page load. The syncController persists via @State
+        /// in ContentView, so lastPreviewLine survives the destroy/recreate cycle.
+        private func handleRenderComplete() {
+            guard !renderCompleteFired, let webView = webView else { return }
+            renderCompleteFired = true
+            webView.evaluateJavaScript(Self.scrollListenerJS)
+            if let line = syncController?.lastPreviewLine, line > 0 {
+                scrollToSourceLine(line)
             }
         }
 
