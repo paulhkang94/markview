@@ -47,7 +47,7 @@ REQUIRED_SECRETS=(
   NOTARIZE_API_KEY
   DEVELOPER_ID_CERT_BASE64
   DEVELOPER_ID_CERT_PASSWORD
-  HOMEBREW_TAP_TOKEN
+  APP_PRIVATE_KEY
 )
 
 for secret in "${REQUIRED_SECRETS[@]}"; do
@@ -57,6 +57,14 @@ for secret in "${REQUIRED_SECRETS[@]}"; do
     fail "Missing secret: $secret (set via: gh secret set $secret)"
   fi
 done
+
+# Tap update auth = GitHub App (paulhkang94-homebrew-bot), not HOMEBREW_TAP_TOKEN
+# (token deleted when tap-update.yml moved to create-github-app-token, 61776ee).
+if gh variable list 2>/dev/null | awk '{print $1}' | grep -q "^APP_ID$"; then
+  pass "Variable: APP_ID (tap-update GitHub App)"
+else
+  fail "Missing repo variable: APP_ID (set via: gh variable set APP_ID)"
+fi
 
 # ── 4. release.yml has contents:write permission ─────────────────────────────
 echo ""
