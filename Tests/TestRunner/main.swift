@@ -4101,6 +4101,72 @@ runner.test("MV-001: legacy single-file restore stays as a fallback when no sess
 }
 
 // =============================================================================
+// MARK: - MV-007 untitled tab (Command-T opens a true untitled tab)
+//
+// MV-007 makes TabState.url Optional so ⌘T can open a scratch tab with no file.
+// The single highest-risk correctness point is that persistSession() now filters
+// untitled tabs out of the persisted openPaths (compactMap), so the stored
+// selectedIndex must be recomputed against that FILTERED array — TabSelection
+// below owns that pure logic. Its behavioral coverage (Tier 2) is the required
+// pair for the app-target source-inspection tests further down. Untitled tabs are
+// intentionally EXCLUDED from persistence — a scratch tab is lost on quit.
+// =============================================================================
+
+print("\n--- TabSelection behavioral tests (MV-007, highest-risk: filtered-index recompute) ---")
+
+runner.test("TabSelection: no untitled tabs — index is unchanged") {
+    // All tabs have URLs, so the filtered array == the raw array; index passes through.
+    try expect(TabSelection.filteredIndex(hasURL: [true, true, true], selectedRawIndex: 0) == 0,
+        "with no untitled tabs the raw index 0 must map to filtered 0")
+    try expect(TabSelection.filteredIndex(hasURL: [true, true, true], selectedRawIndex: 2) == 2,
+        "with no untitled tabs the raw index 2 must map to filtered 2")
+}
+
+runner.test("TabSelection: selected real tab sits AFTER an excluded untitled tab — index shifts down") {
+    // [untitled, real, real]; selecting raw index 2 must map to filtered index 1,
+    // because one untitled tab before it is dropped from openPaths. A naive
+    // compactMap-only change (keeping the raw index) would reselect the wrong tab.
+    try expect(TabSelection.filteredIndex(hasURL: [false, true, true], selectedRawIndex: 2) == 1,
+        "raw index 2 with one untitled tab before it must map to filtered index 1, got \(String(describing: TabSelection.filteredIndex(hasURL: [false, true, true], selectedRawIndex: 2)))")
+    // Two untitled tabs before the selected real tab → shift down by two.
+    try expect(TabSelection.filteredIndex(hasURL: [false, false, true], selectedRawIndex: 2) == 0,
+        "raw index 2 with two untitled tabs before it must map to filtered index 0")
+}
+
+runner.test("TabSelection: selected real tab sits BEFORE an excluded untitled tab — index unchanged") {
+    // [real, untitled, real]; selecting raw index 0 stays filtered index 0 —
+    // the untitled tab is after it, so nothing before it is dropped.
+    try expect(TabSelection.filteredIndex(hasURL: [true, false, true], selectedRawIndex: 0) == 0,
+        "raw index 0 with an untitled tab only after it must stay filtered index 0")
+    // [real, untitled, real]; selecting raw index 2 → one untitled before it → filtered 1.
+    try expect(TabSelection.filteredIndex(hasURL: [true, false, true], selectedRawIndex: 2) == 1,
+        "raw index 2 with one untitled tab before it must map to filtered index 1")
+}
+
+runner.test("TabSelection: the selected tab itself is untitled — nil (nothing to reselect)") {
+    try expect(TabSelection.filteredIndex(hasURL: [true, false, true], selectedRawIndex: 1) == nil,
+        "when the SELECTED tab is untitled the filtered index must be nil — it is not in the persisted list")
+    try expect(TabSelection.filteredIndex(hasURL: [false], selectedRawIndex: 0) == nil,
+        "a lone selected untitled tab must map to nil")
+}
+
+runner.test("TabSelection: all tabs untitled — nil regardless of selection") {
+    try expect(TabSelection.filteredIndex(hasURL: [false, false], selectedRawIndex: 0) == nil,
+        "all-untitled with selection at index 0 must be nil")
+    try expect(TabSelection.filteredIndex(hasURL: [false, false], selectedRawIndex: 1) == nil,
+        "all-untitled with selection at index 1 must be nil")
+}
+
+runner.test("TabSelection: nil / out-of-range selection — nil (defensive)") {
+    try expect(TabSelection.filteredIndex(hasURL: [true, true], selectedRawIndex: nil) == nil,
+        "nil selection must map to nil")
+    try expect(TabSelection.filteredIndex(hasURL: [true, true], selectedRawIndex: 5) == nil,
+        "out-of-range selection must map to nil, not crash")
+    try expect(TabSelection.filteredIndex(hasURL: [], selectedRawIndex: 0) == nil,
+        "empty tab list must map to nil")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
