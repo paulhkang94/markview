@@ -101,9 +101,11 @@ class TestVersionSync(unittest.TestCase):
         existing_tags: set[str],
         commits: int = 0,
     ):
+        version_tags = [t for t in existing_tags if mod.VERSION_TAG_RE.match(t)]
         with (
             patch.object(mod, "latest_version_tag", new=lambda pd: latest_tag),
             patch.object(mod, "tag_exists", new=lambda pd, tag: tag in existing_tags),
+            patch.object(mod, "all_version_tags", new=lambda pd: version_tags),
             patch.object(mod, "commits_since", new=lambda pd, tag: commits),
             patch.object(mod, "INSTALLED_PLIST", tmp / "not-installed.plist"),
             patch("sys.stdout", new_callable=StringIO) as out,
@@ -198,6 +200,160 @@ class TestVersionSync(unittest.TestCase):
                 rc = mod.run(tmp)
         self.assertEqual(rc, 1)
         self.assertIn("✗ Cannot read version from Info.plist", out.getvalue())
+
+    def test_stale_binary_version_fails(self):
+        # THE 1.6.0 incident: app released v1.6.0 but postinstall still pins
+        # v1.4.0. Old check passed (tag v1.4.0 exists); new check must fail.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.6.0", binary_ver="1.4.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.4.0", "v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "✗ npm/scripts/postinstall.js BINARY_VERSION: 1.4.0 is STALE — "
+            "newer release tag v1.6.0 exists",
+            output,
+        )
+        self.assertNotIn("✓ All versions in sync", output)
+
+    def test_binary_version_staleness_sorts_numerically(self):
+        # v1.10.0 must beat v1.9.0 — lexicographic sort would invert this.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.10.0", binary_ver="1.9.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.10.0", existing_tags={"v1.9.0", "v1.10.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("BINARY_VERSION: 1.9.0 is STALE", out.getvalue())
+
+    def test_binary_version_mid_release_bump_warns(self):
+        # Bump-all commit before tagging: pin == canonical, tag not yet pushed.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "⚠ npm/scripts/postinstall.js BINARY_VERSION: 1.7.0 has no tag yet",
+            output,
+        )
+        self.assertIn("✓ All versions in sync", output)
+
+    def test_stale_npm_package_version_fails(self):
+        # npm/package.json left at an older released version than canonical.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(
+                tmp, canonical="1.6.0", npm_ver="1.4.0", binary_ver="1.6.0"
+            )
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.4.0", "v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ npm/package.json: 1.4.0 is stale", out.getvalue())
+
+    def test_npm_js_only_version_ahead_passes(self):
+        # JS-only npm patch: npm ahead of app, no app tag for it — allowed,
+        # and BINARY_VERSION stays on the latest released tag.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(
+                tmp, canonical="1.6.0", npm_ver="1.6.2", binary_ver="1.6.0"
+            )
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "✓ npm/package.json: 1.6.2 (JS-only version ahead of app 1.6.0)", output
+        )
+        self.assertIn("✓ All versions in sync", output)
+
+    def test_expect_tag_all_match_passes(self):
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.7.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.7.0", existing_tags={"v1.7.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.7.0")
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("Strict release mode: every version must equal 1.7.0", output)
+        self.assertIn("✓ All versions in sync", output)
+
+    def test_expect_tag_stale_binary_version_fails(self):
+        # Release gate replay of 1.6.0: tag v1.6.0 pushed, pin still 1.4.0.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.6.0", binary_ver="1.4.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.4.0", "v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.6.0")
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "✗ npm/scripts/postinstall.js BINARY_VERSION: 1.4.0 (expected 1.6.0",
+            output,
+        )
+
+    def test_expect_tag_canonical_mismatch_fails(self):
+        # Tag pushed from a commit whose files were never bumped.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.6.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.7.0")
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ Info.plist is 1.6.0 but the release expects 1.7.0", output)
+
+    def test_expect_tag_npm_mismatch_fails(self):
+        # In strict mode the JS-only allowance is suspended: npm must equal
+        # the release version exactly.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.7.0", npm_ver="1.7.1")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.7.0", existing_tags={"v1.7.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.7.0")
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ npm/package.json: 1.7.1 (expected 1.7.0)", out.getvalue())
+
+    def test_version_helpers_numeric_order(self):
+        mod = _load("check_version_sync")
+        self.assertEqual(
+            mod.highest_version_tag(["v1.9.0", "v1.10.0", "v1.2.11"]), "v1.10.0"
+        )
+        self.assertEqual(mod.highest_version_tag([]), "")
+        self.assertEqual(mod._version_key("v1.10.2"), (1, 10, 2))
+        self.assertEqual(mod._version_key("1.10.2"), (1, 10, 2))
 
 
 # ── release_preflight ─────────────────────────────────────────────────────────
