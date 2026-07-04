@@ -250,6 +250,59 @@ class TestThinWrappers(unittest.TestCase):
         self.assertIn('"$@"', wrapper)
 
 
+class TestMcpInfo(unittest.TestCase):
+    """Regression: registry /versions returns {"servers": [...]} with status
+    under _meta — the old parser read data["versions"] and always reported 0
+    active versions (found S124: live report said 0 despite 4 active)."""
+
+    META_KEY = "io.modelcontextprotocol.registry/official"
+
+    def _entry(self, version, status="active", is_latest=False, published=""):
+        return {
+            "server": {"version": version},
+            "_meta": {
+                self.META_KEY: {
+                    "status": status,
+                    "isLatest": is_latest,
+                    "publishedAt": published,
+                }
+            },
+        }
+
+    def setUp(self):
+        self.m = _load("metrics")
+
+    def test_parses_real_servers_shape(self):
+        payload = {
+            "servers": [
+                self._entry("1.2.11", is_latest=True, published="2026-04-03T05:36:21Z"),
+                self._entry("1.2.9", published="2026-04-03T05:08:24Z"),
+                self._entry(
+                    "1.1.3", status="deleted", published="2026-02-19T10:52:32Z"
+                ),
+            ],
+            "metadata": {},
+        }
+        with patch.object(self.m, "fetch_json", return_value=payload):
+            info = self.m.get_mcp_info()
+        self.assertEqual(info["active_versions"], 2)
+        self.assertEqual(info["latest_version"], "1.2.11")
+        self.assertEqual(info["latest_published"], "2026-04-03T05:36:21Z")
+
+    def test_empty_response(self):
+        with patch.object(self.m, "fetch_json", return_value=None):
+            info = self.m.get_mcp_info()
+        self.assertEqual(info["active_versions"], 0)
+        self.assertEqual(info["latest_version"], "unknown")
+        self.assertEqual(info["latest_published"], "unknown")
+
+    def test_old_versions_shape_reports_zero(self):
+        # The payload shape the old parser expected; must not crash, reports 0.
+        with patch.object(self.m, "fetch_json", return_value={"versions": [1, 2]}):
+            info = self.m.get_mcp_info()
+        self.assertEqual(info["active_versions"], 0)
+
+
 if __name__ == "__main__":
     loader = unittest.TestLoader()
     suite = loader.loadTestsFromModule(__import__("__main__"))

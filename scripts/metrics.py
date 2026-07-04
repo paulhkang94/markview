@@ -149,11 +149,31 @@ def get_mcp_info() -> dict:
         f"https://registry.modelcontextprotocol.io/v0.1/servers/{MCP_SERVER_ID}/versions"
     )
     if not data:
-        return {"active_versions": 0, "latest_published": "unknown"}
-    active = [v for v in data.get("versions", []) if v.get("status") == "active"]
-    dates = [v.get("published_date") for v in active if v.get("published_date")]
+        return {
+            "active_versions": 0,
+            "latest_version": "unknown",
+            "latest_published": "unknown",
+        }
+    # Response shape: {"servers": [{"server": {"version": ...},
+    #   "_meta": {"io.modelcontextprotocol.registry/official":
+    #     {"status": "active", "publishedAt": ..., "isLatest": ...}}}]}
+    meta_key = "io.modelcontextprotocol.registry/official"
+    entries = []
+    for item in data.get("servers", []):
+        meta = item.get("_meta", {}).get(meta_key, {})
+        if meta.get("status") == "active":
+            entries.append(
+                {
+                    "version": item.get("server", {}).get("version", "?"),
+                    "published": meta.get("publishedAt", ""),
+                    "is_latest": bool(meta.get("isLatest")),
+                }
+            )
+    latest = next((e for e in entries if e["is_latest"]), None)
+    dates = [e["published"] for e in entries if e["published"]]
     return {
-        "active_versions": len(active),
+        "active_versions": len(entries),
+        "latest_version": latest["version"] if latest else "unknown",
         "latest_published": max(dates) if dates else "unknown",
     }
 
@@ -259,6 +279,7 @@ def print_report(
 
     print("MCP Registry:")
     print(f"  Active versions: {mcp['active_versions']}")
+    print(f"  Latest version: {mcp.get('latest_version', 'unknown')}")
     print(f"  Latest published: {mcp['latest_published']}")
     print()
 
