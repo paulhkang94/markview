@@ -4166,6 +4166,75 @@ runner.test("TabSelection: nil / out-of-range selection — nil (defensive)") {
         "empty tab list must map to nil")
 }
 
+print("\n--- MV-007 TabManager / PreviewViewModel source-inspection tests ---")
+
+runner.test("MV-007: openFile dedup is optional-safe and TabManager has no .url! force-unwrap") {
+    try expect(tabManagerSource.contains("$0.url?.resolvingSymlinksInPath() == resolved"),
+        "openFile dedup must optional-chain $0.url? so nil-url (untitled) tabs are skipped, never force-unwrapped")
+    try expect(!tabManagerSource.contains(".url!"),
+        "making TabState.url Optional must introduce no .url! force-unwrap anywhere in TabManager — the compiler forces every read site, and each must be optional-chained, not force-unwrapped")
+}
+
+runner.test("MV-007: persistSession compactMaps $0.url?.path (untitled excluded) and recomputes the filtered index") {
+    try expect(tabManagerSource.contains("tabs.compactMap { $0.url?.path }"),
+        "persistSession must use compactMap { $0.url?.path } — untitled tabs are intentionally dropped from the persisted session, and the old map { $0.url.path } would crash once url is Optional (MV-007 regression guard protecting MV-001's persistence path)")
+    try expect(!tabManagerSource.contains("tabs.map { $0.url.path }"),
+        "the pre-MV-007 tabs.map { $0.url.path } must be gone — it force-unwraps a now-Optional url and would crash on an untitled tab")
+    try expect(tabManagerSource.contains("TabSelection.filteredIndex("),
+        "persistSession must recompute the selected index against the FILTERED (URL-only) array via TabSelection.filteredIndex — persisting the raw tabs index would reselect the wrong tab whenever an untitled tab precedes the selection (highest-risk MV-007 point)")
+}
+
+runner.test("MV-007: newUntitledTab appends a nil-url tab, selects it, forces the editor on, and bypasses openFile") {
+    guard let start = tabManagerSource.range(of: "func newUntitledTab") else {
+        try expect(false, "TabManager must define newUntitledTab() for ⌘T"); return
+    }
+    let tail = tabManagerSource[start.lowerBound...]
+    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(body.contains("TabState(untitledName:"),
+        "newUntitledTab must create a nil-url TabState via the untitledName initializer (not the file initializer)")
+    try expect(body.contains("tabs.append(tab)") && body.contains("selectedTabID = tab.id"),
+        "newUntitledTab must append the new scratch tab and select it")
+    try expect(body.contains("tab.showEditor = true"),
+        "newUntitledTab must force the editor pane on — a preview with no file loaded is useless")
+    try expect(!body.contains("openFile("),
+        "newUntitledTab must bypass openFile(_:) — dedup is meaningless for a tab with no URL")
+}
+
+runner.test("MV-007: promoteUntitledTab writes the buffer then routes through the single loadFile transition") {
+    guard let start = tabManagerSource.range(of: "func promoteUntitledTab") else {
+        try expect(false, "TabManager must define promoteUntitledTab(_:to:)"); return
+    }
+    let tail = tabManagerSource[start.lowerBound...]
+    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(body.contains("editorContent.write("),
+        "promoteUntitledTab must write the current editor buffer to the chosen URL")
+    try expect(body.contains("tab.url = resolved"),
+        "promoteUntitledTab must set the (now-real) url so the tab bar re-derives displayName off it")
+    try expect(body.contains("loadFile(at:"),
+        "promoteUntitledTab must reuse loadFile(at:) as the SINGLE untitled→file transition so recents, file watch, and auto-save all start correctly for free")
+    try expect(body.contains("persistSession()"),
+        "promoteUntitledTab must persist explicitly — tabs/selectedTabID are unchanged so didSet will not fire, but the tab now has a URL and belongs in the restored session")
+}
+
+runner.test("MV-007: startUntitled starts NO file-backed side effects (recents/watcher/auto-save) and skips loadFile") {
+    let vmSource = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    guard let start = vmSource.range(of: "func startUntitled") else {
+        try expect(false, "PreviewViewModel must define startUntitled()"); return
+    }
+    let tail = vmSource[start.lowerBound...]
+    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(body.contains("isLoaded = true"),
+        "startUntitled must mark the buffer loaded so the editor/preview show instead of the home screen")
+    try expect(!body.contains("recordOpen"),
+        "startUntitled must NOT record a recents entry — nothing exists on disk yet")
+    try expect(!body.contains("watchFile") && !body.contains("FileWatcher"),
+        "startUntitled must NOT start a FileWatcher — there is no file on disk to watch")
+    try expect(!body.contains("startAutoSaveTimer"),
+        "startUntitled must NOT start the auto-save timer — there is nothing on disk to save to; the first ⌘S promote starts it via loadFile")
+    try expect(!body.contains("loadFile"),
+        "startUntitled must NOT call loadFile — that path assumes a real file; loadFile is reserved for the promote transition")
+}
+
 // =============================================================================
 
 print("")

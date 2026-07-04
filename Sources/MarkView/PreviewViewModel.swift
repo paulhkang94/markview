@@ -53,6 +53,24 @@ final class PreviewViewModel: ObservableObject {
         startAutoSaveTimer()
     }
 
+    /// Start an untitled scratch buffer (MV-007): loaded and editable, but with no
+    /// file on disk. Deliberately skips everything loadFile does that assumes a real
+    /// path — no RecentFilesManager.recordOpen, no watchFile/FileWatcher, no
+    /// startAutoSaveTimer — because there is nothing on disk yet to record, watch,
+    /// or save to. The first successful ⌘S promotes the tab via
+    /// TabManager.promoteUntitledTab → loadFile, which starts all of those exactly
+    /// once. Loads the template + renders an empty document so typing renders live.
+    func startUntitled() {
+        loadTemplate()
+        currentFilePath = nil
+        fileName = "Untitled"
+        editorContent = ""
+        originalContent = ""
+        isDirty = false
+        renderImmediate("")
+        isLoaded = true
+    }
+
     func contentDidChange(_ newText: String) {
         editorContent = newText
         isDirty = newText != originalContent
