@@ -113,6 +113,14 @@
       "ci_pattern": "check_release_destinations\\.py",
       "gate_type": "script_run",
       "tier": 1
+    },
+    {
+      "id": "release-build-gated-on-version-sync",
+      "description": "release.yml must verify all six version-carrying files equal the pushed tag (check_version_sync.py --expect-tag) BEFORE building — tagging a commit with stale or unbumped files otherwise ships a mislabeled 60-90 min build (1.6.0 built with BINARY_VERSION still at 1.4.0).",
+      "ci_files": [".github/workflows/release.yml"],
+      "ci_pattern": "check_version_sync\\.py --expect-tag",
+      "gate_type": "script_run",
+      "tier": 1
     }
   ]
 }
