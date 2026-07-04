@@ -8,7 +8,13 @@ import SwiftUI
 @MainActor
 final class TabState: ObservableObject, Identifiable {
     let id = UUID()
-    let url: URL
+
+    /// The file this tab shows, or nil for an untitled scratch tab (MV-007) with
+    /// no file on disk yet. Transitions from nil to a real value exactly once, on
+    /// the first successful save (TabManager.promoteUntitledTab). @Published so the
+    /// tab bar re-derives displayName the moment an untitled tab is promoted.
+    @Published var url: URL?
+
     let viewModel: PreviewViewModel
 
     /// Last preview scroll position as a 1-based markdown source line (0 = top).
@@ -22,7 +28,14 @@ final class TabState: ObservableObject, Identifiable {
     /// copies it into local @State at creation and writes back on toggle.
     var showEditor: Bool = false
 
+    /// Fixed display name for an untitled (nil-url) tab, chosen once at CREATION in
+    /// TabManager.newUntitledTab() so the number ("Untitled", "Untitled 2", …) does
+    /// not shift when other tabs close (MV-007). Nil for a real-file tab, whose
+    /// displayName derives from `url`.
+    let untitledName: String?
+
     var displayName: String {
+        guard let url else { return untitledName ?? "Untitled" }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let path = url.path
         if path.hasPrefix(home) {
@@ -33,8 +46,20 @@ final class TabState: ObservableObject, Identifiable {
 
     init(url: URL) {
         self.url = url
+        self.untitledName = nil
         self.viewModel = PreviewViewModel()
         self.viewModel.loadFile(at: url.path)
+    }
+
+    /// Untitled scratch tab (MV-007): no file on disk. Skips loadFile — there is
+    /// no path to load — and instead puts the viewModel in an empty-but-loaded
+    /// state. No recents entry, file watcher, or auto-save timer starts until the
+    /// first save promotes the tab to a real file.
+    init(untitledName: String) {
+        self.url = nil
+        self.untitledName = untitledName
+        self.viewModel = PreviewViewModel()
+        self.viewModel.startUntitled()
     }
 }
 
@@ -64,7 +89,9 @@ final class TabManager: ObservableObject {
     /// Open a file. If already open, switch to it; otherwise create a new tab.
     func openFile(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
-        if let existing = tabs.first(where: { $0.url.resolvingSymlinksInPath() == resolved }) {
+        // Optional-chained so untitled (nil-url) tabs are silently skipped rather
+        // than force-unwrapped — dedup is meaningless for a tab with no file (MV-007).
+        if let existing = tabs.first(where: { $0.url?.resolvingSymlinksInPath() == resolved }) {
             selectedTabID = existing.id
             return
         }
@@ -73,13 +100,52 @@ final class TabManager: ObservableObject {
         selectedTabID = tab.id
     }
 
+    /// Open a fresh untitled scratch tab (⌘T, MV-007). It has no file on disk and
+    /// is excluded from session persistence. Deliberately bypasses openFile(_:) —
+    /// dedup is meaningless for a tab with no URL — and forces the editor pane on,
+    /// since a preview with no file loaded is useless. The "Untitled" number is
+    /// fixed here at creation so it does not shift when other tabs close.
+    func newUntitledTab() {
+        let existingUntitled = tabs.filter { $0.url == nil }.count
+        let name = existingUntitled == 0 ? "Untitled" : "Untitled \(existingUntitled + 1)"
+        let tab = TabState(untitledName: name)
+        tab.showEditor = true
+        tabs.append(tab)
+        selectedTabID = tab.id
+    }
+
+    /// Promote an untitled scratch tab into a real file tab after the user picks a
+    /// save location (⌘S on an untitled tab, MV-007). Writes the current editor
+    /// buffer to `url`, then routes through the tab's existing loadFile(at:) — the
+    /// SINGLE untitled→file transition path — so recents, the file watcher, and the
+    /// auto-save timer all start correctly with zero duplicated side effects to keep
+    /// in sync. Setting `url` (which is @Published) refreshes the tab bar title.
+    func promoteUntitledTab(_ tab: TabState, to url: URL) throws {
+        let resolved = url.resolvingSymlinksInPath()
+        try tab.viewModel.editorContent.write(to: resolved, atomically: true, encoding: .utf8)
+        tab.url = resolved
+        tab.viewModel.loadFile(at: resolved.path)
+        // The tab now has a URL, so it belongs in the persisted session. `tabs`/
+        // `selectedTabID` didn't change, so didSet won't fire — persist explicitly.
+        persistSession()
+    }
+
     /// Re-derive the ordered path list + selected index from live state and
     /// persist it. The single write path for MV-001 — called from `didSet` on
     /// both `tabs` and `selectedTabID`, never invoked ad hoc from call sites,
     /// so no mutation site can forget to persist.
     private func persistSession() {
-        let paths = tabs.map { $0.url.path }
-        let selectedIndex = selectedTabID.flatMap { id in tabs.firstIndex(where: { $0.id == id }) }
+        // compactMap (not map): untitled tabs have a nil url and are intentionally
+        // EXCLUDED from persistence — a scratch tab with no file has nothing to
+        // reopen at relaunch (MV-007). map { $0.url.path } would also crash once
+        // url is Optional, so this is a hard regression guard, not a nice-to-have.
+        let paths = tabs.compactMap { $0.url?.path }
+        // The filtered `paths` array has a DIFFERENT index space than `tabs` once
+        // any untitled tab is excluded, so recompute the selected index against the
+        // filtered array (TabSelection is behaviorally tested in MarkViewCore).
+        let hasURL = tabs.map { $0.url != nil }
+        let rawSelectedIndex = selectedTabID.flatMap { id in tabs.firstIndex(where: { $0.id == id }) }
+        let selectedIndex = TabSelection.filteredIndex(hasURL: hasURL, selectedRawIndex: rawSelectedIndex)
         TabSessionStore.save(openPaths: paths, selectedIndex: selectedIndex)
     }
 
