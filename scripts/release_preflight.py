@@ -11,7 +11,13 @@ Pass: prints "Pre-flight passed. Safe to tag.", writes the sentinel
 Fail: exits 1 with specific failure messages.
 
 Catches the 4-tag-push class of CI failures (missing secrets, wrong
-permissions, stale SPM cache) before any CI runner time is spent.
+permissions, stale SPM cache) before any CI runner time is spent, plus the
+1.6.0 class of version drift BEFORE the tag exists: strict version sync
+(check_version_sync.py --expect-tag — BINARY_VERSION included, FAIL not
+WARN), clean working tree, branch == main, tag non-existence (local and
+remote), a CHANGELOG entry for the release, and no npm version collision
+(a version already on the registry makes npm-publish.yml skip, leaving npm
+users pinned to the previous binary).
 
 Contract: the pre-push hook blocks `git push origin vX.Y.Z` unless the
 sentinel .release-preflight-passed-X.Y.Z exists at the repo root, and
@@ -125,6 +131,71 @@ def run_preflight() -> int:
     print("=== MarkView Release Pre-flight Check ===")
     print()
 
+    # ── 0. Release state: version, tree, branch, tag, changelog, npm ─────────
+    version = _plist_version(info_plist)
+    if version:
+        ok(f"Release version (Info.plist): {version}")
+    else:
+        fail("Cannot read CFBundleShortVersionString from Info.plist")
+
+    # Clean working tree — an uncommitted fix would not be in the tag commit
+    # (the 1.6.0 pin fix landed on main AFTER the tag was cut).
+    rc, status_out, _ = _run(["git", "status", "--porcelain"], cwd=PROJECT_DIR)
+    if rc == 0 and not status_out.strip():
+        ok("Working tree clean")
+    else:
+        fail("Working tree dirty — commit or stash before tagging")
+
+    rc, branch_out, _ = _run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=PROJECT_DIR
+    )
+    branch = branch_out.strip()
+    if rc == 0 and branch == "main":
+        ok("On branch main")
+    else:
+        fail(f"On branch '{branch}' — releases are tagged from main only")
+
+    if version:
+        _, local_tag, _ = _run(["git", "tag", "--list", f"v{version}"], cwd=PROJECT_DIR)
+        _, remote_tag, _ = _run(
+            ["git", "ls-remote", "--tags", "origin", f"refs/tags/v{version}"],
+            cwd=PROJECT_DIR,
+        )
+        if local_tag.strip() or remote_tag.strip():
+            fail(f"Tag v{version} already exists — bump the version first")
+        else:
+            ok(f"Tag v{version} does not exist yet (local + remote)")
+
+        try:
+            changelog_text = (PROJECT_DIR / "CHANGELOG.md").read_text()
+        except OSError:
+            changelog_text = ""
+        if f"## v{version}" in changelog_text:
+            ok(f"CHANGELOG.md documents v{version}")
+        else:
+            fail(
+                f"CHANGELOG.md has no '## v{version}' entry — "
+                "document the release before tagging"
+            )
+
+        # npm version collision: npm-publish.yml skips versions that are
+        # already on the registry, so a collision would leave npm users
+        # pinned to the previous binary forever.
+        if _which("npm"):
+            rc, npm_out, _ = _run(
+                ["npm", "view", f"mcp-server-markview@{version}", "version"],
+                cwd=PROJECT_DIR,
+            )
+            if rc == 0 and npm_out.strip() == version:
+                fail(
+                    f"mcp-server-markview@{version} is already published — "
+                    "npm-publish.yml would skip it; bump to an unpublished version"
+                )
+            else:
+                ok(f"npm version {version} is unpublished")
+        else:
+            warn("npm CLI not found — cannot verify npm version collision")
+
     # ── 1. GitHub CLI available ───────────────────────────────────────────────
     if _which("gh"):
         _, version_out, _ = _run(["gh", "--version"])
@@ -206,16 +277,24 @@ def run_preflight() -> int:
     else:
         fail("Local tests failing — fix before tagging")
 
-    # ── 8. Version consistency ────────────────────────────────────────────────
+    # ── 8. Version consistency (STRICT — the 1.6.0 gate) ─────────────────────
+    # WARN-level sync is what let 1.6.0 tag with a stale BINARY_VERSION.
+    # Strict mode: every version-carrying file (both Info.plists, MCP
+    # main.swift, npm/package.json, npm/server.json, BINARY_VERSION) must
+    # equal the version about to be tagged.
     print()
     version_sync = PROJECT_DIR / "scripts/check_version_sync.py"
     if version_sync.is_file():
-        rc, _, _ = _run([sys.executable, str(version_sync)], cwd=PROJECT_DIR)
+        rc, _, _ = _run(
+            [sys.executable, str(version_sync), "--expect-tag", f"v{version}"],
+            cwd=PROJECT_DIR,
+        )
         if rc == 0:
-            ok("Version numbers in sync")
+            ok(f"Version numbers in sync (strict — all files equal {version})")
         else:
-            warn(
-                "Version sync check failed — verify version numbers match across files"
+            fail(
+                "Version sync FAILED — see: python3 scripts/check_version_sync.py "
+                f"--expect-tag v{version} (BINARY_VERSION must match the release)"
             )
 
     # ── 9. Distribution path test ─────────────────────────────────────────────
@@ -240,7 +319,7 @@ def run_preflight() -> int:
     print("==================================================")
     if failures == 0:
         # Write sentinel consumed by the pre-push hook — proves this check ran.
-        version = _plist_version(info_plist) or "unknown"
+        version = version or "unknown"
         sentinel = PROJECT_DIR / f".release-preflight-passed-{version}"
         sentinel.touch()
         print(f"{green}Pre-flight passed. Safe to tag.{reset}")

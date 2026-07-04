@@ -360,7 +360,9 @@ class TestVersionSync(unittest.TestCase):
 
 
 class TestReleasePreflight(unittest.TestCase):
-    def _make_project(self, tmp: Path, version: str = "9.9.9") -> None:
+    def _make_project(
+        self, tmp: Path, version: str = "9.9.9", changelog: bool = True
+    ) -> None:
         _write_plist(tmp / "Sources/MarkView/Info.plist", version, "1")
         workflows = tmp / ".github/workflows"
         workflows.mkdir(parents=True, exist_ok=True)
@@ -376,6 +378,10 @@ class TestReleasePreflight(unittest.TestCase):
         )
         (tmp / "scripts").mkdir(exist_ok=True)
         (tmp / "scripts/check_version_sync.py").write_text("# stub\n")
+        if changelog:
+            (tmp / "CHANGELOG.md").write_text(
+                f"# Changelog\n\n## v{version}\n\n- Release notes stub\n"
+            )
 
     def _fake_run(
         self,
@@ -385,6 +391,11 @@ class TestReleasePreflight(unittest.TestCase):
         swift_ok: bool = True,
         dist_ok: bool = True,
         sync_rc: int = 0,
+        dirty: bool = False,
+        branch: str = "main",
+        local_tag: str = "",
+        remote_tag: str = "",
+        npm_view_out: str = "",
     ):
         def fake_run(cmd, cwd=None):
             prog = Path(str(cmd[0])).name
@@ -401,6 +412,22 @@ class TestReleasePreflight(unittest.TestCase):
                     body = "".join(f"{v}\tvalue\t2026-01-01\n" for v in variables)
                     return 0, body, ""
                 return 1, "", "unexpected gh call"
+            if prog == "git":
+                sub = cmd[1]
+                if sub == "status":
+                    return 0, ("?? untracked.txt\n" if dirty else ""), ""
+                if sub == "rev-parse":
+                    return 0, f"{branch}\n", ""
+                if sub == "tag":
+                    return 0, (f"{local_tag}\n" if local_tag else ""), ""
+                if sub == "ls-remote":
+                    body = f"deadbeef\trefs/tags/{remote_tag}\n" if remote_tag else ""
+                    return 0, body, ""
+                return 1, "", "unexpected git call"
+            if prog == "npm":
+                if npm_view_out:
+                    return 0, f"{npm_view_out}\n", ""
+                return 1, "", "npm ERR! 404"
             if prog == "swift":
                 if swift_ok:
                     return 0, "Total: 300 passed, 0 failed\n", ""
@@ -481,19 +508,97 @@ class TestReleasePreflight(unittest.TestCase):
             output,
         )
 
-    def test_failing_version_sync_is_warning_only(self):
+    def test_failing_version_sync_blocks(self):
+        # Inverts the old warning-only contract: WARN-level sync is what let
+        # 1.6.0 tag with a stale BINARY_VERSION. Sync failure now blocks.
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             self._make_project(tmp)
             rc, output = self._run_preflight(
                 tmp, self._fake_run(secrets=ALL_SECRETS, sync_rc=1)
             )
+            self.assertFalse((tmp / ".release-preflight-passed-9.9.9").exists())
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] Version sync FAILED", output)
+        self.assertIn("--expect-tag v9.9.9", output)
+
+    def test_version_sync_called_in_strict_mode(self):
+        calls: list[list[str]] = []
+        inner = self._fake_run(secrets=ALL_SECRETS)
+
+        def recording(cmd, cwd=None):
+            calls.append([str(part) for part in cmd])
+            return inner(cmd, cwd)
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, version="9.9.9")
+            rc, _ = self._run_preflight(tmp, recording)
         self.assertEqual(rc, 0)
+        sync_calls = [c for c in calls if any("check_version_sync.py" in p for p in c)]
+        self.assertEqual(len(sync_calls), 1)
+        self.assertIn("--expect-tag", sync_calls[0])
+        self.assertIn("v9.9.9", sync_calls[0])
+
+    def test_dirty_tree_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp)
+            rc, output = self._run_preflight(
+                tmp, self._fake_run(secrets=ALL_SECRETS, dirty=True)
+            )
+        self.assertEqual(rc, 1)
         self.assertIn(
-            "[WARN] Version sync check failed — "
-            "verify version numbers match across files",
+            "[FAIL] Working tree dirty — commit or stash before tagging", output
+        )
+
+    def test_wrong_branch_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp)
+            rc, output = self._run_preflight(
+                tmp, self._fake_run(secrets=ALL_SECRETS, branch="release-hardening")
+            )
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "[FAIL] On branch 'release-hardening' — releases are tagged from main only",
             output,
         )
+
+    def test_existing_tag_fails(self):
+        for kwargs in ({"local_tag": "v9.9.9"}, {"remote_tag": "v9.9.9"}):
+            with self.subTest(**kwargs):
+                with tempfile.TemporaryDirectory() as td:
+                    tmp = Path(td)
+                    self._make_project(tmp)
+                    rc, output = self._run_preflight(
+                        tmp, self._fake_run(secrets=ALL_SECRETS, **kwargs)
+                    )
+                self.assertEqual(rc, 1)
+                self.assertIn(
+                    "[FAIL] Tag v9.9.9 already exists — bump the version first",
+                    output,
+                )
+
+    def test_missing_changelog_entry_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, changelog=False)
+            rc, output = self._run_preflight(tmp, self._fake_run(secrets=ALL_SECRETS))
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] CHANGELOG.md has no '## v9.9.9' entry", output)
+
+    def test_npm_version_collision_fails(self):
+        # mcp-server-markview@9.9.9 already on the registry: npm-publish.yml
+        # would skip the publish and npm users keep the previous binary pin.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp)
+            rc, output = self._run_preflight(
+                tmp, self._fake_run(secrets=ALL_SECRETS, npm_view_out="9.9.9")
+            )
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] mcp-server-markview@9.9.9 is already published", output)
 
     def test_stale_spm_cache_is_cleared(self):
         with tempfile.TemporaryDirectory() as td:
