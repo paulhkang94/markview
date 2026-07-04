@@ -3817,18 +3817,48 @@ runner.test("TabCycling: degenerate counts are safe no-ops") {
     try expect(TabCycling.previousIndex(before: 0, count: 0) == 0, "zero tabs: previous returns safe index 0")
 }
 
-runner.test("MV-009: ⌃Tab and ⌃⇧Tab are main-menu key equivalents routed to TabManager") {
+// MV-009 mechanism (NV-2 ANSWERED in-app 2026-07-03): SwiftUI .keyboardShortcut(.tab)
+// menu equivalents NEVER fire with the WKWebView focused — WebKit consumes Tab as
+// element-focus navigation in the window's performKeyEquivalent pass, before menu
+// matching. Working mechanism: pre-dispatch local NSEvent monitor. The routing
+// predicate lives in MarkViewCore.TabCycling.action so it is behaviorally testable.
+
+runner.test("MV-009: ⌃Tab chord routing — behavioral on TabCycling.action") {
+    try expect(TabCycling.action(forKeyCode: 48, control: true, shift: false) == .next,
+        "⌃Tab (keyCode 48 + control) must route to .next")
+    try expect(TabCycling.action(forKeyCode: 48, control: true, shift: true) == .previous,
+        "⌃⇧Tab must route to .previous")
+    try expect(TabCycling.action(forKeyCode: 48, control: false, shift: false) == nil,
+        "plain Tab must pass through — it is focus navigation, not a cycle chord")
+    try expect(TabCycling.action(forKeyCode: 48, control: false, shift: true) == nil,
+        "⇧Tab must pass through (backwards focus navigation)")
+    try expect(TabCycling.action(forKeyCode: 49, control: true, shift: false) == nil,
+        "non-Tab keyCodes must pass through even with ⌃ held (49 = space)")
+}
+
+runner.test("MV-009: TabManager installs the pre-dispatch ⌃Tab local event monitor") {
+    try expect(tabManagerSource.contains("func installTabCycleMonitor"),
+        "TabManager must own the ⌃Tab monitor install (MV-009)")
+    try expect(tabManagerSource.contains("NSEvent.addLocalMonitorForEvents(matching: .keyDown)"),
+        "⌃Tab must be intercepted by a local NSEvent monitor — NV-2 answered: menu key equivalents lose Tab to WKWebView focus navigation")
+    try expect(tabManagerSource.contains("guard tabCycleMonitor == nil else { return }"),
+        "monitor install must be idempotent — onAppear may fire more than once")
+    try expect(tabManagerSource.contains("TabCycling.action("),
+        "the monitor must route through TabCycling.action — the behaviorally tested predicate above")
+    try expect(tabManagerSource.contains("return nil"),
+        "matched chords must be swallowed (return nil) so WKWebView never also runs Tab focus navigation")
+    // Unmatched events must pass through unmodified, and the home screen keeps
+    // native focus navigation.
+    try expect(tabManagerSource.contains("else { return event }"),
+        "non-chord events (and no-tab state) must be returned unmodified")
+}
+
+runner.test("MV-009: monitor installed at startup; failed menu-equivalent path removed") {
     let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
-    try expect(appSource.contains(".keyboardShortcut(.tab, modifiers: .control)"),
-        "⌃Tab must be a main-menu key equivalent — the only mechanism that survives WKWebView/NSTextView first-responder focus (MV-009)")
-    try expect(appSource.contains(".keyboardShortcut(.tab, modifiers: [.control, .shift])"),
-        "⌃⇧Tab must be a main-menu key equivalent (MV-009)")
-    // Both must route through the SAME TabManager funnel as ⌘⇧]/⌘⇧[ — one owner
-    // per mutation; a second selection path would drift from closeTab/openFile rules.
-    try expect(appSource.components(separatedBy: "tabManager.selectNext()").count - 1 >= 2,
-        "⌃Tab must call tabManager.selectNext() — the same funnel as ⌘⇧]")
-    try expect(appSource.components(separatedBy: "tabManager.selectPrevious()").count - 1 >= 2,
-        "⌃⇧Tab must call tabManager.selectPrevious() — the same funnel as ⌘⇧[")
+    try expect(appSource.contains("tabManager.installTabCycleMonitor()"),
+        "MarkViewApp must install the tab-cycle monitor at startup (onAppear)")
+    try expect(!appSource.contains(".keyboardShortcut(.tab"),
+        "the SwiftUI ⌃Tab menu equivalents must not linger — they lose to WKWebView (NV-2) and would be a dead second mechanism for one shortcut")
 }
 
 runner.test("MV-002: assembled HTML posts renderComplete alongside every window.rendered site") {

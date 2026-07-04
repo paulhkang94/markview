@@ -100,6 +100,10 @@ struct MarkViewApp: App {
             ContentView(tabManager: tabManager, errorPresenter: errorPresenter)
                 .frame(minWidth: 600, minHeight: 400)
                 .onAppear {
+                    // ⌃Tab / ⌃⇧Tab tab cycling (MV-009) — pre-dispatch NSEvent monitor,
+                    // NOT a menu key equivalent. See installTabCycleMonitor for NV-2.
+                    tabManager.installTabCycleMonitor()
+
                     let args = CommandLine.arguments
                     if args.count > 1 {
                         // CLI argument takes precedence over auto-reopen
@@ -158,22 +162,13 @@ struct MarkViewApp: App {
                 Button("Select Previous Tab") { tabManager.selectPrevious() }
                     .keyboardShortcut("[", modifiers: [.command, .shift])
 
-                // ⌃Tab / ⌃⇧Tab tab cycling (MV-009). Main-menu key equivalents are the
-                // ONE mechanism that still fires while WKWebView or NSTextView is first
-                // responder — menu matching runs before the key-view loop consumes Tab.
-                // Hidden because "Select Next/Previous Tab" above already provide the
-                // visible menu affordance (⌘⇧]/⌘⇧[); same .hidden() pattern as the ESC
-                // close-window binding below.
-                // NV-2 fallback if SwiftUI fails to render .tab into the NSMenu on some
-                // macOS version: inject AppKit NSMenuItems with keyEquivalent "\t" via
-                // NSApp.mainMenu instead.
-                Button("Cycle to Next Tab") { tabManager.selectNext() }
-                    .keyboardShortcut(.tab, modifiers: .control)
-                    .hidden()
-
-                Button("Cycle to Previous Tab") { tabManager.selectPrevious() }
-                    .keyboardShortcut(.tab, modifiers: [.control, .shift])
-                    .hidden()
+                // ⌃Tab / ⌃⇧Tab tab cycling (MV-009) deliberately has NO menu item here.
+                // NV-2 ANSWERED (in-app, 2026-07-03): SwiftUI menu equivalents bound to
+                // KeyEquivalent.tab lose to WKWebView, which consumes Tab as element-focus
+                // navigation before menu matching runs. The working mechanism for Tab-key
+                // shortcuts specifically is a pre-dispatch local NSEvent monitor — see
+                // TabManager.installTabCycleMonitor(), installed from onAppear above.
+                // Non-Tab shortcuts stay on menu key equivalents.
 
                 Button(Strings.closeFile) {
                     NotificationCenter.default.post(name: .closeFile, object: nil)

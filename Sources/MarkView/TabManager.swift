@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import MarkViewCore
 import SwiftUI
@@ -87,5 +88,43 @@ final class TabManager: ObservableObject {
     func selectPrevious() {
         guard let cur = selectedTabID, let idx = tabs.firstIndex(where: { $0.id == cur }), tabs.count > 1 else { return }
         selectedTabID = tabs[TabCycling.previousIndex(before: idx, count: tabs.count)].id
+    }
+
+    // MARK: - ⌃Tab / ⌃⇧Tab cycling (MV-009)
+
+    /// Local-monitor token. App-lifetime — no teardown path needed; stored so the
+    /// install is provably idempotent.
+    private var tabCycleMonitor: Any?
+
+    /// Install the ⌃Tab / ⌃⇧Tab tab-cycling shortcuts. Called once at startup
+    /// (MarkViewApp onAppear); idempotent.
+    ///
+    /// NV-2 ANSWERED (in-app, 2026-07-03): SwiftUI `.keyboardShortcut(.tab,
+    /// modifiers: .control)` menu equivalents NEVER fire while the WKWebView has
+    /// focus — WebKit consumes Tab as sequential element-focus navigation during
+    /// the window's performKeyEquivalent pass, which runs BEFORE the main menu is
+    /// consulted. An AppKit NSMenuItem with keyEquivalent "\t" loses the same
+    /// race. A local NSEvent monitor receives events before NSApplication
+    /// dispatches them to ANY responder (WKWebView included), so it is the one
+    /// mechanism that works for Tab-key shortcuts specifically. All non-Tab
+    /// shortcuts stay on main-menu key equivalents (the sanctioned mechanism).
+    func installTabCycleMonitor() {
+        guard tabCycleMonitor == nil else { return }
+        tabCycleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let flags = event.modifierFlags
+            guard let action = TabCycling.action(
+                forKeyCode: Int(event.keyCode),
+                control: flags.contains(.control),
+                shift: flags.contains(.shift)
+            ) else { return event }
+            // No tabs (home screen): not our event — let focus navigation proceed.
+            guard let self, !self.tabs.isEmpty else { return event }
+            switch action {
+            case .next: self.selectNext()
+            case .previous: self.selectPrevious()
+            }
+            // Swallow the event — WKWebView must never also run Tab focus navigation.
+            return nil
+        }
     }
 }
