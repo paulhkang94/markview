@@ -37,9 +37,12 @@ jobs:
         with:
           path: |
             .build
-            ~/.cache/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+            ~/Library/Caches/org.swift.swiftpm
+          # v2: corrected SPM cache dir (~/Library/Caches on macOS; the old ~/.cache
+          # path is Linux-only and was never populated on these runners).
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build (debug)
@@ -77,9 +80,12 @@ jobs:
         with:
           path: |
             .build
-            ~/.cache/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+            ~/Library/Caches/org.swift.swiftpm
+          # v2: corrected SPM cache dir (~/Library/Caches on macOS; the old ~/.cache
+          # path is Linux-only and was never populated on these runners).
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run verification
@@ -97,9 +103,12 @@ jobs:
         with:
           path: |
             .build
-            ~/.cache/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+            ~/Library/Caches/org.swift.swiftpm
+          # v2: corrected SPM cache dir (~/Library/Caches on macOS; the old ~/.cache
+          # path is Linux-only and was never populated on these runners).
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install XcodeGen
@@ -129,9 +138,12 @@ jobs:
         with:
           path: |
             .build
-            ~/.cache/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+            ~/Library/Caches/org.swift.swiftpm
+          # v2: corrected SPM cache dir (~/Library/Caches on macOS; the old ~/.cache
+          # path is Linux-only and was never populated on these runners).
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run MCP protocol tests
@@ -149,9 +161,12 @@ jobs:
         with:
           path: |
             .build
-            ~/.cache/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+            ~/Library/Caches/org.swift.swiftpm
+          # v2: corrected SPM cache dir (~/Library/Caches on macOS; the old ~/.cache
+          # path is Linux-only and was never populated on these runners).
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Regenerate goldens
@@ -179,9 +194,12 @@ jobs:
         with:
           path: |
             .build
-            ~/.cache/org.swift.swiftpm
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+            ~/Library/Caches/org.swift.swiftpm
+          # v2: corrected SPM cache dir (~/Library/Caches on macOS; the old ~/.cache
+          # path is Linux-only and was never populated on these runners).
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run visual smoke tests (non-blank render gate)

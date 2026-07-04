@@ -1,5 +1,11 @@
 name: Repo Guard
-on: [push, pull_request]
+# push is limited to main — an unfiltered [push, pull_request] ran every guard job
+# twice per PR-branch push (push event + pull_request synchronize for the same commit).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'

@@ -9,6 +9,18 @@ on:
       - "Tests/TestRunner/Fixtures/**"
   pull_request:
     branches: [main]
+    # Same path filters as push — skips docs/npm-only PRs. Safe to filter:
+    # this is NOT a required status check (required: Build & Test, Golden Drift Check),
+    # so a skipped run cannot block auto-merge.
+    paths:
+      - "Sources/MarkViewCore/**"
+      - "Tests/playwright/**"
+      - "Tests/TestRunner/Fixtures/**"
+
+# Cancel superseded runs for the same branch/PR
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   playwright:
@@ -24,15 +36,29 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: Tests/playwright/package.json
+          # Key on the lockfile (exact resolved versions), not package.json.
+          cache-dependency-path: Tests/playwright/package-lock.json
 
       - name: Install dependencies
         working-directory: Tests/playwright
         run: npm ci
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('Tests/playwright/package-lock.json') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: Tests/playwright
         run: npx playwright install chromium --with-deps
+
+      - name: Install Playwright OS deps (browser cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: Tests/playwright
+        run: npx playwright install-deps chromium
 
       - name: Check fixtures are committed
         run: |
