@@ -1378,6 +1378,38 @@ runner.test("linter clean: consistent table columns") {
     try expect(diags.isEmpty, "Consistent tables should produce no diagnostics")
 }
 
+runner.test("linter clean: escaped pipe in table cell code span (issue #29)") {
+    let md = "| Action | Command                 |\n| ------ | ----------------------- |\n| Filter | `./program \\| grep foo` |\n"
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.isEmpty, "Escaped pipe (\\|) in a cell must not count as a column delimiter, got: \(diags.map { $0.message })")
+}
+
+runner.test("linter clean: escaped pipe in table cell without backticks (issue #29)") {
+    let md = "| A | B |\n|---|---|\n| Filter | a \\| b |\n"
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.isEmpty, "Escaped pipe outside a code span must not count as a column delimiter, got: \(diags.map { $0.message })")
+}
+
+runner.test("linter clean: escaped pipe in table header (issue #29)") {
+    let md = "| A \\| B | C |\n|---|---|\n| 1 | 2 |\n"
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.isEmpty, "Escaped pipe in header must not count as a column delimiter, got: \(diags.map { $0.message })")
+}
+
+runner.test("linter: escaped backslash before pipe still delimits (issue #29)") {
+    // Markdown `\\|` is an escaped backslash followed by a real delimiter,
+    // so this row has 3 cells against a 2-column header.
+    let md = "| A | B |\n|---|---|\n| a \\\\| b | c |\n"
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.count == 1, "Escaped backslash + pipe (\\\\|) must still delimit; expected 1 diagnostic, got \(diags.count)")
+}
+
+runner.test("linter still detects real column mismatch (issue #29 negative)") {
+    let md = "| A | B |\n|---|---|\n| 1 | 2 | 3 |\n"
+    let diags = linter.lint(md, rules: [.invalidTables])
+    try expect(diags.count == 1, "Genuine 3-vs-2 column mismatch must still be flagged, got \(diags.count)")
+}
+
 // Integration tests
 
 runner.test("linter diagnostics are sorted by line") {

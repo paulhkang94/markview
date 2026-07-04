@@ -466,9 +466,30 @@ public final class MarkdownLinter {
     }
 
     private func pipeCount(_ line: String) -> Int {
-        // Count cells by splitting on | and filtering empty edges
-        let parts = line.split(separator: "|", omittingEmptySubsequences: false)
-        // A line like "| a | b | c |" splits to ["", " a ", " b ", " c ", ""]
+        // Count cells by splitting on unescaped | only. Per the GFM table spec
+        // (https://github.github.com/gfm/#example-200), `\|` is a literal pipe
+        // inside a cell — even within backtick code spans — and must not count
+        // as a cell delimiter (issue #29). A backslash escapes the character
+        // that follows it, so `\\|` is a literal backslash followed by a real
+        // delimiter. A line like "| a | b | c |" yields ["", " a ", " b ", " c ", ""].
+        var parts: [String] = []
+        var current = ""
+        var escaped = false
+        for ch in line {
+            if escaped {
+                current.append(ch)
+                escaped = false
+            } else if ch == "\\" {
+                current.append(ch)
+                escaped = true
+            } else if ch == "|" {
+                parts.append(current)
+                current = ""
+            } else {
+                current.append(ch)
+            }
+        }
+        parts.append(current)
         return parts.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
     }
 }
