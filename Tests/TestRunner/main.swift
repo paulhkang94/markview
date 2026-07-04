@@ -3768,16 +3768,67 @@ runner.test("TabManager: closeTab selects adjacent tab on removal") {
         "closeTab must use min(idx, tabs.count-1) to select the nearest remaining tab")
 }
 
-runner.test("TabManager: selectNext and selectPrevious wrap at boundaries") {
+runner.test("TabManager: selectNext and selectPrevious delegate wrap math to TabCycling") {
     try expect(tabManagerSource.contains("func selectNext"),
-        "TabManager must expose selectNext() for Cmd+Shift+] shortcut")
+        "TabManager must expose selectNext() for the ⌘⇧] / ⌃Tab shortcuts")
     try expect(tabManagerSource.contains("func selectPrevious"),
-        "TabManager must expose selectPrevious() for Cmd+Shift+[ shortcut")
-    // Wrap-around: next after last → first; previous before first → last
-    try expect(tabManagerSource.contains("(idx + 1) % tabs.count"),
-        "selectNext must wrap from last tab to first via modulo")
-    try expect(tabManagerSource.contains("(idx + tabs.count - 1) % tabs.count"),
-        "selectPrevious must wrap from first tab to last via (idx + count - 1) % count")
+        "TabManager must expose selectPrevious() for the ⌘⇧[ / ⌃⇧Tab shortcuts")
+    // Wrap-around math is centralized in MarkViewCore.TabCycling — behaviorally
+    // tested below — so TabManager must delegate rather than re-derive it inline.
+    try expect(tabManagerSource.contains("TabCycling.nextIndex(after: idx, count: tabs.count)"),
+        "selectNext must delegate to TabCycling.nextIndex (behavioral wrap coverage lives in Core)")
+    try expect(tabManagerSource.contains("TabCycling.previousIndex(before: idx, count: tabs.count)"),
+        "selectPrevious must delegate to TabCycling.previousIndex (behavioral wrap coverage lives in Core)")
+}
+
+// Behavioral pair for the source-inspection above (MV-009): the actual cycling
+// order + wraparound semantics, exercised on the extracted Core logic.
+runner.test("TabCycling: forward cycling visits every tab in order and wraps to first") {
+    var order: [Int] = []
+    var idx = 0
+    for _ in 0..<4 { idx = TabCycling.nextIndex(after: idx, count: 4); order.append(idx) }
+    try expect(order == [1, 2, 3, 0],
+        "forward cycle from tab 0 over 4 tabs must visit [1,2,3,0], got \(order)")
+}
+
+runner.test("TabCycling: backward cycling visits every tab in reverse and wraps to last") {
+    var order: [Int] = []
+    var idx = 0
+    for _ in 0..<4 { idx = TabCycling.previousIndex(before: idx, count: 4); order.append(idx) }
+    try expect(order == [3, 2, 1, 0],
+        "backward cycle from tab 0 over 4 tabs must visit [3,2,1,0], got \(order)")
+}
+
+runner.test("TabCycling: wraparound at both ends, single-step in the middle") {
+    try expect(TabCycling.nextIndex(after: 2, count: 3) == 0,
+        "next after the last tab must wrap to the first")
+    try expect(TabCycling.previousIndex(before: 0, count: 3) == 2,
+        "previous before the first tab must wrap to the last")
+    try expect(TabCycling.nextIndex(after: 0, count: 3) == 1,
+        "next mid-list must advance exactly one tab")
+    try expect(TabCycling.previousIndex(before: 2, count: 3) == 1,
+        "previous mid-list must step back exactly one tab")
+}
+
+runner.test("TabCycling: degenerate counts are safe no-ops") {
+    try expect(TabCycling.nextIndex(after: 0, count: 1) == 0, "single tab: next stays at 0")
+    try expect(TabCycling.previousIndex(before: 0, count: 1) == 0, "single tab: previous stays at 0")
+    try expect(TabCycling.nextIndex(after: 0, count: 0) == 0, "zero tabs: next returns safe index 0")
+    try expect(TabCycling.previousIndex(before: 0, count: 0) == 0, "zero tabs: previous returns safe index 0")
+}
+
+runner.test("MV-009: ⌃Tab and ⌃⇧Tab are main-menu key equivalents routed to TabManager") {
+    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(appSource.contains(".keyboardShortcut(.tab, modifiers: .control)"),
+        "⌃Tab must be a main-menu key equivalent — the only mechanism that survives WKWebView/NSTextView first-responder focus (MV-009)")
+    try expect(appSource.contains(".keyboardShortcut(.tab, modifiers: [.control, .shift])"),
+        "⌃⇧Tab must be a main-menu key equivalent (MV-009)")
+    // Both must route through the SAME TabManager funnel as ⌘⇧]/⌘⇧[ — one owner
+    // per mutation; a second selection path would drift from closeTab/openFile rules.
+    try expect(appSource.components(separatedBy: "tabManager.selectNext()").count - 1 >= 2,
+        "⌃Tab must call tabManager.selectNext() — the same funnel as ⌘⇧]")
+    try expect(appSource.components(separatedBy: "tabManager.selectPrevious()").count - 1 >= 2,
+        "⌃⇧Tab must call tabManager.selectPrevious() — the same funnel as ⌘⇧[")
 }
 
 runner.test("MV-002: assembled HTML posts renderComplete alongside every window.rendered site") {
@@ -3842,6 +3893,46 @@ runner.test("TabState: each tab owns an isolated PreviewViewModel") {
         "TabState must own a PreviewViewModel so each tab has independent render/lint/watch state")
     try expect(tabManagerSource.contains("viewModel.loadFile(at:"),
         "TabState.init must call loadFile immediately so preview is ready when tab opens")
+}
+
+// MV-003 per-tab scroll persistence: the store (TabState), the continuous capture
+// (ScrollSyncController write-through), the seed/write-back seam (ActiveTabView.init),
+// and the renderComplete-gated restore (WebPreviewView). Behavioral pair is the
+// MV-003/005 E2E spec (Tests/E2ETester) + manual verify — these views are app-target.
+
+runner.test("MV-003: TabState persists per-tab scroll line and pane mode") {
+    try expect(tabManagerSource.contains("var scrollLine: Int = 0"),
+        "TabState must store scrollLine so the preview position survives tab switches (MV-003)")
+    try expect(tabManagerSource.contains("var showEditor: Bool = false"),
+        "TabState must store showEditor so pane mode survives tab switches (MV-003)")
+    try expect(!tabManagerSource.contains("@Published var scrollLine"),
+        "scrollLine must NOT be @Published — it changes every scroll frame and would invalidate observers continuously")
+}
+
+runner.test("MV-003: ScrollSyncController writes the scroll line through to the owning tab") {
+    let sscSource = try String(contentsOfFile: "Sources/MarkView/ScrollSyncController.swift", encoding: .utf8)
+    try expect(sscSource.contains("didSet { onLineChange?(lastPreviewLine) }"),
+        "lastPreviewLine must write through via onLineChange — capture is continuous, not deferred to the switch seam (MV-003)")
+    try expect(sscSource.contains("var onLineChange"),
+        "ScrollSyncController must expose the onLineChange write-through hook (MV-003)")
+}
+
+runner.test("MV-003: ActiveTabView seeds per-tab state from TabState and writes back") {
+    let cvSource = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(cvSource.contains("controller.lastPreviewLine = tab.scrollLine"),
+        "ActiveTabView.init must seed the recreated ScrollSyncController from TabState.scrollLine — this is what handleRenderComplete restores on reselect")
+    try expect(cvSource.contains("tab?.scrollLine = line"),
+        "ActiveTabView.init must install the onLineChange write-through into TabState.scrollLine")
+    try expect(cvSource.contains("State(initialValue: tab.showEditor)"),
+        "ActiveTabView.init must seed pane mode from TabState.showEditor")
+    try expect(cvSource.contains("tab.showEditor = showEditor"),
+        "toggleEditor must write pane mode back to TabState")
+}
+
+runner.test("MV-003/MV-005: restore applies the persisted line on renderComplete, only when > 0") {
+    let wpvSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(wpvSource.contains("if let line = syncController?.lastPreviewLine, line > 0 {"),
+        "handleRenderComplete must restore ONLY a positive persisted line — a fresh tab (scrollLine 0) must load at the top, and restore must run AFTER render completes, never on a timer before it")
 }
 
 runner.test("TabBarView: always visible (not gated on tab count)") {

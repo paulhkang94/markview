@@ -1,4 +1,5 @@
 import Foundation
+import MarkViewCore
 import SwiftUI
 
 /// One open file tab. Owns its own PreviewViewModel (and therefore its own
@@ -8,6 +9,17 @@ final class TabState: ObservableObject, Identifiable {
     let id = UUID()
     let url: URL
     let viewModel: PreviewViewModel
+
+    /// Last preview scroll position as a 1-based markdown source line (0 = top).
+    /// Written through continuously from ScrollSyncController.onLineChange and read
+    /// to seed the recreated ActiveTabView on tab reselect (MV-003). Deliberately
+    /// NOT @Published — it changes on every scroll frame and must not invalidate
+    /// the tab bar or any observing view.
+    var scrollLine: Int = 0
+
+    /// Editor pane visibility for this tab (MV-003). Not @Published — ActiveTabView
+    /// copies it into local @State at creation and writes back on toggle.
+    var showEditor: Bool = false
 
     var displayName: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -65,13 +77,15 @@ final class TabManager: ObservableObject {
         }
     }
 
+    // Wrap math lives in MarkViewCore.TabCycling so MarkViewTestRunner can cover
+    // cycling order + wraparound behaviorally (this class is not SPM-importable).
     func selectNext() {
         guard let cur = selectedTabID, let idx = tabs.firstIndex(where: { $0.id == cur }), tabs.count > 1 else { return }
-        selectedTabID = tabs[(idx + 1) % tabs.count].id
+        selectedTabID = tabs[TabCycling.nextIndex(after: idx, count: tabs.count)].id
     }
 
     func selectPrevious() {
         guard let cur = selectedTabID, let idx = tabs.firstIndex(where: { $0.id == cur }), tabs.count > 1 else { return }
-        selectedTabID = tabs[(idx + tabs.count - 1) % tabs.count].id
+        selectedTabID = tabs[TabCycling.previousIndex(before: idx, count: tabs.count)].id
     }
 }

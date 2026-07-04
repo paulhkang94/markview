@@ -25,8 +25,17 @@ final class ScrollSyncController {
     private static let suppressDuration: TimeInterval = 0.05
 
     /// Last known preview scroll position (source line). Persists across view recreation
-    /// so scroll position survives pane toggle (Cmd+E).
-    var lastPreviewLine: Int = 0
+    /// so scroll position survives pane toggle (Cmd+E). Tab switches destroy this
+    /// controller with its owning ActiveTabView (@State keyed by .id(tab.id)), so the
+    /// value is also written through to TabState.scrollLine via `onLineChange` (MV-003).
+    var lastPreviewLine: Int = 0 {
+        didSet { onLineChange?(lastPreviewLine) }
+    }
+
+    /// Write-through hook — ActiveTabView points this at the owning TabState so the
+    /// scroll position survives this controller's destruction on tab switch (MV-003).
+    /// Capture is continuous (every line change), not deferred to the switch seam.
+    var onLineChange: (@MainActor (Int) -> Void)?
 
     /// Pending scroll targets — set by scroll events, consumed by display link.
     private var pendingEditorLine: Int?

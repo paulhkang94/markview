@@ -158,6 +158,23 @@ struct MarkViewApp: App {
                 Button("Select Previous Tab") { tabManager.selectPrevious() }
                     .keyboardShortcut("[", modifiers: [.command, .shift])
 
+                // ⌃Tab / ⌃⇧Tab tab cycling (MV-009). Main-menu key equivalents are the
+                // ONE mechanism that still fires while WKWebView or NSTextView is first
+                // responder — menu matching runs before the key-view loop consumes Tab.
+                // Hidden because "Select Next/Previous Tab" above already provide the
+                // visible menu affordance (⌘⇧]/⌘⇧[); same .hidden() pattern as the ESC
+                // close-window binding below.
+                // NV-2 fallback if SwiftUI fails to render .tab into the NSMenu on some
+                // macOS version: inject AppKit NSMenuItems with keyEquivalent "\t" via
+                // NSApp.mainMenu instead.
+                Button("Cycle to Next Tab") { tabManager.selectNext() }
+                    .keyboardShortcut(.tab, modifiers: .control)
+                    .hidden()
+
+                Button("Cycle to Previous Tab") { tabManager.selectPrevious() }
+                    .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                    .hidden()
+
                 Button(Strings.closeFile) {
                     NotificationCenter.default.post(name: .closeFile, object: nil)
                 }
