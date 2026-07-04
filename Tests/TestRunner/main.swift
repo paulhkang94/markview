@@ -4013,6 +4013,94 @@ runner.test("TabBarView: dirty indicator rendered per tab") {
 }
 
 // =============================================================================
+// MARK: - MV-001 multi-tab session restore
+//
+// Bug: relaunch reopened only the LAST-opened tab, never all previously-open
+// tabs. Root cause (confirmed by reading the persistence path): the only
+// thing ever persisted was `RecentFilesManager.lastOpenedFilePath` — a single
+// string, overwritten on every tab open (RecentFilesManager.swift:39). No
+// code anywhere serialized the full `TabManager.tabs` array. On launch,
+// MarkViewApp.swift called `tabManager.openFile(lastURL)` exactly once. The
+// S122 markExplicitlyClosed fix (MV-001's original scope) only stopped that
+// single URL from being suppressed when other tabs were still open — it
+// never added persistence for the OTHER tabs, so they never came back.
+//
+// Fix: TabSessionState (MarkViewCore, above) is the serialization shape;
+// behavioral tests below cover its pruning/clamping logic directly. The
+// app-target wiring (TabManager persists on every tabs/selectedTabID change,
+// MarkViewApp restores the full ordered list on launch) is source-inspected
+// below, since TabManager/MarkViewApp aren't SPM-importable.
+// =============================================================================
+
+print("\n--- TabSessionState behavioral tests (MV-001) ---")
+
+runner.test("TabSessionState: pruningUnreachable keeps order and index when all paths reachable") {
+    let state = TabSessionState(openPaths: ["/a.md", "/b.md", "/c.md"], selectedIndex: 1)
+    let pruned = state.pruningUnreachable { _ in true }
+    try expect(pruned.openPaths == ["/a.md", "/b.md", "/c.md"], "no paths should be dropped when all are reachable")
+    try expect(pruned.selectedIndex == 1, "selectedIndex must be unchanged when nothing is pruned")
+}
+
+runner.test("TabSessionState: pruningUnreachable drops missing paths and re-clamps a LATER selectedIndex") {
+    // /b.md (index 1) is gone; the previously-selected /c.md (index 2) must
+    // shift down to index 1 in the filtered list, not stay at 2 (out of bounds)
+    // or reset to nil.
+    let state = TabSessionState(openPaths: ["/a.md", "/b.md", "/c.md"], selectedIndex: 2)
+    let pruned = state.pruningUnreachable { $0 != "/b.md" }
+    try expect(pruned.openPaths == ["/a.md", "/c.md"], "unreachable path must be dropped, order preserved")
+    try expect(pruned.selectedIndex == 1, "selectedIndex must re-clamp to the surviving path's new position, got \(String(describing: pruned.selectedIndex))")
+}
+
+runner.test("TabSessionState: pruningUnreachable nils selectedIndex when the SELECTED path itself is gone") {
+    let state = TabSessionState(openPaths: ["/a.md", "/b.md"], selectedIndex: 1)
+    let pruned = state.pruningUnreachable { $0 != "/b.md" }
+    try expect(pruned.openPaths == ["/a.md"], "unreachable selected path must still be dropped from openPaths")
+    try expect(pruned.selectedIndex == nil, "selectedIndex must become nil, not stale/out-of-bounds, when the selected path is unreachable")
+}
+
+runner.test("TabSessionState: pruningUnreachable on all-unreachable paths yields empty state") {
+    let state = TabSessionState(openPaths: ["/a.md", "/b.md"], selectedIndex: 0)
+    let pruned = state.pruningUnreachable { _ in false }
+    try expect(pruned.openPaths.isEmpty, "all-unreachable input must prune to an empty path list")
+    try expect(pruned.selectedIndex == nil, "empty result must have a nil selectedIndex")
+}
+
+runner.test("TabSessionState: round-trips through JSON (the actual UserDefaults storage format)") {
+    let state = TabSessionState(openPaths: ["/x.md", "/y.md"], selectedIndex: 1)
+    let data = try JSONEncoder().encode(state)
+    let decoded = try JSONDecoder().decode(TabSessionState.self, from: data)
+    try expect(decoded == state, "TabSessionState must round-trip through JSONEncoder/Decoder unchanged (TabSessionStore's exact storage path)")
+}
+
+print("\n--- TabManager / MarkViewApp source-inspection tests (MV-001) ---")
+
+runner.test("MV-001: TabManager persists the tab session on every tabs/selectedTabID change") {
+    try expect(tabManagerSource.contains("@Published var tabs: [TabState] = [] {") &&
+               tabManagerSource.contains("didSet { persistSession() }"),
+        "TabManager.tabs must persist via didSet on every add/remove — write-through, not a debounced/quit-only flush, matching the existing continuous-capture convention (MV-003 scrollLine)")
+    try expect(tabManagerSource.contains("func persistSession"),
+        "TabManager must define persistSession() as the single write path so every tabs/selectedTabID mutation stays in sync")
+    try expect(tabManagerSource.contains("TabSessionStore.save("),
+        "persistSession must delegate storage to TabSessionStore — TabManager itself must not touch UserDefaults directly")
+}
+
+runner.test("MV-001: MarkViewApp restores EVERY persisted tab in order, not just the last one") {
+    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(appSource.contains("TabSessionStore.loadSession()"),
+        "MarkViewApp launch path must load the full persisted session, not just RecentFilesManager.lastOpenedURL")
+    try expect(appSource.contains("for path in session.openPaths"),
+        "launch restore must loop over EVERY openPaths entry and reopen each as its own tab — this is the exact bug: previously only one URL was ever opened")
+    try expect(appSource.contains("session.selectedIndex"),
+        "launch restore must reselect the originally-selected tab by index after reopening all of them, not leave whichever tab opened last selected")
+}
+
+runner.test("MV-001: legacy single-file restore stays as a fallback when no session was ever recorded") {
+    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(appSource.contains("RecentFilesManager.shared.lastOpenedURL"),
+        "the pre-MV-001 single-file restore path must remain as a fallback for users upgrading with no session data yet")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
