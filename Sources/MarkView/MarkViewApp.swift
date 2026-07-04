@@ -111,11 +111,22 @@ struct MarkViewApp: App {
                         if FileManager.default.fileExists(atPath: path) {
                             tabManager.openFile(URL(fileURLWithPath: path))
                         }
-                    } else {
-                        // No CLI arg — auto-reopen last file if "Restore last file on launch" is enabled
-                        if let lastURL = RecentFilesManager.shared.lastOpenedURL {
-                            tabManager.openFile(lastURL)
+                    } else if let session = TabSessionStore.loadSession(), !session.openPaths.isEmpty {
+                        // MV-001: reopen EVERY tab that was open at quit, in the same
+                        // order, then reselect the one that was frontmost. Previously
+                        // only a single "last opened file" path was ever persisted, so
+                        // this branch used to be able to restore at most one tab.
+                        for path in session.openPaths {
+                            tabManager.openFile(URL(fileURLWithPath: path))
                         }
+                        if let idx = session.selectedIndex, idx >= 0, idx < tabManager.tabs.count {
+                            tabManager.selectedTabID = tabManager.tabs[idx].id
+                        }
+                    } else if let lastURL = RecentFilesManager.shared.lastOpenedURL {
+                        // Fallback for a first launch after upgrading — no multi-tab
+                        // session was ever recorded yet, but a legacy single-file
+                        // "last opened" record may still exist.
+                        tabManager.openFile(lastURL)
                     }
 
                     // Defer window sizing to next run loop — window may not exist yet during onAppear.

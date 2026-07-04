@@ -43,8 +43,19 @@ final class TabState: ObservableObject, Identifiable {
 /// routes through `openFile(_:)` so deduplication and selection stay consistent.
 @MainActor
 final class TabManager: ObservableObject {
-    @Published var tabs: [TabState] = []
-    @Published var selectedTabID: UUID?
+    // Write-through session persistence (MV-001): every add/remove/selection
+    // change re-derives and saves the full ordered tab list, so relaunch can
+    // reopen ALL of them — not just the single "last opened file" path that
+    // RecentFilesManager tracked before this. Same continuous-capture idiom
+    // as MV-003's scrollLine write-through; tab-list changes are rare enough
+    // (open/close/switch) that a synchronous UserDefaults write per change is
+    // cheap, unlike the higher-frequency per-scroll-frame case.
+    @Published var tabs: [TabState] = [] {
+        didSet { persistSession() }
+    }
+    @Published var selectedTabID: UUID? {
+        didSet { persistSession() }
+    }
 
     var selectedTab: TabState? {
         tabs.first { $0.id == selectedTabID }
@@ -60,6 +71,16 @@ final class TabManager: ObservableObject {
         let tab = TabState(url: resolved)
         tabs.append(tab)
         selectedTabID = tab.id
+    }
+
+    /// Re-derive the ordered path list + selected index from live state and
+    /// persist it. The single write path for MV-001 — called from `didSet` on
+    /// both `tabs` and `selectedTabID`, never invoked ad hoc from call sites,
+    /// so no mutation site can forget to persist.
+    private func persistSession() {
+        let paths = tabs.map { $0.url.path }
+        let selectedIndex = selectedTabID.flatMap { id in tabs.firstIndex(where: { $0.id == id }) }
+        TabSessionStore.save(openPaths: paths, selectedIndex: selectedIndex)
     }
 
     /// Close a tab. Selects the nearest remaining tab; returns to home if none left.
