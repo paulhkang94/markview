@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.6.1
+
+- Fix npm package: `mcp-server-markview@1.6.0` shipped with its postinstall pinned to the v1.4.0 app binary; 1.6.1 pins the current binary so npm installs get the tab-cycling and scroll-restore features. No app code changes.
+- Release pipeline: npm publishing is now owned solely by the OIDC trusted-publishing workflow (which also updates the MCP registry); the duplicate token-based publish step in the release workflow — the source of the 1.6.0 mispublish — is removed.
+
 ## v1.6.0
 
 - Ctrl+Tab / Ctrl+Shift+Tab: cycle between tabs forward/backward with wraparound. Implemented as a pre-dispatch NSEvent monitor so the shortcut works even when the preview (WKWebView) or editor has keyboard focus; plain Tab element navigation is unaffected

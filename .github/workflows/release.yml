@@ -257,22 +257,13 @@ jobs:
           fi
           rm -rf "$_tmp"
 
-      - name: Publish npm package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
-          cd npm
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          # Check if this version is already published (local release.sh may have run first)
-          PUBLISHED=$(npm view "mcp-server-markview@${VERSION}" version 2>/dev/null || echo "")
-          if [[ "$PUBLISHED" == "$VERSION" ]]; then
-            echo "mcp-server-markview@${VERSION} already published — skipping"
-          else
-            npm publish --access public
-            echo "Published mcp-server-markview@${VERSION} to npm"
-          fi
+      # npm publishing is owned EXCLUSIVELY by npm-publish.yml (OIDC trusted
+      # publishing + MCP registry). This workflow must never publish npm: the
+      # 1.6.0 release published from the tag commit BEFORE the BINARY_VERSION
+      # pin bump landed, shipping npm users the wrong app binary. One owner
+      # per mutation — release.yml owns the app binary + GitHub Release only.
 
-      # Homebrew tap update is handled by tap-update.yml, triggered automatically
-      # by the GitHub "release: published" event above. No tap steps needed here.
-      # To manually re-run: gh workflow run tap-update.yml --field tag_name=vX.Y.Z
+      # Homebrew tap update is handled by tap-update.yml. NOTE: the "release:
+      # published" trigger does NOT fire for releases created with GITHUB_TOKEN
+      # (workflow-recursion prevention) — dispatch manually after each release:
+      # gh workflow run tap-update.yml --field tag_name=vX.Y.Z
