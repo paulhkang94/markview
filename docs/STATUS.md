@@ -24,9 +24,12 @@ Changes since v1.4.2 not yet shipped:
 - **Adoption floor**: Post-breakout organic baseline did NOT hold at 20-25/day. Current floor: 4-6/day.
 
 > **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
-> successfully notarized GitHub Release binary. It is intentionally decoupled from
-> the npm package version. npm patches (JS wrapper changes) do NOT bump BINARY_VERSION.
-> Only run `release.sh --bump-binary` when a new notarized binary is published to GitHub.
+> successfully notarized GitHub Release binary. npm patches (JS wrapper changes) do
+> NOT bump BINARY_VERSION. App releases ALWAYS bump it: `release.sh --bump` updates
+> it with the other five version files (the old opt-in `--bump-binary` flag is how
+> the 1.6.0 stale-pin incident happened and was removed). Gates:
+> `check_version_sync.py` (staleness, PR guard), `check_version_sync.py --expect-tag`
+> (release.yml + preflight), `npm_publish_gate.py` (npm-publish.yml).
 
 ### v1.4.2 Changes (2026-04-08)
 - **KaTeX fix**: Removed `$...$` inline delimiter — was garbling financial prose (`$10,000`). Kept `$$...$$`, `\(...\)`, `\[...\]`.
@@ -241,6 +244,6 @@ See MOBILE.md for per-platform blocker lists and release plan.
 | `Sources/MarkViewMCPServer/main.swift` | MCP server: 3 tools + resources endpoint |
 | `Tests/TestRunner/Fixtures/golden-corpus.md` | Visual QA fixture — all features |
 | `scripts/metrics.sh` | Unified traction tracking |
-| `scripts/release.sh` | Release automation (`--ship`, `--bump-binary` flags) |
+| `scripts/release.sh` | Release automation (`--ship` flag; always bumps all 6 version files) |
 | `scripts/check-version-sync.sh` | Version contract verification |
 | `docs/personal/` | Strategy, adoption, competitive docs (gitignored) |

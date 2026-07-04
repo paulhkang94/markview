@@ -49,6 +49,8 @@ jobs:
         run: |
           bash Tests/test-rule-gates.sh
           bash scripts/check-rule-gates.sh
+      - name: Verify single-owner publish destinations (only npm-publish.yml may publish)
+        run: python3 scripts/check_release_destinations.py
 
   check-ci-deps:
     runs-on: macos-latest

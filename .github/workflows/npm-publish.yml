@@ -4,7 +4,11 @@ name: Publish npm
 # Use when only npm/ changes (JS module, package.json) and no new app binary is needed.
 # The postinstall continues to download the existing binary from the latest GitHub Release.
 #
-# Trigger: workflow_dispatch (manual) or automatic when npm/package.json changes on main.
+# Triggers: workflow_dispatch (manual), automatic when npm/ changes on main, and
+# workflow_run after a successful Release — a coordinated app+npm release fires the
+# push trigger before release.yml has uploaded the binary artifacts, so the publish
+# gate fails that first run and this retry completes the publish (idempotent via
+# the already-published check).
 #
 # Auth: npm Trusted Publishing (OIDC) — configured on the package's npm Settings for
 # this repo + this workflow filename. No NPM_TOKEN to expire (the 1.6.0 release was
@@ -27,6 +31,9 @@ on:
       - 'npm/index.js'
       - 'npm/scripts/**'
       - 'npm/bin/**'
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -34,7 +41,9 @@ env:
 jobs:
   publish:
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    # workflow_run retries only make sense after a SUCCESSFUL release.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       id-token: write   # npm Trusted Publishing + mcp-publisher github-oidc
@@ -66,6 +75,15 @@ jobs:
             echo "SKIP=false" >> $GITHUB_OUTPUT
             echo "mcp-server-markview@${VERSION} not yet published — proceeding"
           fi
+
+      - name: Gate — BINARY_VERSION current and its release asset downloadable
+        # npm publishes are immutable. Blocks the 1.6.0 incident class:
+        # a stale postinstall pin (old binary under a new package version)
+        # or a pin whose GitHub release / tar.gz asset does not exist yet.
+        if: steps.check.outputs.SKIP == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/npm_publish_gate.py
 
       - name: Install npm dependencies
         if: steps.check.outputs.SKIP == 'false'

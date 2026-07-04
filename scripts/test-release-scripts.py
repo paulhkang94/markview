@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Tests for release_preflight.py, check_version_sync.py, and tap_audit.py.
+Tests for release_preflight.py, check_version_sync.py, tap_audit.py,
+npm_publish_gate.py, and check_release_destinations.py.
 
 Tier 2 behavioral tests — verify check logic, marker-file contract, and
 output/exit-code shape against fixture temp trees. All subprocess and
-network boundaries are stubbed: no live gh, git, swift, or HTTP calls.
+network boundaries are stubbed: no live gh, git, npm, swift, or HTTP calls.
 
 Usage:
     python3 scripts/test-release-scripts.py
@@ -101,9 +102,11 @@ class TestVersionSync(unittest.TestCase):
         existing_tags: set[str],
         commits: int = 0,
     ):
+        version_tags = [t for t in existing_tags if mod.VERSION_TAG_RE.match(t)]
         with (
             patch.object(mod, "latest_version_tag", new=lambda pd: latest_tag),
             patch.object(mod, "tag_exists", new=lambda pd, tag: tag in existing_tags),
+            patch.object(mod, "all_version_tags", new=lambda pd: version_tags),
             patch.object(mod, "commits_since", new=lambda pd, tag: commits),
             patch.object(mod, "INSTALLED_PLIST", tmp / "not-installed.plist"),
             patch("sys.stdout", new_callable=StringIO) as out,
@@ -199,12 +202,168 @@ class TestVersionSync(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("✗ Cannot read version from Info.plist", out.getvalue())
 
+    def test_stale_binary_version_fails(self):
+        # THE 1.6.0 incident: app released v1.6.0 but postinstall still pins
+        # v1.4.0. Old check passed (tag v1.4.0 exists); new check must fail.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.6.0", binary_ver="1.4.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.4.0", "v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "✗ npm/scripts/postinstall.js BINARY_VERSION: 1.4.0 is STALE — "
+            "newer release tag v1.6.0 exists",
+            output,
+        )
+        self.assertNotIn("✓ All versions in sync", output)
+
+    def test_binary_version_staleness_sorts_numerically(self):
+        # v1.10.0 must beat v1.9.0 — lexicographic sort would invert this.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.10.0", binary_ver="1.9.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.10.0", existing_tags={"v1.9.0", "v1.10.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("BINARY_VERSION: 1.9.0 is STALE", out.getvalue())
+
+    def test_binary_version_mid_release_bump_warns(self):
+        # Bump-all commit before tagging: pin == canonical, tag not yet pushed.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "⚠ npm/scripts/postinstall.js BINARY_VERSION: 1.7.0 has no tag yet",
+            output,
+        )
+        self.assertIn("✓ All versions in sync", output)
+
+    def test_stale_npm_package_version_fails(self):
+        # npm/package.json left at an older released version than canonical.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(
+                tmp, canonical="1.6.0", npm_ver="1.4.0", binary_ver="1.6.0"
+            )
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.4.0", "v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ npm/package.json: 1.4.0 is stale", out.getvalue())
+
+    def test_npm_js_only_version_ahead_passes(self):
+        # JS-only npm patch: npm ahead of app, no app tag for it — allowed,
+        # and BINARY_VERSION stays on the latest released tag.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(
+                tmp, canonical="1.6.0", npm_ver="1.6.2", binary_ver="1.6.0"
+            )
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "✓ npm/package.json: 1.6.2 (JS-only version ahead of app 1.6.0)", output
+        )
+        self.assertIn("✓ All versions in sync", output)
+
+    def test_expect_tag_all_match_passes(self):
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.7.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.7.0", existing_tags={"v1.7.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.7.0")
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("Strict release mode: every version must equal 1.7.0", output)
+        self.assertIn("✓ All versions in sync", output)
+
+    def test_expect_tag_stale_binary_version_fails(self):
+        # Release gate replay of 1.6.0: tag v1.6.0 pushed, pin still 1.4.0.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.6.0", binary_ver="1.4.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.4.0", "v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.6.0")
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "✗ npm/scripts/postinstall.js BINARY_VERSION: 1.4.0 (expected 1.6.0",
+            output,
+        )
+
+    def test_expect_tag_canonical_mismatch_fails(self):
+        # Tag pushed from a commit whose files were never bumped.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.6.0")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.6.0", existing_tags={"v1.6.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.7.0")
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ Info.plist is 1.6.0 but the release expects 1.7.0", output)
+
+    def test_expect_tag_npm_mismatch_fails(self):
+        # In strict mode the JS-only allowance is suspended: npm must equal
+        # the release version exactly.
+        mod = _load("check_version_sync")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, canonical="1.7.0", npm_ver="1.7.1")
+            with self._stubbed(
+                mod, tmp, latest_tag="1.7.0", existing_tags={"v1.7.0"}
+            ) as out:
+                rc = mod.run(tmp, expect="1.7.0")
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ npm/package.json: 1.7.1 (expected 1.7.0)", out.getvalue())
+
+    def test_version_helpers_numeric_order(self):
+        mod = _load("check_version_sync")
+        self.assertEqual(
+            mod.highest_version_tag(["v1.9.0", "v1.10.0", "v1.2.11"]), "v1.10.0"
+        )
+        self.assertEqual(mod.highest_version_tag([]), "")
+        self.assertEqual(mod._version_key("v1.10.2"), (1, 10, 2))
+        self.assertEqual(mod._version_key("1.10.2"), (1, 10, 2))
+
 
 # ── release_preflight ─────────────────────────────────────────────────────────
 
 
 class TestReleasePreflight(unittest.TestCase):
-    def _make_project(self, tmp: Path, version: str = "9.9.9") -> None:
+    def _make_project(
+        self, tmp: Path, version: str = "9.9.9", changelog: bool = True
+    ) -> None:
         _write_plist(tmp / "Sources/MarkView/Info.plist", version, "1")
         workflows = tmp / ".github/workflows"
         workflows.mkdir(parents=True, exist_ok=True)
@@ -220,6 +379,10 @@ class TestReleasePreflight(unittest.TestCase):
         )
         (tmp / "scripts").mkdir(exist_ok=True)
         (tmp / "scripts/check_version_sync.py").write_text("# stub\n")
+        if changelog:
+            (tmp / "CHANGELOG.md").write_text(
+                f"# Changelog\n\n## v{version}\n\n- Release notes stub\n"
+            )
 
     def _fake_run(
         self,
@@ -229,6 +392,11 @@ class TestReleasePreflight(unittest.TestCase):
         swift_ok: bool = True,
         dist_ok: bool = True,
         sync_rc: int = 0,
+        dirty: bool = False,
+        branch: str = "main",
+        local_tag: str = "",
+        remote_tag: str = "",
+        npm_view_out: str = "",
     ):
         def fake_run(cmd, cwd=None):
             prog = Path(str(cmd[0])).name
@@ -245,6 +413,22 @@ class TestReleasePreflight(unittest.TestCase):
                     body = "".join(f"{v}\tvalue\t2026-01-01\n" for v in variables)
                     return 0, body, ""
                 return 1, "", "unexpected gh call"
+            if prog == "git":
+                sub = cmd[1]
+                if sub == "status":
+                    return 0, ("?? untracked.txt\n" if dirty else ""), ""
+                if sub == "rev-parse":
+                    return 0, f"{branch}\n", ""
+                if sub == "tag":
+                    return 0, (f"{local_tag}\n" if local_tag else ""), ""
+                if sub == "ls-remote":
+                    body = f"deadbeef\trefs/tags/{remote_tag}\n" if remote_tag else ""
+                    return 0, body, ""
+                return 1, "", "unexpected git call"
+            if prog == "npm":
+                if npm_view_out:
+                    return 0, f"{npm_view_out}\n", ""
+                return 1, "", "npm ERR! 404"
             if prog == "swift":
                 if swift_ok:
                     return 0, "Total: 300 passed, 0 failed\n", ""
@@ -325,19 +509,97 @@ class TestReleasePreflight(unittest.TestCase):
             output,
         )
 
-    def test_failing_version_sync_is_warning_only(self):
+    def test_failing_version_sync_blocks(self):
+        # Inverts the old warning-only contract: WARN-level sync is what let
+        # 1.6.0 tag with a stale BINARY_VERSION. Sync failure now blocks.
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             self._make_project(tmp)
             rc, output = self._run_preflight(
                 tmp, self._fake_run(secrets=ALL_SECRETS, sync_rc=1)
             )
+            self.assertFalse((tmp / ".release-preflight-passed-9.9.9").exists())
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] Version sync FAILED", output)
+        self.assertIn("--expect-tag v9.9.9", output)
+
+    def test_version_sync_called_in_strict_mode(self):
+        calls: list[list[str]] = []
+        inner = self._fake_run(secrets=ALL_SECRETS)
+
+        def recording(cmd, cwd=None):
+            calls.append([str(part) for part in cmd])
+            return inner(cmd, cwd)
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, version="9.9.9")
+            rc, _ = self._run_preflight(tmp, recording)
         self.assertEqual(rc, 0)
+        sync_calls = [c for c in calls if any("check_version_sync.py" in p for p in c)]
+        self.assertEqual(len(sync_calls), 1)
+        self.assertIn("--expect-tag", sync_calls[0])
+        self.assertIn("v9.9.9", sync_calls[0])
+
+    def test_dirty_tree_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp)
+            rc, output = self._run_preflight(
+                tmp, self._fake_run(secrets=ALL_SECRETS, dirty=True)
+            )
+        self.assertEqual(rc, 1)
         self.assertIn(
-            "[WARN] Version sync check failed — "
-            "verify version numbers match across files",
+            "[FAIL] Working tree dirty — commit or stash before tagging", output
+        )
+
+    def test_wrong_branch_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp)
+            rc, output = self._run_preflight(
+                tmp, self._fake_run(secrets=ALL_SECRETS, branch="release-hardening")
+            )
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "[FAIL] On branch 'release-hardening' — releases are tagged from main only",
             output,
         )
+
+    def test_existing_tag_fails(self):
+        for kwargs in ({"local_tag": "v9.9.9"}, {"remote_tag": "v9.9.9"}):
+            with self.subTest(**kwargs):
+                with tempfile.TemporaryDirectory() as td:
+                    tmp = Path(td)
+                    self._make_project(tmp)
+                    rc, output = self._run_preflight(
+                        tmp, self._fake_run(secrets=ALL_SECRETS, **kwargs)
+                    )
+                self.assertEqual(rc, 1)
+                self.assertIn(
+                    "[FAIL] Tag v9.9.9 already exists — bump the version first",
+                    output,
+                )
+
+    def test_missing_changelog_entry_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp, changelog=False)
+            rc, output = self._run_preflight(tmp, self._fake_run(secrets=ALL_SECRETS))
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] CHANGELOG.md has no '## v9.9.9' entry", output)
+
+    def test_npm_version_collision_fails(self):
+        # mcp-server-markview@9.9.9 already on the registry: npm-publish.yml
+        # would skip the publish and npm users keep the previous binary pin.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_project(tmp)
+            rc, output = self._run_preflight(
+                tmp, self._fake_run(secrets=ALL_SECRETS, npm_view_out="9.9.9")
+            )
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] mcp-server-markview@9.9.9 is already published", output)
 
     def test_stale_spm_cache_is_cleared(self):
         with tempfile.TemporaryDirectory() as td:
@@ -410,6 +672,322 @@ class TestTapAudit(unittest.TestCase):
             code, output = self._run_main(mod)
         self.assertEqual(code, 1)
         self.assertIn("ERROR: could not fetch tap cask from", output)
+
+
+# ── check_release_destinations ────────────────────────────────────────────────
+
+
+OWNER_YML = (
+    "permissions:\n"
+    "  id-token: write\n"
+    "steps:\n"
+    "  - run: npm publish --access public\n"
+    "  - run: mcp-publisher publish\n"
+)
+
+
+class TestReleaseDestinations(unittest.TestCase):
+    def _make_repo(
+        self,
+        tmp: Path,
+        *,
+        owner_yml: str = OWNER_YML,
+        release_yml: str = "steps:\n  - run: echo build\n",
+        release_sh: str = "#!/bin/bash\necho build only\n",
+        extra_workflows: dict[str, str] | None = None,
+    ) -> None:
+        workflows = tmp / ".github/workflows"
+        workflows.mkdir(parents=True, exist_ok=True)
+        (workflows / "npm-publish.yml").write_text(owner_yml)
+        (workflows / "release.yml").write_text(release_yml)
+        for name, content in (extra_workflows or {}).items():
+            (workflows / name).write_text(content)
+        (tmp / "scripts").mkdir(exist_ok=True)
+        (tmp / "scripts/release.sh").write_text(release_sh)
+
+    def _run(self, tmp: Path) -> tuple[int, str]:
+        mod = _load("check_release_destinations")
+        with patch("sys.stdout", new_callable=StringIO) as out:
+            rc = mod.run(tmp)
+        return rc, out.getvalue()
+
+    def test_single_owner_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(tmp)
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 0)
+        self.assertIn("✓ .github/workflows/npm-publish.yml owns 'npm publish'", output)
+        self.assertIn("✓ Publish destinations single-owned", output)
+
+    def test_npm_publish_in_release_yml_fails(self):
+        # The exact edit that caused the 1.6.0 mispublish, replayed.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                release_yml="steps:\n  - run: cd npm && npm publish\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ .github/workflows/release.yml contains 'npm publish'", output)
+        self.assertIn("1.6.0 dual-publish incident", output)
+
+    def test_npm_publish_in_release_sh_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                release_sh="#!/bin/bash\ncd npm && npm publish --access public\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ scripts/release.sh contains 'npm publish'", output)
+
+    def test_comment_mentions_are_ignored(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                release_yml=(
+                    "# This workflow must never run npm publish (see 1.6.0).\n"
+                    "steps:\n"
+                    "  - run: echo build\n"
+                    "    # do not add npm publish here\n"
+                ),
+                release_sh=("#!/bin/bash\n# npm publish moved to npm-publish.yml\n"),
+            )
+            rc, _ = self._run(tmp)
+        self.assertEqual(rc, 0)
+
+    def test_npm_token_anywhere_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                extra_workflows={
+                    "ci.yml": "env:\n  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n"
+                },
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ .github/workflows/ci.yml references NPM_TOKEN", output)
+
+    def test_owner_losing_publish_step_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                owner_yml="permissions:\n  id-token: write\nsteps: []\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("no longer contains 'npm publish' — owner lost", output)
+
+    def test_owner_losing_oidc_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                owner_yml="steps:\n  - run: npm publish --access public\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("missing 'id-token: write'", output)
+
+    def test_second_publisher_workflow_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                extra_workflows={"sneaky.yml": "steps:\n  - run: npm  publish\n"},
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ .github/workflows/sneaky.yml contains 'npm publish'", output)
+
+
+# ── npm_publish_gate ──────────────────────────────────────────────────────────
+
+
+class TestNpmPublishGate(unittest.TestCase):
+    REPO = "paulhkang94/markview"
+
+    def _make_npm(self, tmp: Path, *, npm_ver: str, binary_ver: str) -> None:
+        (tmp / "npm/scripts").mkdir(parents=True, exist_ok=True)
+        (tmp / "npm/package.json").write_text(json.dumps({"version": npm_ver}))
+        (tmp / "npm/scripts/postinstall.js").write_text(
+            f'const BINARY_VERSION = "{binary_ver}";\n'
+        )
+
+    @contextlib.contextmanager
+    def _stubbed(
+        self,
+        mod,
+        *,
+        remote_tags: set[str] | None = None,
+        tags_after_wait: set[str] | None = None,
+        releases: dict[str, list[str]] | None = None,
+        latest: str = "",
+    ):
+        """Stub the GitHub + sleep boundaries.
+
+        `remote_tags` are visible immediately; `tags_after_wait` become
+        visible only after the first _sleep call (models the coordinated-
+        release race where the tag push trails the main push).
+        """
+        remote_tags = remote_tags or set()
+        tags_after_wait = tags_after_wait or set()
+        releases = releases or {}
+        sleeps: list[float] = []
+        visible = set(remote_tags)
+
+        def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            visible.update(tags_after_wait)
+
+        with (
+            patch.object(mod, "remote_tag_exists", new=lambda r, t: t in visible),
+            patch.object(mod, "release_assets", new=lambda r, t: releases.get(t)),
+            patch.object(mod, "latest_release_tag", new=lambda r: latest),
+            patch.object(mod, "_sleep", new=fake_sleep),
+            patch("sys.stdout", new_callable=StringIO) as out,
+        ):
+            yield out, sleeps
+
+    def test_coordinated_release_with_asset_passes(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(
+                mod,
+                remote_tags={"v1.7.0"},
+                releases={"v1.7.0": ["MarkView-1.7.0.zip", "MarkView-1.7.0.tar.gz"]},
+            ) as (out, sleeps):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("✓ BINARY_VERSION matches the npm version (1.7.0)", output)
+        self.assertIn("✓ Release v1.7.0 carries MarkView-1.7.0.tar.gz", output)
+        self.assertIn("✓ npm publish gate passed", output)
+        self.assertEqual(sleeps, [])  # pin == npm version: no tag wait needed
+
+    def test_release_still_building_fails_with_retry_hint(self):
+        # Coordinated release: main push triggered npm-publish before
+        # release.yml finished uploading artifacts.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(mod, remote_tags={"v1.7.0"}, releases={}) as (
+                out,
+                _,
+            ):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ GitHub release v1.7.0 does not exist (yet)", output)
+        self.assertIn("re-runs automatically", output)
+
+    def test_stale_pin_with_app_tag_fails(self):
+        # THE 1.6.0 replay at the publish boundary: npm 1.6.0 about to
+        # publish while postinstall still pins 1.4.0 and tag v1.6.0 exists.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.6.0", binary_ver="1.4.0")
+            with self._stubbed(
+                mod,
+                remote_tags={"v1.4.0", "v1.6.0"},
+                releases={"v1.4.0": ["MarkView-1.4.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ STALE BINARY_VERSION: app tag v1.6.0 exists", output)
+        self.assertIn("the 1.6.0 incident", output)
+
+    def test_stale_pin_catches_tag_arriving_during_wait(self):
+        # Race shape: main push fires the workflow, tag push lands seconds
+        # later. The gate must wait for the tag instead of concluding
+        # "JS-only" and letting the stale pin publish immutably.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.6.0")
+            with self._stubbed(
+                mod,
+                tags_after_wait={"v1.7.0"},
+                releases={"v1.6.0": ["MarkView-1.6.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, sleeps):
+                rc = mod.run_gate(tmp, self.REPO, tag_wait_seconds=60)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertGreaterEqual(len(sleeps), 1)
+        self.assertIn("✗ STALE BINARY_VERSION: app tag v1.7.0 exists", output)
+
+    def test_js_only_publish_with_current_pin_passes(self):
+        # npm 1.6.2 (no app tag), pin 1.6.0 == latest release: legitimate.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.6.2", binary_ver="1.6.0")
+            with self._stubbed(
+                mod,
+                releases={"v1.6.0": ["MarkView-1.6.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, sleeps):
+                rc = mod.run_gate(tmp, self.REPO, tag_wait_seconds=30)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertGreaterEqual(len(sleeps), 1)  # waited before deciding JS-only
+        self.assertIn("treating as a JS-only npm publish", output)
+        self.assertIn("✓ BINARY_VERSION 1.6.0 is the latest published release", output)
+
+    def test_js_only_publish_with_stale_pin_fails(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.6.2", binary_ver="1.4.0")
+            with self._stubbed(
+                mod,
+                releases={"v1.4.0": ["MarkView-1.4.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO, tag_wait_seconds=30)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "✗ STALE BINARY_VERSION: 1.4.0 but the latest published release is v1.6.0",
+            output,
+        )
+
+    def test_release_missing_tarball_asset_fails(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(
+                mod,
+                remote_tags={"v1.7.0"},
+                releases={"v1.7.0": ["MarkView-1.7.0.zip"]},
+            ) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("has no MarkView-1.7.0.tar.gz asset", output)
+
+    def test_unreadable_inputs_fail(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)  # no npm/ tree at all
+            with self._stubbed(mod) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ Cannot read version from npm/package.json", out.getvalue())
 
 
 # ── Thin wrappers + wiring ────────────────────────────────────────────────────
