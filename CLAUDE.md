@@ -2,7 +2,7 @@
 
 ## Quick Reference
 - **Build**: `swift build`
-- **Test**: `swift run MarkViewTestRunner` (304 Swift tests + 91 MCP tests + 19 script tests)
+- **Test**: `swift run MarkViewTestRunner` (304 Swift tests + 91 MCP tests + script tests)
 - **Playwright e2e**: `make playwright` (66 tests — builds fixture binary, runs Playwright, installs MarkView.app)
 - **Verify all**: `python3 scripts/verify.py` (writes verify stamp automatically on pass)
 - **App bundle**: `bash scripts/bundle.sh --install`
@@ -67,6 +67,7 @@ swift run MarkViewDiffTester          # Compare vs cmark-gfm CLI
 swift run MarkViewE2ETester           # UI tests (requires .app + AX permissions)
 bash scripts/test-mcp.sh              # MCP protocol tests (91 tests — 9 tools)
 python3 scripts/test-metrics.py       # Script unit tests (19 tests — metrics.py + check_traction.py, no live API)
+python3 scripts/test-release-scripts.py  # Release script tests (release_preflight, check_version_sync, tap_audit — no live gh/git/network)
 make playwright                       # Playwright e2e DOM tests (66 tests) — rebuilds MarkViewHTMLGen, runs Chromium
 ```
 
