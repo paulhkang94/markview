@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.6.0
+
+- Ctrl+Tab / Ctrl+Shift+Tab: cycle between tabs forward/backward with wraparound. Implemented as a pre-dispatch NSEvent monitor so the shortcut works even when the preview (WKWebView) or editor has keyboard focus; plain Tab element navigation is unaffected
+- Per-tab scroll position: switching away from a tab and back restores your reading position after the content re-renders (Mermaid-safe); new tabs still open at the top
+- Per-tab editor pane state: the Cmd+E editor pane visibility is remembered per tab across switches
+
 ## v1.5.0
 
 - Add multi-tab support: open multiple files simultaneously, each with independent file watching, lint, and preview state
