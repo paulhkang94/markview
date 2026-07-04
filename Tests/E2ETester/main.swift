@@ -989,13 +989,15 @@ runner.test("MV-001: closing 1 of 2 tabs must not suppress relaunch auto-reopen"
         "didExplicitlyCloseFile must be true after closing the LAST tab (post-close title: '\(titleAfterLastClose)')")
 }
 
-// Spec placeholder for MV-003/MV-005 (per-tab scroll position survives tab switch):
+// Spec for MV-003/MV-005 (per-tab scroll position survives tab switch):
 // open TWO long files via helpers.createLongTempMarkdown() (~1,000 lines each — real
 // scrollable height, unique "## Section N" markers), scroll tab A deep, switch A→B→A,
-// assert the preview restored to the same section (not the top). Requires TabState
-// scroll persistence (MV-003) + renderComplete-driven restore wiring (MV-005).
+// assert the preview restored to the same section (not the top). TabState scroll
+// persistence + renderComplete-gated switch restore SHIPPED (MV-003 + the tab-switch
+// slice of MV-005). Automating the assertion still needs a scroll-position readback
+// (AX exposes no scrollY for WKWebView content; needs a JS bridge or AXWebArea walk).
 runner.skip("MV-003/005: tab switch returns to the same scroll position",
-    reason: "feature pending — TabState scroll persistence (MV-003) + restore wiring (MV-005) not yet implemented; long fixtures ready via createLongTempMarkdown()")
+    reason: "restore shipped (MV-003); assertion needs a preview scroll readback bridge — verify manually: scroll tab A deep, ⌃Tab away and back, position preserved")
 
 print("")
 

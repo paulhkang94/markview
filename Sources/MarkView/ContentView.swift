@@ -22,9 +22,10 @@ struct ContentView: View {
             if let tab = tabManager.selectedTab {
                 // .id(tab.id) forces SwiftUI to create a fresh ActiveTabView on tab switch,
                 // giving each tab isolated @StateObjects (findBar, syncController, etc.).
+                // State that must survive the switch lives in TabState (MV-003) and is
+                // seeded back in by ActiveTabView.init.
                 ActiveTabView(
-                    viewModel: tab.viewModel,
-                    tabID: tab.id,
+                    tab: tab,
                     tabManager: tabManager,
                     errorPresenter: errorPresenter
                 )
@@ -42,17 +43,39 @@ struct ContentView: View {
 /// so SwiftUI re-renders when that viewModel's @Published properties change.
 /// Recreated on tab switch (via .id()) — per-tab UI state (@StateObjects) is isolated.
 private struct ActiveTabView: View {
+    let tab: TabState
     @ObservedObject var viewModel: PreviewViewModel
-    let tabID: UUID
     @ObservedObject var tabManager: TabManager
     var errorPresenter: ErrorPresenter
 
     @StateObject private var findBar = FindBarController()
     @ObservedObject private var settings = AppSettings.shared
-    @State private var syncController = ScrollSyncController()
-    @State private var showEditor = false
+    @State private var syncController: ScrollSyncController
+    @State private var showEditor: Bool
     @State private var showExternalChangeAlert = false
     @State private var escMonitorHolder = EscMonitorHolder()
+
+    /// Seeds per-tab UI state from TabState (MV-003): `.id(tab.id)` destroys this
+    /// view's @State on every tab switch, so anything that must survive the switch
+    /// lives in TabState — copied in here at creation and written back on change
+    /// (scroll line: continuously via onLineChange; pane mode: on toggle).
+    /// The seeded lastPreviewLine is what handleRenderComplete restores after the
+    /// recreated WKWebView finishes rendering (MV-002), so a reselected tab returns
+    /// to its saved position instead of the top. A brand-new tab seeds 0, and the
+    /// `line > 0` guard in handleRenderComplete keeps fresh loads at the top.
+    @MainActor
+    init(tab: TabState, tabManager: TabManager, errorPresenter: ErrorPresenter) {
+        self.tab = tab
+        self.viewModel = tab.viewModel
+        self.tabManager = tabManager
+        self.errorPresenter = errorPresenter
+        let controller = ScrollSyncController()
+        // Seed BEFORE installing the write-through so seeding is not echoed back.
+        controller.lastPreviewLine = tab.scrollLine
+        controller.onLineChange = { [weak tab] line in tab?.scrollLine = line }
+        _syncController = State(initialValue: controller)
+        _showEditor = State(initialValue: tab.showEditor)
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -228,11 +251,11 @@ private struct ActiveTabView: View {
     /// screen by removing the tab from TabManager (which sets selectedTabID to nil).
     private func closeCurrentTab() {
         if tabManager.tabs.count > 1 {
-            tabManager.closeTab(tabID)
+            tabManager.closeTab(tab.id)
         } else if viewModel.isLoaded {
             // Last tab — unload to home screen but keep the tab shell so the tab bar stays.
             // Actually per UX decision: all-tabs-closed → home screen.
-            tabManager.closeTab(tabID)
+            tabManager.closeTab(tab.id)
         } else {
             // Already on home screen — close window.
             NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
@@ -277,6 +300,8 @@ private struct ActiveTabView: View {
 
     private func toggleEditor() {
         showEditor.toggle()
+        // Pane mode is per-tab state — persist so it survives tab switches (MV-003).
+        tab.showEditor = showEditor
         guard let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
         let screen = window.screen ?? NSScreen.main
         let screenFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
