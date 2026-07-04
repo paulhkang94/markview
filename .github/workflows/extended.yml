@@ -27,9 +27,13 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          # Same key namespace as ci.yml so these jobs restore the cache CI just saved.
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run fuzz tests (10,000 inputs)
@@ -46,9 +50,13 @@ jobs:
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          # Same key namespace as ci.yml so these jobs restore the cache CI just saved.
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
           restore-keys: |
+            spm-v2-${{ runner.os }}-${{ runner.arch }}-
             spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Run differential tests vs cmark-gfm
