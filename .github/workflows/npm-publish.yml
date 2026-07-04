@@ -5,6 +5,12 @@ name: Publish npm
 # The postinstall continues to download the existing binary from the latest GitHub Release.
 #
 # Trigger: workflow_dispatch (manual) or automatic when npm/package.json changes on main.
+#
+# Auth: npm Trusted Publishing (OIDC) — configured on the package's npm Settings for
+# this repo + this workflow filename. No NPM_TOKEN to expire (the 1.6.0 release was
+# blocked by exactly that). Requires npm >= 11.5.1 and id-token: write.
+# The MCP registry publish (mcp-publisher, github-oidc login) rides the same OIDC
+# grant — it went stale at 1.2.11 (Apr 3) because it was a manual step nobody ran.
 
 on:
   workflow_dispatch:
@@ -31,9 +37,15 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      id-token: write   # npm Trusted Publishing + mcp-publisher github-oidc
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Ensure npm >= 11.5.1 (trusted publishing minimum)
+        run: |
+          npm install -g npm@11
+          npm --version
 
       - name: Get npm version
         id: version
@@ -109,15 +121,23 @@ jobs:
           fi
           rm -rf "$_tmp"
 
-      - name: Publish to npm
+      - name: Publish to npm (OIDC trusted publishing)
         if: steps.check.outputs.SKIP == 'false' && github.event.inputs.dry_run != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
           cd npm
+          # No token: npm mints a short-lived credential via the workflow's OIDC
+          # identity (trusted publisher must match repo + workflow filename).
           npm publish --access public
           echo "✓ Published mcp-server-markview@${{ steps.version.outputs.VERSION }}"
+
+      - name: Publish to MCP registry
+        if: steps.check.outputs.SKIP == 'false' && github.event.inputs.dry_run != 'true'
+        run: |
+          brew install mcp-publisher
+          cd npm
+          mcp-publisher login github-oidc
+          mcp-publisher publish
+          echo "✓ MCP registry updated for io.github.paulhkang94/markview"
 
       - name: Dry run summary
         if: github.event.inputs.dry_run == 'true'
