@@ -160,7 +160,10 @@ struct MarkViewApp: App {
                 Button(Strings.openFile) { openFile() }
                     .keyboardShortcut("o", modifiers: .command)
 
-                Button("New Tab") { openFile() }
+                // ⌘T opens a true untitled scratch tab (MV-007), no longer an alias
+                // for ⌘O's file picker — that made ⌘T redundant with ⌘O. ⌘O below
+                // stays the file picker, so the two are now genuinely distinct.
+                Button("New Tab") { tabManager.newUntitledTab() }
                     .keyboardShortcut("t", modifiers: .command)
 
                 Menu(Strings.openRecent) {

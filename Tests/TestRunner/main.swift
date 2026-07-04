@@ -4235,6 +4235,41 @@ runner.test("MV-007: startUntitled starts NO file-backed side effects (recents/w
         "startUntitled must NOT call loadFile — that path assumes a real file; loadFile is reserved for the promote transition")
 }
 
+runner.test("MV-007: WebPreviewView is keyed by tab.id, not viewModel.currentFilePath") {
+    let cvSource = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(!cvSource.contains(".id(viewModel.currentFilePath ?? \"\")"),
+        "the old .id(viewModel.currentFilePath ?? \"\") keying must be gone — two open untitled tabs both key to \"\", so SwiftUI would treat them as the same view identity across a tab switch")
+    // Both WebPreviewView occurrences (split-pane + preview-only) must key on tab.id
+    // (the outer ActiveTabView already keys on tab.id, so the total is >= 3).
+    let idCount = cvSource.components(separatedBy: ".id(tab.id)").count - 1
+    try expect(idCount >= 3,
+        "both WebPreviewView occurrences must be keyed by .id(tab.id) so each tab (including untitled ones) gets a distinct SwiftUI identity, got \(idCount) .id(tab.id) sites")
+}
+
+runner.test("MV-007: ⌘S on an untitled tab runs an NSSavePanel and promotes via TabManager (panel stays in the View layer)") {
+    let cvSource = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(cvSource.contains("if tab.url == nil"),
+        "the .saveDocument handler must branch on tab.url == nil to intercept ⌘S for an untitled tab")
+    try expect(cvSource.contains("NSSavePanel()"),
+        "an untitled ⌘S must present an NSSavePanel so the user can choose a file location")
+    try expect(cvSource.contains("tabManager.promoteUntitledTab(tab, to: url)"),
+        "after the panel returns a URL, the tab must be promoted via TabManager.promoteUntitledTab — the single untitled→file transition")
+    let vmSource = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(!vmSource.contains("NSSavePanel"),
+        "PreviewViewModel must NOT reference NSSavePanel — per spec option (b) the panel lives in the View layer, keeping the viewModel free of AppKit panel dependencies")
+}
+
+runner.test("MV-007: the ⌘T \"New Tab\" menu item opens an untitled tab, not the ⌘O file picker") {
+    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(appSource.contains("Button(\"New Tab\") { tabManager.newUntitledTab() }"),
+        "the ⌘T New Tab button must call tabManager.newUntitledTab() — opening a true untitled scratch tab")
+    try expect(!appSource.contains("Button(\"New Tab\") { openFile() }"),
+        "the ⌘T New Tab button must no longer alias openFile() — that made ⌘T redundant with ⌘O")
+    // ⌘O must remain the file picker so the two shortcuts stay genuinely distinct.
+    try expect(appSource.contains("Button(Strings.openFile) { openFile() }"),
+        "⌘O must remain the file-open picker (openFile), unchanged by MV-007")
+}
+
 // =============================================================================
 
 print("")
