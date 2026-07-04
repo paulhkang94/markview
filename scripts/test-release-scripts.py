@@ -673,6 +673,189 @@ class TestTapAudit(unittest.TestCase):
         self.assertIn("ERROR: could not fetch tap cask from", output)
 
 
+# ── npm_publish_gate ──────────────────────────────────────────────────────────
+
+
+class TestNpmPublishGate(unittest.TestCase):
+    REPO = "paulhkang94/markview"
+
+    def _make_npm(self, tmp: Path, *, npm_ver: str, binary_ver: str) -> None:
+        (tmp / "npm/scripts").mkdir(parents=True, exist_ok=True)
+        (tmp / "npm/package.json").write_text(json.dumps({"version": npm_ver}))
+        (tmp / "npm/scripts/postinstall.js").write_text(
+            f'const BINARY_VERSION = "{binary_ver}";\n'
+        )
+
+    @contextlib.contextmanager
+    def _stubbed(
+        self,
+        mod,
+        *,
+        remote_tags: set[str] | None = None,
+        tags_after_wait: set[str] | None = None,
+        releases: dict[str, list[str]] | None = None,
+        latest: str = "",
+    ):
+        """Stub the GitHub + sleep boundaries.
+
+        `remote_tags` are visible immediately; `tags_after_wait` become
+        visible only after the first _sleep call (models the coordinated-
+        release race where the tag push trails the main push).
+        """
+        remote_tags = remote_tags or set()
+        tags_after_wait = tags_after_wait or set()
+        releases = releases or {}
+        sleeps: list[float] = []
+        visible = set(remote_tags)
+
+        def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            visible.update(tags_after_wait)
+
+        with (
+            patch.object(mod, "remote_tag_exists", new=lambda r, t: t in visible),
+            patch.object(mod, "release_assets", new=lambda r, t: releases.get(t)),
+            patch.object(mod, "latest_release_tag", new=lambda r: latest),
+            patch.object(mod, "_sleep", new=fake_sleep),
+            patch("sys.stdout", new_callable=StringIO) as out,
+        ):
+            yield out, sleeps
+
+    def test_coordinated_release_with_asset_passes(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(
+                mod,
+                remote_tags={"v1.7.0"},
+                releases={"v1.7.0": ["MarkView-1.7.0.zip", "MarkView-1.7.0.tar.gz"]},
+            ) as (out, sleeps):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("✓ BINARY_VERSION matches the npm version (1.7.0)", output)
+        self.assertIn("✓ Release v1.7.0 carries MarkView-1.7.0.tar.gz", output)
+        self.assertIn("✓ npm publish gate passed", output)
+        self.assertEqual(sleeps, [])  # pin == npm version: no tag wait needed
+
+    def test_release_still_building_fails_with_retry_hint(self):
+        # Coordinated release: main push triggered npm-publish before
+        # release.yml finished uploading artifacts.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(mod, remote_tags={"v1.7.0"}, releases={}) as (
+                out,
+                _,
+            ):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ GitHub release v1.7.0 does not exist (yet)", output)
+        self.assertIn("re-runs automatically", output)
+
+    def test_stale_pin_with_app_tag_fails(self):
+        # THE 1.6.0 replay at the publish boundary: npm 1.6.0 about to
+        # publish while postinstall still pins 1.4.0 and tag v1.6.0 exists.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.6.0", binary_ver="1.4.0")
+            with self._stubbed(
+                mod,
+                remote_tags={"v1.4.0", "v1.6.0"},
+                releases={"v1.4.0": ["MarkView-1.4.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ STALE BINARY_VERSION: app tag v1.6.0 exists", output)
+        self.assertIn("the 1.6.0 incident", output)
+
+    def test_stale_pin_catches_tag_arriving_during_wait(self):
+        # Race shape: main push fires the workflow, tag push lands seconds
+        # later. The gate must wait for the tag instead of concluding
+        # "JS-only" and letting the stale pin publish immutably.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.6.0")
+            with self._stubbed(
+                mod,
+                tags_after_wait={"v1.7.0"},
+                releases={"v1.6.0": ["MarkView-1.6.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, sleeps):
+                rc = mod.run_gate(tmp, self.REPO, tag_wait_seconds=60)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertGreaterEqual(len(sleeps), 1)
+        self.assertIn("✗ STALE BINARY_VERSION: app tag v1.7.0 exists", output)
+
+    def test_js_only_publish_with_current_pin_passes(self):
+        # npm 1.6.2 (no app tag), pin 1.6.0 == latest release: legitimate.
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.6.2", binary_ver="1.6.0")
+            with self._stubbed(
+                mod,
+                releases={"v1.6.0": ["MarkView-1.6.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, sleeps):
+                rc = mod.run_gate(tmp, self.REPO, tag_wait_seconds=30)
+        output = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertGreaterEqual(len(sleeps), 1)  # waited before deciding JS-only
+        self.assertIn("treating as a JS-only npm publish", output)
+        self.assertIn("✓ BINARY_VERSION 1.6.0 is the latest published release", output)
+
+    def test_js_only_publish_with_stale_pin_fails(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.6.2", binary_ver="1.4.0")
+            with self._stubbed(
+                mod,
+                releases={"v1.4.0": ["MarkView-1.4.0.tar.gz"]},
+                latest="v1.6.0",
+            ) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO, tag_wait_seconds=30)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn(
+            "✗ STALE BINARY_VERSION: 1.4.0 but the latest published release is v1.6.0",
+            output,
+        )
+
+    def test_release_missing_tarball_asset_fails(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_npm(tmp, npm_ver="1.7.0", binary_ver="1.7.0")
+            with self._stubbed(
+                mod,
+                remote_tags={"v1.7.0"},
+                releases={"v1.7.0": ["MarkView-1.7.0.zip"]},
+            ) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO)
+        output = out.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("has no MarkView-1.7.0.tar.gz asset", output)
+
+    def test_unreadable_inputs_fail(self):
+        mod = _load("npm_publish_gate")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)  # no npm/ tree at all
+            with self._stubbed(mod) as (out, _):
+                rc = mod.run_gate(tmp, self.REPO)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ Cannot read version from npm/package.json", out.getvalue())
+
+
 # ── Thin wrappers + wiring ────────────────────────────────────────────────────
 
 

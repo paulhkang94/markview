@@ -97,6 +97,14 @@
       "ci_pattern": "check-rule-gates\\.sh",
       "gate_type": "script_run",
       "tier": 1
+    },
+    {
+      "id": "npm-binary-pin-gated-at-publish",
+      "description": "npm-publish.yml must run npm_publish_gate.py before publishing: BINARY_VERSION must be current (not merely an existing tag) and its release tar.gz downloadable. npm publishes are immutable — the 1.6.0 incident shipped a 3-month-old binary because no such gate existed.",
+      "ci_files": [".github/workflows/npm-publish.yml"],
+      "ci_pattern": "npm_publish_gate\\.py",
+      "gate_type": "script_run",
+      "tier": 1
     }
   ]
 }
