@@ -105,6 +105,14 @@
       "ci_pattern": "npm_publish_gate\\.py",
       "gate_type": "script_run",
       "tier": 1
+    },
+    {
+      "id": "npm-publish-single-owner",
+      "description": "npm publishing is owned exclusively by npm-publish.yml (OIDC). check_release_destinations.py fails CI if 'npm publish', 'mcp-publisher publish', or NPM_TOKEN reappears in release.yml, any other workflow, or release.sh — the 1.6.0 mispublish came from release.yml's duplicate token-based publish racing the pin fix on main.",
+      "ci_files": [".github/workflows/guard.yml"],
+      "ci_pattern": "check_release_destinations\\.py",
+      "gate_type": "script_run",
+      "tier": 1
     }
   ]
 }

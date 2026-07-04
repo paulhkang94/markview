@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Tests for release_preflight.py, check_version_sync.py, and tap_audit.py.
+Tests for release_preflight.py, check_version_sync.py, tap_audit.py,
+npm_publish_gate.py, and check_release_destinations.py.
 
 Tier 2 behavioral tests — verify check logic, marker-file contract, and
 output/exit-code shape against fixture temp trees. All subprocess and
-network boundaries are stubbed: no live gh, git, swift, or HTTP calls.
+network boundaries are stubbed: no live gh, git, npm, swift, or HTTP calls.
 
 Usage:
     python3 scripts/test-release-scripts.py
@@ -671,6 +672,139 @@ class TestTapAudit(unittest.TestCase):
             code, output = self._run_main(mod)
         self.assertEqual(code, 1)
         self.assertIn("ERROR: could not fetch tap cask from", output)
+
+
+# ── check_release_destinations ────────────────────────────────────────────────
+
+
+OWNER_YML = (
+    "permissions:\n"
+    "  id-token: write\n"
+    "steps:\n"
+    "  - run: npm publish --access public\n"
+    "  - run: mcp-publisher publish\n"
+)
+
+
+class TestReleaseDestinations(unittest.TestCase):
+    def _make_repo(
+        self,
+        tmp: Path,
+        *,
+        owner_yml: str = OWNER_YML,
+        release_yml: str = "steps:\n  - run: echo build\n",
+        release_sh: str = "#!/bin/bash\necho build only\n",
+        extra_workflows: dict[str, str] | None = None,
+    ) -> None:
+        workflows = tmp / ".github/workflows"
+        workflows.mkdir(parents=True, exist_ok=True)
+        (workflows / "npm-publish.yml").write_text(owner_yml)
+        (workflows / "release.yml").write_text(release_yml)
+        for name, content in (extra_workflows or {}).items():
+            (workflows / name).write_text(content)
+        (tmp / "scripts").mkdir(exist_ok=True)
+        (tmp / "scripts/release.sh").write_text(release_sh)
+
+    def _run(self, tmp: Path) -> tuple[int, str]:
+        mod = _load("check_release_destinations")
+        with patch("sys.stdout", new_callable=StringIO) as out:
+            rc = mod.run(tmp)
+        return rc, out.getvalue()
+
+    def test_single_owner_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(tmp)
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 0)
+        self.assertIn("✓ .github/workflows/npm-publish.yml owns 'npm publish'", output)
+        self.assertIn("✓ Publish destinations single-owned", output)
+
+    def test_npm_publish_in_release_yml_fails(self):
+        # The exact edit that caused the 1.6.0 mispublish, replayed.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                release_yml="steps:\n  - run: cd npm && npm publish\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ .github/workflows/release.yml contains 'npm publish'", output)
+        self.assertIn("1.6.0 dual-publish incident", output)
+
+    def test_npm_publish_in_release_sh_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                release_sh="#!/bin/bash\ncd npm && npm publish --access public\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ scripts/release.sh contains 'npm publish'", output)
+
+    def test_comment_mentions_are_ignored(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                release_yml=(
+                    "# This workflow must never run npm publish (see 1.6.0).\n"
+                    "steps:\n"
+                    "  - run: echo build\n"
+                    "    # do not add npm publish here\n"
+                ),
+                release_sh=("#!/bin/bash\n# npm publish moved to npm-publish.yml\n"),
+            )
+            rc, _ = self._run(tmp)
+        self.assertEqual(rc, 0)
+
+    def test_npm_token_anywhere_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                extra_workflows={
+                    "ci.yml": "env:\n  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n"
+                },
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ .github/workflows/ci.yml references NPM_TOKEN", output)
+
+    def test_owner_losing_publish_step_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                owner_yml="permissions:\n  id-token: write\nsteps: []\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("no longer contains 'npm publish' — owner lost", output)
+
+    def test_owner_losing_oidc_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                owner_yml="steps:\n  - run: npm publish --access public\n",
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("missing 'id-token: write'", output)
+
+    def test_second_publisher_workflow_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            self._make_repo(
+                tmp,
+                extra_workflows={"sneaky.yml": "steps:\n  - run: npm  publish\n"},
+            )
+            rc, output = self._run(tmp)
+        self.assertEqual(rc, 1)
+        self.assertIn("✗ .github/workflows/sneaky.yml contains 'npm publish'", output)
 
 
 # ── npm_publish_gate ──────────────────────────────────────────────────────────
