@@ -102,7 +102,7 @@ private struct ActiveTabView: View {
                                 findBar: findBar,
                                 onWebViewCreated: { viewModel.previewWebView = $0 }
                             )
-                            .id(viewModel.currentFilePath ?? "")
+                            .id(tab.id)
                             .frame(minWidth: 200, idealWidth: .infinity, maxWidth: .infinity)
                             .accessibilityElement(children: .contain)
                         }
@@ -118,7 +118,7 @@ private struct ActiveTabView: View {
                             findBar: findBar,
                             onWebViewCreated: { viewModel.previewWebView = $0 }
                         )
-                        .id(viewModel.currentFilePath ?? "")
+                        .id(tab.id)
                     }
                 } else {
                     HomeScreenView { url in
@@ -181,11 +181,20 @@ private struct ActiveTabView: View {
                 if conflict { showExternalChangeAlert = true }
             }
             .onReceive(NotificationCenter.default.publisher(for: .saveDocument)) { _ in
-                do {
-                    try viewModel.save()
-                } catch {
-                    errorPresenter.show("Save failed", detail: error.localizedDescription)
-                    AppLogger.captureError(error, category: "file", message: "Manual save failed")
+                if tab.url == nil {
+                    // Untitled scratch tab (MV-007): no file on disk yet, so ⌘S must
+                    // prompt for a location and promote the tab to a real file. This is
+                    // the ONE site that intercepts save for a nil-url tab — the NSSavePanel
+                    // lives here in the View layer so PreviewViewModel keeps zero AppKit
+                    // panel dependencies (mirrors NSOpenPanel living in MarkViewApp).
+                    saveUntitledTab()
+                } else {
+                    do {
+                        try viewModel.save()
+                    } catch {
+                        errorPresenter.show("Save failed", detail: error.localizedDescription)
+                        AppLogger.captureError(error, category: "file", message: "Manual save failed")
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .exportHTML)) { _ in
@@ -259,6 +268,27 @@ private struct ActiveTabView: View {
         } else {
             // Already on home screen — close window.
             NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+        }
+    }
+
+    /// ⌘S on an untitled tab (MV-007): run an NSSavePanel, then promote the tab to
+    /// a real file via TabManager. Kept in the View layer so PreviewViewModel stays
+    /// free of AppKit panel dependencies (mirrors NSOpenPanel living in MarkViewApp).
+    private func saveUntitledTab() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "md")!,
+            .init(filenameExtension: "markdown")!,
+        ]
+        panel.nameFieldStringValue = "Untitled.md"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try tabManager.promoteUntitledTab(tab, to: url)
+            registerFileInWindow(url.path)
+        } catch {
+            errorPresenter.show("Save failed", detail: error.localizedDescription)
+            AppLogger.captureError(error, category: "file", message: "Untitled tab save failed")
         }
     }
 

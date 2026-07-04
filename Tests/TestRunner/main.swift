@@ -4101,6 +4101,176 @@ runner.test("MV-001: legacy single-file restore stays as a fallback when no sess
 }
 
 // =============================================================================
+// MARK: - MV-007 untitled tab (Command-T opens a true untitled tab)
+//
+// MV-007 makes TabState.url Optional so ⌘T can open a scratch tab with no file.
+// The single highest-risk correctness point is that persistSession() now filters
+// untitled tabs out of the persisted openPaths (compactMap), so the stored
+// selectedIndex must be recomputed against that FILTERED array — TabSelection
+// below owns that pure logic. Its behavioral coverage (Tier 2) is the required
+// pair for the app-target source-inspection tests further down. Untitled tabs are
+// intentionally EXCLUDED from persistence — a scratch tab is lost on quit.
+// =============================================================================
+
+print("\n--- TabSelection behavioral tests (MV-007, highest-risk: filtered-index recompute) ---")
+
+runner.test("TabSelection: no untitled tabs — index is unchanged") {
+    // All tabs have URLs, so the filtered array == the raw array; index passes through.
+    try expect(TabSelection.filteredIndex(hasURL: [true, true, true], selectedRawIndex: 0) == 0,
+        "with no untitled tabs the raw index 0 must map to filtered 0")
+    try expect(TabSelection.filteredIndex(hasURL: [true, true, true], selectedRawIndex: 2) == 2,
+        "with no untitled tabs the raw index 2 must map to filtered 2")
+}
+
+runner.test("TabSelection: selected real tab sits AFTER an excluded untitled tab — index shifts down") {
+    // [untitled, real, real]; selecting raw index 2 must map to filtered index 1,
+    // because one untitled tab before it is dropped from openPaths. A naive
+    // compactMap-only change (keeping the raw index) would reselect the wrong tab.
+    try expect(TabSelection.filteredIndex(hasURL: [false, true, true], selectedRawIndex: 2) == 1,
+        "raw index 2 with one untitled tab before it must map to filtered index 1, got \(String(describing: TabSelection.filteredIndex(hasURL: [false, true, true], selectedRawIndex: 2)))")
+    // Two untitled tabs before the selected real tab → shift down by two.
+    try expect(TabSelection.filteredIndex(hasURL: [false, false, true], selectedRawIndex: 2) == 0,
+        "raw index 2 with two untitled tabs before it must map to filtered index 0")
+}
+
+runner.test("TabSelection: selected real tab sits BEFORE an excluded untitled tab — index unchanged") {
+    // [real, untitled, real]; selecting raw index 0 stays filtered index 0 —
+    // the untitled tab is after it, so nothing before it is dropped.
+    try expect(TabSelection.filteredIndex(hasURL: [true, false, true], selectedRawIndex: 0) == 0,
+        "raw index 0 with an untitled tab only after it must stay filtered index 0")
+    // [real, untitled, real]; selecting raw index 2 → one untitled before it → filtered 1.
+    try expect(TabSelection.filteredIndex(hasURL: [true, false, true], selectedRawIndex: 2) == 1,
+        "raw index 2 with one untitled tab before it must map to filtered index 1")
+}
+
+runner.test("TabSelection: the selected tab itself is untitled — nil (nothing to reselect)") {
+    try expect(TabSelection.filteredIndex(hasURL: [true, false, true], selectedRawIndex: 1) == nil,
+        "when the SELECTED tab is untitled the filtered index must be nil — it is not in the persisted list")
+    try expect(TabSelection.filteredIndex(hasURL: [false], selectedRawIndex: 0) == nil,
+        "a lone selected untitled tab must map to nil")
+}
+
+runner.test("TabSelection: all tabs untitled — nil regardless of selection") {
+    try expect(TabSelection.filteredIndex(hasURL: [false, false], selectedRawIndex: 0) == nil,
+        "all-untitled with selection at index 0 must be nil")
+    try expect(TabSelection.filteredIndex(hasURL: [false, false], selectedRawIndex: 1) == nil,
+        "all-untitled with selection at index 1 must be nil")
+}
+
+runner.test("TabSelection: nil / out-of-range selection — nil (defensive)") {
+    try expect(TabSelection.filteredIndex(hasURL: [true, true], selectedRawIndex: nil) == nil,
+        "nil selection must map to nil")
+    try expect(TabSelection.filteredIndex(hasURL: [true, true], selectedRawIndex: 5) == nil,
+        "out-of-range selection must map to nil, not crash")
+    try expect(TabSelection.filteredIndex(hasURL: [], selectedRawIndex: 0) == nil,
+        "empty tab list must map to nil")
+}
+
+print("\n--- MV-007 TabManager / PreviewViewModel source-inspection tests ---")
+
+runner.test("MV-007: openFile dedup is optional-safe and TabManager has no .url! force-unwrap") {
+    try expect(tabManagerSource.contains("$0.url?.resolvingSymlinksInPath() == resolved"),
+        "openFile dedup must optional-chain $0.url? so nil-url (untitled) tabs are skipped, never force-unwrapped")
+    try expect(!tabManagerSource.contains(".url!"),
+        "making TabState.url Optional must introduce no .url! force-unwrap anywhere in TabManager — the compiler forces every read site, and each must be optional-chained, not force-unwrapped")
+}
+
+runner.test("MV-007: persistSession compactMaps $0.url?.path (untitled excluded) and recomputes the filtered index") {
+    try expect(tabManagerSource.contains("tabs.compactMap { $0.url?.path }"),
+        "persistSession must use compactMap { $0.url?.path } — untitled tabs are intentionally dropped from the persisted session, and the old map { $0.url.path } would crash once url is Optional (MV-007 regression guard protecting MV-001's persistence path)")
+    try expect(!tabManagerSource.contains("tabs.map { $0.url.path }"),
+        "the pre-MV-007 tabs.map { $0.url.path } must be gone — it force-unwraps a now-Optional url and would crash on an untitled tab")
+    try expect(tabManagerSource.contains("TabSelection.filteredIndex("),
+        "persistSession must recompute the selected index against the FILTERED (URL-only) array via TabSelection.filteredIndex — persisting the raw tabs index would reselect the wrong tab whenever an untitled tab precedes the selection (highest-risk MV-007 point)")
+}
+
+runner.test("MV-007: newUntitledTab appends a nil-url tab, selects it, forces the editor on, and bypasses openFile") {
+    guard let start = tabManagerSource.range(of: "func newUntitledTab") else {
+        try expect(false, "TabManager must define newUntitledTab() for ⌘T"); return
+    }
+    let tail = tabManagerSource[start.lowerBound...]
+    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(body.contains("TabState(untitledName:"),
+        "newUntitledTab must create a nil-url TabState via the untitledName initializer (not the file initializer)")
+    try expect(body.contains("tabs.append(tab)") && body.contains("selectedTabID = tab.id"),
+        "newUntitledTab must append the new scratch tab and select it")
+    try expect(body.contains("tab.showEditor = true"),
+        "newUntitledTab must force the editor pane on — a preview with no file loaded is useless")
+    try expect(!body.contains("openFile("),
+        "newUntitledTab must bypass openFile(_:) — dedup is meaningless for a tab with no URL")
+}
+
+runner.test("MV-007: promoteUntitledTab writes the buffer then routes through the single loadFile transition") {
+    guard let start = tabManagerSource.range(of: "func promoteUntitledTab") else {
+        try expect(false, "TabManager must define promoteUntitledTab(_:to:)"); return
+    }
+    let tail = tabManagerSource[start.lowerBound...]
+    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(body.contains("editorContent.write("),
+        "promoteUntitledTab must write the current editor buffer to the chosen URL")
+    try expect(body.contains("tab.url = resolved"),
+        "promoteUntitledTab must set the (now-real) url so the tab bar re-derives displayName off it")
+    try expect(body.contains("loadFile(at:"),
+        "promoteUntitledTab must reuse loadFile(at:) as the SINGLE untitled→file transition so recents, file watch, and auto-save all start correctly for free")
+    try expect(body.contains("persistSession()"),
+        "promoteUntitledTab must persist explicitly — tabs/selectedTabID are unchanged so didSet will not fire, but the tab now has a URL and belongs in the restored session")
+}
+
+runner.test("MV-007: startUntitled starts NO file-backed side effects (recents/watcher/auto-save) and skips loadFile") {
+    let vmSource = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    guard let start = vmSource.range(of: "func startUntitled") else {
+        try expect(false, "PreviewViewModel must define startUntitled()"); return
+    }
+    let tail = vmSource[start.lowerBound...]
+    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+    try expect(body.contains("isLoaded = true"),
+        "startUntitled must mark the buffer loaded so the editor/preview show instead of the home screen")
+    try expect(!body.contains("recordOpen"),
+        "startUntitled must NOT record a recents entry — nothing exists on disk yet")
+    try expect(!body.contains("watchFile") && !body.contains("FileWatcher"),
+        "startUntitled must NOT start a FileWatcher — there is no file on disk to watch")
+    try expect(!body.contains("startAutoSaveTimer"),
+        "startUntitled must NOT start the auto-save timer — there is nothing on disk to save to; the first ⌘S promote starts it via loadFile")
+    try expect(!body.contains("loadFile"),
+        "startUntitled must NOT call loadFile — that path assumes a real file; loadFile is reserved for the promote transition")
+}
+
+runner.test("MV-007: WebPreviewView is keyed by tab.id, not viewModel.currentFilePath") {
+    let cvSource = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(!cvSource.contains(".id(viewModel.currentFilePath ?? \"\")"),
+        "the old .id(viewModel.currentFilePath ?? \"\") keying must be gone — two open untitled tabs both key to \"\", so SwiftUI would treat them as the same view identity across a tab switch")
+    // Both WebPreviewView occurrences (split-pane + preview-only) must key on tab.id
+    // (the outer ActiveTabView already keys on tab.id, so the total is >= 3).
+    let idCount = cvSource.components(separatedBy: ".id(tab.id)").count - 1
+    try expect(idCount >= 3,
+        "both WebPreviewView occurrences must be keyed by .id(tab.id) so each tab (including untitled ones) gets a distinct SwiftUI identity, got \(idCount) .id(tab.id) sites")
+}
+
+runner.test("MV-007: ⌘S on an untitled tab runs an NSSavePanel and promotes via TabManager (panel stays in the View layer)") {
+    let cvSource = try String(contentsOfFile: "Sources/MarkView/ContentView.swift", encoding: .utf8)
+    try expect(cvSource.contains("if tab.url == nil"),
+        "the .saveDocument handler must branch on tab.url == nil to intercept ⌘S for an untitled tab")
+    try expect(cvSource.contains("NSSavePanel()"),
+        "an untitled ⌘S must present an NSSavePanel so the user can choose a file location")
+    try expect(cvSource.contains("tabManager.promoteUntitledTab(tab, to: url)"),
+        "after the panel returns a URL, the tab must be promoted via TabManager.promoteUntitledTab — the single untitled→file transition")
+    let vmSource = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(!vmSource.contains("NSSavePanel"),
+        "PreviewViewModel must NOT reference NSSavePanel — per spec option (b) the panel lives in the View layer, keeping the viewModel free of AppKit panel dependencies")
+}
+
+runner.test("MV-007: the ⌘T \"New Tab\" menu item opens an untitled tab, not the ⌘O file picker") {
+    let appSource = try String(contentsOfFile: "Sources/MarkView/MarkViewApp.swift", encoding: .utf8)
+    try expect(appSource.contains("Button(\"New Tab\") { tabManager.newUntitledTab() }"),
+        "the ⌘T New Tab button must call tabManager.newUntitledTab() — opening a true untitled scratch tab")
+    try expect(!appSource.contains("Button(\"New Tab\") { openFile() }"),
+        "the ⌘T New Tab button must no longer alias openFile() — that made ⌘T redundant with ⌘O")
+    // ⌘O must remain the file picker so the two shortcuts stay genuinely distinct.
+    try expect(appSource.contains("Button(Strings.openFile) { openFile() }"),
+        "⌘O must remain the file-open picker (openFile), unchanged by MV-007")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
