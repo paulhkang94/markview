@@ -8,6 +8,9 @@ name: Release
 #   NOTARIZE_KEY_ID       — App Store Connect API key ID
 #   NOTARIZE_ISSUER_ID    — App Store Connect issuer ID
 #   NOTARIZE_API_KEY      — Base64-encoded .p8 key file content
+#   SENTRY_AUTH_TOKEN     — Sentry auth token for dSYM upload (already set;
+#                           same token/org/project as the ci.yml "Sentry
+#                           Release" job: org paulkang, project apple-macos)
 #
 # The release.sh script handles signing + notarization on macOS runners.
 # GitHub-hosted macOS runners have Xcode pre-installed.
@@ -115,6 +118,29 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
           NOTARIZE_KEY_ID: ${{ secrets.NOTARIZE_KEY_ID }}
           NOTARIZE_ISSUER_ID: ${{ secrets.NOTARIZE_ISSUER_ID }}
+
+      - name: Upload dSYMs to Sentry
+        # MV-024 / hang-triage-2026-07-04.md: AppHang group APPLE-MACOS-C has
+        # MarkView frames but every symbol is "?" because no release has ever
+        # uploaded dSYMs. xcodebuild's Release config produces dSYMs alongside
+        # the .app under build/Build/Products/Release/ (confirmed locally:
+        # MarkView.app.dSYM + MarkViewQuickLook.appex.dSYM) with no extra
+        # build-setting changes needed. sentry-cli debug-files upload is the
+        # documented mechanism (docs.sentry.io/cli — "sentry-cli debug-files
+        # upload --org <org> --project <project> PATH"); org/project match the
+        # existing ci.yml Sentry Release job (paulkang / apple-macos).
+        # continue-on-error: a Sentry upload failure must never block a
+        # notarized, already-verified release artifact from publishing.
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          brew install getsentry/tools/sentry-cli
+          sentry-cli debug-files upload \
+            --org paulkang \
+            --project apple-macos \
+            "build/Build/Products/Release/MarkView.app.dSYM" \
+            "build/Build/Products/Release/MarkViewQuickLook.appex.dSYM"
 
       - name: Create release artifacts (zip + tar.gz for npm)
         run: |
