@@ -301,15 +301,25 @@ def tier_golden_drift() -> bool:
 
 
 def tier_script_tests() -> bool:
-    header("Script Tests (metrics + traction)")
-    rc, out = run_captured(["python3", str(PROJECT_DIR / "scripts/test-metrics.py")])
-    tail = out.strip().splitlines()[-3:]
-    if rc == 0 and any(l.strip().startswith("OK") for l in tail):
-        ok("metrics + check_traction tests passed (19 tests)")
-        return True
-    print("\n".join(tail))
-    fail("Script tests failed")
-    return False
+    header("Script Tests (metrics + traction + release)")
+    suites = [
+        ("scripts/test-metrics.py", "metrics + check_traction"),
+        (
+            "scripts/test-release-scripts.py",
+            "release_preflight + check_version_sync + tap_audit",
+        ),
+    ]
+    all_passed = True
+    for rel_path, label in suites:
+        rc, out = run_captured(["python3", str(PROJECT_DIR / rel_path)])
+        tail = out.strip().splitlines()[-3:]
+        if rc == 0 and any(l.strip().startswith("OK") for l in tail):
+            ok(f"{label} tests passed")
+        else:
+            print("\n".join(tail))
+            fail(f"{label} tests failed")
+            all_passed = False
+    return all_passed
 
 
 # ── CLI smoke test ────────────────────────────────────────────────────────────
