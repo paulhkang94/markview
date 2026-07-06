@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.0
+
+- Restore all previously-open tabs on relaunch, not just the last one (MV-001, #39): reopening MarkView now brings back every tab from your last session, each with its own file watching and preview state.
+- Cmd+T opens a true untitled tab (MV-007, #42): a fresh empty tab for scratch notes, no file on disk required.
+- Lint fix: escaped pipes (`\|`) inside Markdown tables are no longer miscounted as cell delimiters (#37).
+- Release and CI hardening: version drift and publish-destination drift across GitHub, npm, and the MCP registry are now structurally prevented (#38); dSYMs upload to Sentry after notarization so crash reports are symbolicated (#40).
+
 ## v1.6.1
 
 - Fix npm package: `mcp-server-markview@1.6.0` shipped with its postinstall pinned to the v1.4.0 app binary; 1.6.1 pins the current binary so npm installs get the tab-cycling and scroll-restore features. No app code changes.
