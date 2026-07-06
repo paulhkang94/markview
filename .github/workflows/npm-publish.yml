@@ -4,11 +4,13 @@ name: Publish npm
 # Use when only npm/ changes (JS module, package.json) and no new app binary is needed.
 # The postinstall continues to download the existing binary from the latest GitHub Release.
 #
-# Triggers: workflow_dispatch (manual), automatic when npm/ changes on main, and
-# workflow_run after a successful Release — a coordinated app+npm release fires the
-# push trigger before release.yml has uploaded the binary artifacts, so the publish
-# gate fails that first run and this retry completes the publish (idempotent via
-# the already-published check).
+# Triggers: workflow_dispatch (manual), automatic when npm/ changes on main (push),
+# and workflow_run after a successful Release. A coordinated app+npm release fires
+# the push trigger before release.yml has uploaded the binary artifacts; the publish
+# gate can't pass yet, so that push run DEFERS gracefully (green skip) and the
+# workflow_run after Release completes the publish (idempotent via the
+# already-published check). A push for an npm-only change (binary already released)
+# passes the gate and publishes directly.
 #
 # Auth: npm Trusted Publishing (OIDC) — configured on the package's npm Settings for
 # this repo + this workflow filename. No NPM_TOKEN to expire (the 1.6.0 release was
@@ -80,17 +82,34 @@ jobs:
         # npm publishes are immutable. Blocks the 1.6.0 incident class:
         # a stale postinstall pin (old binary under a new package version)
         # or a pin whose GitHub release / tar.gz asset does not exist yet.
+        #
+        # On a push event the gate legitimately misses when a coordinated app+npm
+        # release is in flight: the "Release vX.Y.Z" commit has landed on main but
+        # release.yml has not uploaded the binary asset yet. That is not an error —
+        # the workflow_run after Release is the authoritative publish path and
+        # completes it. So a push-event miss DEFERS gracefully (green skip);
+        # workflow_run and manual dispatch keep the gate hard (a real miss fails).
+        id: gate
         if: steps.check.outputs.SKIP == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/npm_publish_gate.py
+        run: |
+          if python3 scripts/npm_publish_gate.py; then
+            echo "deferred=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "::notice::Publish gate not satisfied on a push event — a coordinated release is likely in flight; the workflow_run after Release completes the publish. Deferring (not an error)."
+            echo "deferred=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publish gate failed on a ${{ github.event_name }} event — failing." >&2
+            exit 1
+          fi
 
       - name: Install npm dependencies
-        if: steps.check.outputs.SKIP == 'false'
+        if: steps.check.outputs.SKIP == 'false' && steps.gate.outputs.deferred != 'true'
         run: cd npm && npm install
 
       - name: Verify createSandboxServer is importable
-        if: steps.check.outputs.SKIP == 'false'
+        if: steps.check.outputs.SKIP == 'false' && steps.gate.outputs.deferred != 'true'
         run: |
           cd npm
           node -e "
@@ -108,7 +127,7 @@ jobs:
           "
 
       - name: Pack and verify postinstall
-        if: steps.check.outputs.SKIP == 'false'
+        if: steps.check.outputs.SKIP == 'false' && steps.gate.outputs.deferred != 'true'
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
           cd npm
@@ -140,7 +159,7 @@ jobs:
           rm -rf "$_tmp"
 
       - name: Publish to npm (OIDC trusted publishing)
-        if: steps.check.outputs.SKIP == 'false' && github.event.inputs.dry_run != 'true'
+        if: steps.check.outputs.SKIP == 'false' && steps.gate.outputs.deferred != 'true' && github.event.inputs.dry_run != 'true'
         run: |
           cd npm
           # No token: npm mints a short-lived credential via the workflow's OIDC
@@ -149,7 +168,7 @@ jobs:
           echo "✓ Published mcp-server-markview@${{ steps.version.outputs.VERSION }}"
 
       - name: Publish to MCP registry
-        if: steps.check.outputs.SKIP == 'false' && github.event.inputs.dry_run != 'true'
+        if: steps.check.outputs.SKIP == 'false' && steps.gate.outputs.deferred != 'true' && github.event.inputs.dry_run != 'true'
         run: |
           brew install mcp-publisher
           cd npm
