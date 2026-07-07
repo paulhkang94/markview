@@ -10,27 +10,12 @@ Usage:
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
-
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-REPO = "paulhkang94/markview"
-
-
-# ── GitHub API helper ─────────────────────────────────────────────────────────
-
-
-def gh_api(path: str) -> dict | list | None:
-    result = subprocess.run(["gh", "api", path], capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _gh_api import REPO, gh_api  # noqa: E402
 
 
 # ── Data collection ───────────────────────────────────────────────────────────
