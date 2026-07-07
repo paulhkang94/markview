@@ -13,16 +13,17 @@ Usage:
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _gh_api import REPO, gh_api  # noqa: E402
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-REPO = "paulhkang94/markview"
 NPM_PKG = "mcp-server-markview"
 MCP_SERVER_ID = "io.github.paulhkang94%2Fmarkview"
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -39,16 +40,6 @@ def fetch_json(url: str) -> dict | list | None:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode())
     except Exception:
-        return None
-
-
-def gh_api(path: str) -> dict | list | None:
-    result = subprocess.run(["gh", "api", path], capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
         return None
 
 
