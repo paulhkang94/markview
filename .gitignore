@@ -29,6 +29,7 @@ CLAUDE.md
 hooks/
 scripts/cl-*.sh
 scripts/claude-*.sh
+scripts/claude_*.py
 scripts/check-path-safety.sh
 scripts/test-launchd-env.sh
 .last-verify-at
