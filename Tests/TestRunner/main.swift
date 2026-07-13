@@ -4271,6 +4271,35 @@ runner.test("MV-007: the ⌘T \"New Tab\" menu item opens an untitled tab, not t
 }
 
 // =============================================================================
+// MARK: - item-713 hang triage: JS bundles load once per process, not per Coordinator
+//
+// Sentry hang report #48 (issue paulhkang94/markview#48) sampled the main thread
+// inside Coordinator.init's synchronous mermaid.min.js read (2.9 MB, line 130 in
+// the v1.7.0 build). One Coordinator is created per tab (plus one per pane-toggle
+// view recreation), and v1.7.0's MV-001 restore-all-tabs reopens EVERY persisted
+// tab at launch — N tabs meant N x ~3.2 MB of duplicate synchronous main-thread
+// disk reads before first paint. The fix caches the four bundles in a per-process
+// static so the read happens exactly once. Source-inspection (Tier 4) is the only
+// harness that can reach the AppKit-only WebPreviewView target; behavioral
+// load-once coverage would need an injectable loader seam in the app target.
+
+runner.test("item-713: WebPreviewView JS bundles are cached in a process-wide static") {
+    let wpvSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(wpvSource.contains("static let sharedJSBundles"),
+        "WebPreviewView.Coordinator must define a static sharedJSBundles cache so the ~3.2 MB of JS bundles are read from disk once per process, not once per Coordinator instance")
+}
+
+runner.test("item-713: Coordinator.init no longer re-reads JS bundles from disk per instance") {
+    let wpvSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(!wpvSource.contains("override init()"),
+        "Coordinator's override init() — which performed four synchronous String(contentsOf:) disk reads on the main thread, the exact stack sampled in hang report #48 — must be gone; stored properties read from the static cache instead")
+    // Exactly ONE String(contentsOf: disk-read site may remain: the static loader helper.
+    let readCount = wpvSource.components(separatedBy: "String(contentsOf:").count - 1
+    try expect(readCount == 1,
+        "exactly one String(contentsOf: site must remain in WebPreviewView.swift (the static loadJSBundle helper); got \(readCount) — more than one means a per-instance read crept back in")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()

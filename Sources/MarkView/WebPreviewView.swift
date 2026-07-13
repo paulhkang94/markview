@@ -105,62 +105,42 @@ struct WebPreviewView: NSViewRepresentable {
         private var lastCSS: String = ""
         private var lastBaseDirectory: URL?
         private var lastFileIdentifier: String?
-        private var prismJS: String?
-        private var mermaidJS: String?
-        private var katexJS: String?
-        private var katexAutoRenderJS: String?
         /// When true, ignore the next scroll event from JS (it's from a programmatic scroll).
         var suppressNextScroll = false
 
-        override init() {
-            if let prismURL = ResourceBundle.url(forResource: "prism-bundle.min", withExtension: "js", subdirectory: "Resources") {
-                do {
-                    prismJS = try String(contentsOf: prismURL, encoding: .utf8)
-                } catch {
-                    AppLogger.render.warning("Failed to load Prism.js bundle: \(error.localizedDescription)")
-                    AppLogger.breadcrumb("Prism.js load failed", category: "render", level: .warning)
-                }
-            } else {
-                AppLogger.render.warning("Prism.js bundle resource not found")
-                AppLogger.breadcrumb("Prism.js resource missing", category: "render", level: .warning)
-            }
+        // The JS bundles are immutable app resources — load them ONCE per process
+        // and share across all Coordinators (item-713 hang triage). Previously every
+        // Coordinator.init (one per tab, plus one per pane-toggle view recreation)
+        // synchronously re-read ~3.2 MB from disk on the main thread; mermaid.min.js
+        // alone is 2.9 MB, and Sentry hang report #48 sampled the main thread inside
+        // exactly that read. v1.7.0's restore-all-tabs (MV-001) multiplied the cost
+        // by the number of tabs opened during launch.
+        static let sharedJSBundles: (prism: String?, mermaid: String?, katex: String?, katexAutoRender: String?) = (
+            prism: loadJSBundle("prism-bundle.min", label: "Prism.js"),
+            mermaid: loadJSBundle("mermaid.min", label: "Mermaid.js"),
+            katex: loadJSBundle("katex.min", label: "KaTeX"),
+            katexAutoRender: loadJSBundle("auto-render.min", label: "KaTeX auto-render")
+        )
 
-            if let mermaidURL = ResourceBundle.url(forResource: "mermaid.min", withExtension: "js", subdirectory: "Resources") {
-                do {
-                    mermaidJS = try String(contentsOf: mermaidURL, encoding: .utf8)
-                } catch {
-                    AppLogger.render.warning("Failed to load Mermaid.js bundle: \(error.localizedDescription)")
-                    AppLogger.breadcrumb("Mermaid.js load failed", category: "render", level: .warning)
-                }
-            } else {
-                AppLogger.render.warning("Mermaid.js bundle resource not found")
-                AppLogger.breadcrumb("Mermaid.js resource missing", category: "render", level: .warning)
+        private static func loadJSBundle(_ name: String, label: String) -> String? {
+            guard let url = ResourceBundle.url(forResource: name, withExtension: "js", subdirectory: "Resources") else {
+                AppLogger.render.warning("\(label) bundle resource not found")
+                AppLogger.breadcrumb("\(label) resource missing", category: "render", level: .warning)
+                return nil
             }
-
-            if let katexURL = ResourceBundle.url(forResource: "katex.min", withExtension: "js", subdirectory: "Resources") {
-                do {
-                    katexJS = try String(contentsOf: katexURL, encoding: .utf8)
-                } catch {
-                    AppLogger.render.warning("Failed to load KaTeX bundle: \(error.localizedDescription)")
-                    AppLogger.breadcrumb("KaTeX load failed", category: "render", level: .warning)
-                }
-            } else {
-                AppLogger.render.warning("KaTeX bundle resource not found")
-                AppLogger.breadcrumb("KaTeX resource missing", category: "render", level: .warning)
-            }
-
-            if let arURL = ResourceBundle.url(forResource: "auto-render.min", withExtension: "js", subdirectory: "Resources") {
-                do {
-                    katexAutoRenderJS = try String(contentsOf: arURL, encoding: .utf8)
-                } catch {
-                    AppLogger.render.warning("Failed to load KaTeX auto-render bundle: \(error.localizedDescription)")
-                    AppLogger.breadcrumb("KaTeX auto-render load failed", category: "render", level: .warning)
-                }
-            } else {
-                AppLogger.render.warning("KaTeX auto-render bundle resource not found")
-                AppLogger.breadcrumb("KaTeX auto-render resource missing", category: "render", level: .warning)
+            do {
+                return try String(contentsOf: url, encoding: .utf8)
+            } catch {
+                AppLogger.render.warning("Failed to load \(label) bundle: \(error.localizedDescription)")
+                AppLogger.breadcrumb("\(label) load failed", category: "render", level: .warning)
+                return nil
             }
         }
+
+        private let prismJS = Coordinator.sharedJSBundles.prism
+        private let mermaidJS = Coordinator.sharedJSBundles.mermaid
+        private let katexJS = Coordinator.sharedJSBundles.katex
+        private let katexAutoRenderJS = Coordinator.sharedJSBundles.katexAutoRender
 
         // MARK: - Find Bar
 
