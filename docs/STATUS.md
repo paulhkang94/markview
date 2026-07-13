@@ -213,7 +213,7 @@ Last snapshot: 2026-05-07
 
 Previous snapshot: 2026-04-11
 - npm: 1,807 all-time | Organic: ~20-25/day | Binary: ~198
-- Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-04-11.md`
+- Full analysis: `~/repos/docs/research/archive/2026/markview-adoption-metrics-2026-04-11.md`
 
 ---
 
