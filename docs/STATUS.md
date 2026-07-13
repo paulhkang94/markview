@@ -9,19 +9,18 @@ pending work, and key architectural decisions.
 
 | | |
 |---|---|
-| **App version** | v1.4.2 (build 275) — latest released |
-| **npm package** | mcp-server-markview v1.4.2 (published 2026-04-08) |
-| **BINARY_VERSION** | 1.4.2 (synced — binary + npm back in alignment as of v1.4.2) |
-| **MCP registry** | `io.github.paulhkang94/markview` — active |
-| **Tag** | `v1.4.2` pushed 2026-04-08 |
+| **App version** | v1.7.0 (build 323) - latest released |
+| **npm package** | mcp-server-markview v1.7.0 (published 2026-07-06) |
+| **BINARY_VERSION** | 1.7.0 (synced) |
+| **Homebrew cask** | 1.7.0 (`paulhkang94/markview/markview`) |
+| **MCP registry** | `io.github.paulhkang94/markview` v1.7.0 - active |
+| **Tag** | `v1.7.0` pushed 2026-07-06 |
 
-### Unreleased (v1.4.3 pending)
+### Releases since the 2026-05-07 refresh
 
-Changes since v1.4.2 not yet shipped:
-- **Metrics migration**: `metrics.sh` + `check-traction.sh` → thin bash wrappers delegating to `scripts/metrics.py` + `scripts/check_traction.py` (Python). 19 Tier-2 behavioral tests added in `scripts/test-metrics.py`. Wired into verify.sh script tier.
-- **CL fingerprints**: 8 new fingerprints added across markview + flow DBs (GitHub traffic API paths, input() credentials, Node.js `__dirname`, git+gh api chain, Playwright `--update-snapshots`).
-- **Open issues**: 3 open GitHub issues (as of 2026-05-07).
-- **Adoption floor**: Post-breakout organic baseline did NOT hold at 20-25/day. Current floor: 4-6/day.
+- **v1.4.3** (2026-05-07), **v1.5.0** (2026-05-08), **v1.6.0** + **v1.6.1** (2026-07-04), **v1.7.0** (2026-07-06).
+- Headline changes: tab system (MV-001 restore-all-tabs, MV-002 renderComplete, MV-003/MV-005 per-tab scroll restore, MV-007 ⌘T untitled tabs, MV-009 ⌃Tab cycling), release scripts → Python, npm OIDC trusted publishing + automatic MCP registry publish, dSYM upload to Sentry (v1.7.0 is the first release with symbolicated crash/hang reports).
+- **Open issues**: 6 (as of 2026-07-13) - 5 are Sentry-auto-filed "App Hanging ≥2000 ms" reports (#30, #45-#48); triage + first fix: `docs/personal/item-713-hang-triage-2026-07-13.md`, branch `fix/item-713-js-bundle-cache`. The 6th is enhancement #26 (remember window position).
 
 > **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
 > successfully notarized GitHub Release binary. npm patches (JS wrapper changes) do
@@ -42,7 +41,7 @@ Changes since v1.4.2 not yet shipped:
 
 ---
 
-## Feature Set (v1.4.2)
+## Feature Set (v1.7.0)
 
 ### Rendering
 | Feature | Status | Notes |
@@ -189,14 +188,15 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 | Channel | Status | Notes |
 |---------|--------|-------|
-| GitHub releases | ✅ | v1.4.2 latest |
-| Homebrew cask | ✅ | `paulhkang94/markview/markview` |
-| npm | ✅ | mcp-server-markview v1.4.2 |
-| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.4.2 |
+| GitHub releases | ✅ | v1.7.0 latest (2026-07-06) |
+| Homebrew cask | ✅ | `paulhkang94/markview/markview` v1.7.0 |
+| npm | ✅ | mcp-server-markview v1.7.0 (OIDC trusted publishing since v1.6.1) |
+| Official MCP registry | ✅ | `io.github.paulhkang94/markview` v1.7.0 (auto-published from npm-publish.yml) |
+| Cloudflare Worker (`markview-mcp`) | ✅ | `workers/mcp/` - remote MCP Streamable HTTP endpoint, capability-listing mode only (tool calls return a "native macOS app" pointer). Built for Smithery/remote listing; deploys via `worker-deploy.yml` |
 | awesome-mcp-servers | ✅ | PR #2139 merged 2026-03-14 |
 | Glama.ai | ✅ | Listed |
 | mcp.so | ⏳ | Submitted |
-| Smithery | ⚠️ | Exists but `isDeployed: null` — Linux sandbox can't install npm pkg |
+| Smithery | ⚠️ | Exists but `isDeployed: null` - Linux sandbox can't install npm pkg |
 
 ---
 
@@ -204,16 +204,18 @@ Single command to update all DOM snapshots. Text-diffable in PRs.
 
 Run `bash scripts/metrics.sh` for current snapshot.
 
-Last snapshot: 2026-05-07
-- GitHub stars: **26** | Forks: 3 | Open issues: 3
-- npm downloads: **2,107 all-time** (up from 1,807 on 2026-04-11)
-- Organic baseline: **4-6/day** (post-breakout floor did NOT hold at 20-25/day)
+Last snapshot: 2026-07-13
+- GitHub stars: **35** | Forks: 3 | Open issues: 6
+- npm downloads: **3,833 all-time** | 1,317 last 30d | 421 last 7d (13.6x the May 7 weekly rate)
+- Release-day spike: 553 npm downloads on 2026-07-04 (all-time single-day record)
+- Organic baseline (non-release weeks): ~10-20/day, up from the 4-6/day May floor
 - Top referrer: reddit.com
-- Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-05-07.md`
+- Watch flag: 5 of 6 open issues are duplicate Sentry "App Hanging" reports filed around the Jul 4-6 releases (item-713 triage)
+- Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-07-13.md`
 
-Previous snapshot: 2026-04-11
-- npm: 1,807 all-time | Organic: ~20-25/day | Binary: ~198
-- Full analysis: `~/repos/docs/research/archive/2026/markview-adoption-metrics-2026-04-11.md`
+Previous snapshot: 2026-05-07
+- Stars: 26 | npm: 2,107 all-time | Organic: 4-6/day | Open issues: 3
+- Full analysis: `~/repos/docs/research/markview-adoption-metrics-2026-05-07.md`
 
 ---
 
