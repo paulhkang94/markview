@@ -25,7 +25,7 @@ const GITHUB_REPO = "markview";
 // BINARY_VERSION pins the macOS app release to download.
 // This is intentionally decoupled from the npm package version —
 // npm patches (JS-only changes) don't require a new macOS binary release.
-const BINARY_VERSION = "1.7.0";
+const BINARY_VERSION = "1.7.1";
 const ARCHIVE_NAME = `MarkView-${BINARY_VERSION}.tar.gz`;
 const DOWNLOAD_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${BINARY_VERSION}/${ARCHIVE_NAME}`;
 
