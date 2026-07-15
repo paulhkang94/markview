@@ -3,6 +3,7 @@
 ## v1.7.1
 
 - Fix app hangs on launch and tab restore (#55): the 3 MB of preview JS bundles (Mermaid, KaTeX, Prism) are now read once per process instead of once per tab, eliminating the main-thread stalls several users reported after v1.6/v1.7. If MarkView felt frozen with multiple restored tabs, this release is for you.
+- Fix app hangs on large documents (#57): the status bar recomputed word/line counts with multiple full-document scans on the main thread every time the UI updated. Stats are now computed in a single pass on a background thread, so multi-megabyte files no longer freeze the window.
 - STATUS.md refreshed to current reality (#54); hook and CI housekeeping (#50-#53).
 
 ## v1.7.0
