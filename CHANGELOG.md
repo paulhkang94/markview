@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.1
+
+- Fix app hangs on launch and tab restore (#55): the 3 MB of preview JS bundles (Mermaid, KaTeX, Prism) are now read once per process instead of once per tab, eliminating the main-thread stalls several users reported after v1.6/v1.7. If MarkView felt frozen with multiple restored tabs, this release is for you.
+- STATUS.md refreshed to current reality (#54); hook and CI housekeeping (#50-#53).
+
 ## v1.7.0
 
 - Restore all previously-open tabs on relaunch, not just the last one (MV-001, #39): reopening MarkView now brings back every tab from your last session, each with its own file watching and preview state.
