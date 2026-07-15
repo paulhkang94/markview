@@ -13,6 +13,11 @@ struct StatusBarView: View {
 
     @State private var showLintPopover = false
 
+    // Computed off the main thread via .task(id:) below — the previous
+    // per-body-eval full-document scans here caused 2s+ main-thread hangs on
+    // large files (item-713).
+    @State private var stats = DocumentStats.zero
+
     init(content: String, filePath: String?, isDirty: Bool, lintWarnings: Int = 0, lintErrors: Int = 0, lintDiagnostics: [LintDiagnostic] = [], onFixAll: (() -> Void)? = nil) {
         self.content = content
         self.filePath = filePath
@@ -23,21 +28,8 @@ struct StatusBarView: View {
         self.onFixAll = onFixAll
     }
 
-    private var wordCount: Int {
-        content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-    }
-
-    private var charCount: Int {
-        content.count
-    }
-
-    private var lineCount: Int {
-        content.isEmpty ? 0 : content.components(separatedBy: .newlines).count
-    }
-
     private var readingTime: String {
-        let minutes = max(1, wordCount / 200)
-        return "\(minutes) min read"
+        "\(stats.readingMinutes) min read"
     }
 
     var body: some View {
@@ -50,12 +42,12 @@ struct StatusBarView: View {
                     .accessibilityLabel(Strings.unsavedA11yLabel)
             }
 
-            Text(Strings.words(wordCount))
-                .accessibilityLabel(Strings.wordsA11y(wordCount))
-            Text(Strings.chars(charCount))
-                .accessibilityLabel(Strings.charsA11y(charCount))
-            Text(Strings.lines(lineCount))
-                .accessibilityLabel(Strings.linesA11y(lineCount))
+            Text(Strings.words(stats.wordCount))
+                .accessibilityLabel(Strings.wordsA11y(stats.wordCount))
+            Text(Strings.chars(stats.charCount))
+                .accessibilityLabel(Strings.charsA11y(stats.charCount))
+            Text(Strings.lines(stats.lineCount))
+                .accessibilityLabel(Strings.linesA11y(stats.lineCount))
             Text(readingTime)
                 .accessibilityLabel(Strings.readingTimeA11y(readingTime))
 
@@ -98,6 +90,13 @@ struct StatusBarView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .background(.bar)
+        .task(id: content) {
+            let text = content
+            let computed = await Task.detached(priority: .utility) {
+                DocumentStats.compute(from: text)
+            }.value
+            stats = computed
+        }
     }
 }
 
