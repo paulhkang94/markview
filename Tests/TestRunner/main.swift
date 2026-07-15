@@ -4300,6 +4300,100 @@ runner.test("item-713: Coordinator.init no longer re-reads JS bundles from disk 
 }
 
 // =============================================================================
+// MARK: - item-713 (second hang class): StatusBarView main-thread document scans
+//
+// StatusBarView recomputed word/char/line counts with THREE independent
+// full-document scans on the main thread inside body — wordCount via split,
+// lineCount via components(separatedBy:), and readingTime re-running the word
+// split — on EVERY SwiftUI body evaluation. Symbolicated v1.7.0 hang reports
+// APPLE-MACOS-34 (wordCount.getter → Collection.split) and APPLE-MACOS-37
+// (lineCount.getter → StringProtocol.components) sampled these exact getters.
+// The fix: DocumentStats.compute() does ONE pass, and StatusBarView runs it
+// off-main via .task(id: content). The tests below pin parity with the
+// replaced getters, including their CRLF scalar-counting quirk.
+
+print("\n--- DocumentStats single-pass parity tests (item-713 StatusBarView hang) ---")
+
+runner.test("DocumentStats: empty content is all zeros (old lineCount special case)") {
+    let s = DocumentStats.compute(from: "")
+    try expect(s == DocumentStats.zero, "empty content must give 0/0/0, got \(s)")
+}
+
+runner.test("DocumentStats: basic words, chars, lines") {
+    let s = DocumentStats.compute(from: "hello world\nfoo")
+    try expect(s.wordCount == 3, "wordCount: expected 3, got \(s.wordCount)")
+    try expect(s.charCount == 15, "charCount: expected 15, got \(s.charCount)")
+    try expect(s.lineCount == 2, "lineCount: expected 2, got \(s.lineCount)")
+}
+
+runner.test("DocumentStats: runs of whitespace collapse into single word boundaries") {
+    let s = DocumentStats.compute(from: "  a\t\tb   c  \n\n d ")
+    try expect(s.wordCount == 4, "wordCount: expected 4, got \(s.wordCount)")
+    try expect(s.lineCount == 3, "lineCount: expected 3, got \(s.lineCount)")
+}
+
+runner.test("DocumentStats: trailing newline adds a line, not a word") {
+    let s = DocumentStats.compute(from: "abc\n")
+    try expect(s.wordCount == 1, "wordCount: expected 1, got \(s.wordCount)")
+    try expect(s.lineCount == 2, "lineCount: expected 2, got \(s.lineCount)")
+}
+
+runner.test("DocumentStats: CRLF counts two newline scalars — parity with components(separatedBy: .newlines)") {
+    // "a\r\nb" is 3 Characters but components(separatedBy: .newlines) yields
+    // ["a", "", "b"] because \r and \n are separate scalar separators. The
+    // single-pass version must preserve that (a perf fix must not change
+    // user-visible numbers).
+    let s = DocumentStats.compute(from: "a\r\nb")
+    try expect(s.charCount == 3, "charCount: expected 3 graphemes, got \(s.charCount)")
+    try expect(s.lineCount == 3, "lineCount: expected 3 (scalar parity), got \(s.lineCount)")
+    try expect(s.wordCount == 2, "wordCount: expected 2, got \(s.wordCount)")
+}
+
+runner.test("DocumentStats: parity with the replaced StatusBarView getters on varied samples") {
+    let samples = [
+        "# Title\n\nSome **bold** text with `code`.\n",
+        "one",
+        "émoji 🎉 café\nnaïve\r\nend",
+        "\n\n\n",
+        "a b c d e f g h i j",
+        String(repeating: "word ", count: 500) + "\n" + String(repeating: "line\n", count: 100),
+    ]
+    for content in samples {
+        let s = DocumentStats.compute(from: content)
+        let oldWords = content.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+        let oldChars = content.count
+        let oldLines = content.isEmpty ? 0 : content.components(separatedBy: .newlines).count
+        try expect(s.wordCount == oldWords,
+            "wordCount parity: expected \(oldWords), got \(s.wordCount) for \(content.prefix(30))…")
+        try expect(s.charCount == oldChars,
+            "charCount parity: expected \(oldChars), got \(s.charCount)")
+        try expect(s.lineCount == oldLines,
+            "lineCount parity: expected \(oldLines), got \(s.lineCount)")
+    }
+}
+
+runner.test("DocumentStats: readingMinutes matches the old max(1, words/200) formula") {
+    try expect(DocumentStats(wordCount: 0, charCount: 0, lineCount: 0).readingMinutes == 1,
+        "empty doc reads as 1 min (old formula)")
+    try expect(DocumentStats(wordCount: 199, charCount: 0, lineCount: 0).readingMinutes == 1,
+        "199 words -> 1 min")
+    try expect(DocumentStats(wordCount: 1000, charCount: 0, lineCount: 0).readingMinutes == 5,
+        "1000 words -> 5 min")
+}
+
+runner.test("item-713: StatusBarView no longer scans the document inside body") {
+    let source = try String(contentsOfFile: "Sources/MarkView/StatusBarView.swift", encoding: .utf8)
+    try expect(!source.contains(".split(whereSeparator:"),
+        "StatusBarView must not word-split the document on the main thread — that is the sampled hang stack (APPLE-MACOS-34)")
+    try expect(!source.contains("components(separatedBy:"),
+        "StatusBarView must not line-split the document on the main thread — that is the sampled hang stack (APPLE-MACOS-37)")
+    try expect(source.contains("DocumentStats.compute"),
+        "StatusBarView must delegate stats to DocumentStats.compute")
+    try expect(source.contains("Task.detached"),
+        "the DocumentStats computation must run off the main thread")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
