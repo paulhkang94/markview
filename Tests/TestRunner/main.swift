@@ -4514,6 +4514,38 @@ runner.test("item-713/#57: StatusBarStatsModel default compute has exact Documen
     }
 }
 
+runner.test("item-713/#57: StatusBarStatsModel drops a cancelled update instead of publishing stale stats") {
+    // Regression: `.task(id: content)` cancels the in-flight update on every content
+    // change, but the detached compute does NOT inherit cancellation and always runs
+    // to completion. If the resumed (cancelled) update still published, an older
+    // document's counts could land AFTER a newer update's — a visible wrong word count
+    // during rapid edits. The cancellation guard must suppress the stale publish.
+    try MainActor.assumeIsolated {
+        let gate = LockedBox(false)
+        // compute blocks on a background thread until the test releases the gate,
+        // giving us a deterministic window to cancel mid-flight.
+        let model = StatusBarStatsModel(compute: { text in
+            while !gate.value { usleep(2000) }
+            return DocumentStats.compute(from: text)
+        })
+        try expect(model.stats == DocumentStats.zero, "precondition: model starts at .zero")
+
+        let task = Task { @MainActor in await model.update(for: "hello world with several words") }
+        // Let the detached compute start and block on the gate.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        task.cancel()          // simulate .task(id:) restart on a content change
+        gate.value = true      // release the compute so update() resumes (now cancelled)
+
+        // Drain: give the resumed update ample time to (wrongly) publish.
+        let deadline = Date().addingTimeInterval(3)
+        while model.stats == DocumentStats.zero && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        try expect(model.stats == DocumentStats.zero,
+            "a cancelled update must NOT publish — got \(model.stats); the stale-write race (out-of-order overlapping updates) is back")
+    }
+}
+
 runner.test("item-713/#57 wiring: StatusBarView delegates stats to StatusBarStatsModel") {
     // Thin Tier-4 wiring check — the off-main mechanism is covered behaviorally
     // above; this only pins that the view actually uses the tested model and

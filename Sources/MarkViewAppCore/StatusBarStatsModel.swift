@@ -33,6 +33,13 @@ public final class StatusBarStatsModel: ObservableObject {
         let computed = await Task.detached(priority: .utility) {
             compute(content)
         }.value
+        // `.task(id: content)` cancels this task when the content changes, but the
+        // detached compute above does NOT inherit cancellation — it always runs to
+        // completion. Without this guard, two overlapping updates (rapid edits on a
+        // large document) can finish out of order and publish an OLDER document's
+        // counts over the newer ones. Bail on cancellation so only the newest
+        // (still-live) update writes `stats`.
+        guard !Task.isCancelled else { return }
         stats = computed
     }
 }
