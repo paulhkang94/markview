@@ -16,8 +16,12 @@ import Foundation
 /// 2. `.app` root — where SPM's Bundle.module expects it (backward compat)
 /// 3. SPM build directory — for `swift run` during development
 /// 4. `Bundle.main` — Xcode/XcodeGen builds copy resources directly into Contents/Resources/
-enum ResourceBundle {
-    static let bundle: Bundle? = {
+///
+/// Lives in MarkViewAppCore (moved from the Xcode app target, mar-033) so that
+/// process-wide caches like `JSBundleCache` are reachable from MarkViewTestRunner.
+/// Behavior is identical in-app: all lookups are relative to `Bundle.main`.
+public enum ResourceBundle {
+    public static let bundle: Bundle? = {
         // MarkView_MarkViewCore.bundle = SPM resources declared in Package.swift MarkViewCore target.
         // MarkView_MarkView.bundle = legacy fallback for older builds.
         let bundleNames = ["MarkView_MarkViewCore.bundle", "MarkView_MarkView.bundle"]
@@ -51,7 +55,7 @@ enum ResourceBundle {
     /// Load a resource URL, returning nil instead of crashing if the bundle is missing.
     /// Tries with the given subdirectory first, then without it (Xcode builds place
     /// resources directly in Contents/Resources/, not in a Resources/ subfolder).
-    static func url(forResource name: String, withExtension ext: String, subdirectory: String? = nil) -> URL? {
+    public static func url(forResource name: String, withExtension ext: String, subdirectory: String? = nil) -> URL? {
         if let url = bundle?.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
             return url
         }

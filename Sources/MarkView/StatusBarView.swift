@@ -1,5 +1,6 @@
 import SwiftUI
 import MarkViewCore
+import MarkViewAppCore
 
 /// Bottom status bar showing document stats and file info.
 struct StatusBarView: View {
@@ -13,10 +14,13 @@ struct StatusBarView: View {
 
     @State private var showLintPopover = false
 
-    // Computed off the main thread via .task(id:) below — the previous
-    // per-body-eval full-document scans here caused 2s+ main-thread hangs on
-    // large files (item-713).
-    @State private var stats = DocumentStats.zero
+    // Computed off the main thread by StatusBarStatsModel (MarkViewAppCore),
+    // driven by .task(id:) below — the previous per-body-eval full-document
+    // scans here caused 2s+ main-thread hangs on large files (item-713 / #57).
+    // The model is behaviorally tested in MarkViewTestRunner.
+    @StateObject private var statsModel = StatusBarStatsModel()
+
+    private var stats: DocumentStats { statsModel.stats }
 
     init(content: String, filePath: String?, isDirty: Bool, lintWarnings: Int = 0, lintErrors: Int = 0, lintDiagnostics: [LintDiagnostic] = [], onFixAll: (() -> Void)? = nil) {
         self.content = content
@@ -91,11 +95,7 @@ struct StatusBarView: View {
         .padding(.vertical, 4)
         .background(.bar)
         .task(id: content) {
-            let text = content
-            let computed = await Task.detached(priority: .utility) {
-                DocumentStats.compute(from: text)
-            }.value
-            stats = computed
+            await statsModel.update(for: content)
         }
     }
 }

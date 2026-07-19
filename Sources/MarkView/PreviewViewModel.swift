@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import WebKit
 import MarkViewCore
+import MarkViewAppCore
 
 @MainActor
 final class PreviewViewModel: ObservableObject {

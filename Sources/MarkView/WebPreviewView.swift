@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import MarkViewCore
+import MarkViewAppCore
 
 struct WebPreviewView: NSViewRepresentable {
     let html: String
@@ -108,34 +109,27 @@ struct WebPreviewView: NSViewRepresentable {
         /// When true, ignore the next scroll event from JS (it's from a programmatic scroll).
         var suppressNextScroll = false
 
-        // The JS bundles are immutable app resources — load them ONCE per process
-        // and share across all Coordinators (item-713 hang triage). Previously every
-        // Coordinator.init (one per tab, plus one per pane-toggle view recreation)
-        // synchronously re-read ~3.2 MB from disk on the main thread; mermaid.min.js
-        // alone is 2.9 MB, and Sentry hang report #48 sampled the main thread inside
-        // exactly that read. v1.7.0's restore-all-tabs (MV-001) multiplied the cost
-        // by the number of tabs opened during launch.
-        static let sharedJSBundles: (prism: String?, mermaid: String?, katex: String?, katexAutoRender: String?) = (
-            prism: loadJSBundle("prism-bundle.min", label: "Prism.js"),
-            mermaid: loadJSBundle("mermaid.min", label: "Mermaid.js"),
-            katex: loadJSBundle("katex.min", label: "KaTeX"),
-            katexAutoRender: loadJSBundle("auto-render.min", label: "KaTeX auto-render")
-        )
-
-        private static func loadJSBundle(_ name: String, label: String) -> String? {
-            guard let url = ResourceBundle.url(forResource: name, withExtension: "js", subdirectory: "Resources") else {
-                AppLogger.render.warning("\(label) bundle resource not found")
-                AppLogger.breadcrumb("\(label) resource missing", category: "render", level: .warning)
-                return nil
+        // The JS bundles are immutable app resources — loaded ONCE per process by
+        // JSBundleCache (MarkViewAppCore) and shared across all Coordinators
+        // (item-713 hang triage / #55; Sentry hang report #48 sampled the main
+        // thread inside a per-Coordinator 2.9 MB mermaid.min.js read, multiplied
+        // by MV-001 restore-all-tabs at launch). The cache's load-once contract
+        // and main-thread budget are covered behaviorally in MarkViewTestRunner;
+        // this wrapper only maps load failures to app-side logging.
+        static let sharedJSBundles: JSBundleCache = {
+            let cache = JSBundleCache.shared
+            for failure in cache.failures {
+                switch failure {
+                case .resourceNotFound(let label):
+                    AppLogger.render.warning("\(label) bundle resource not found")
+                    AppLogger.breadcrumb("\(label) resource missing", category: "render", level: .warning)
+                case .readFailed(let label, let message):
+                    AppLogger.render.warning("Failed to load \(label) bundle: \(message)")
+                    AppLogger.breadcrumb("\(label) load failed", category: "render", level: .warning)
+                }
             }
-            do {
-                return try String(contentsOf: url, encoding: .utf8)
-            } catch {
-                AppLogger.render.warning("Failed to load \(label) bundle: \(error.localizedDescription)")
-                AppLogger.breadcrumb("\(label) load failed", category: "render", level: .warning)
-                return nil
-            }
-        }
+            return cache
+        }()
 
         private let prismJS = Coordinator.sharedJSBundles.prism
         private let mermaidJS = Coordinator.sharedJSBundles.mermaid
