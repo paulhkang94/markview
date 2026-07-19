@@ -33,6 +33,8 @@ targets:
     dependencies:
       - package: MarkViewCore
         product: MarkViewCore
+      - package: MarkViewCore
+        product: MarkViewAppCore
       - package: sentry-cocoa
         product: Sentry
       - target: MarkViewQuickLook

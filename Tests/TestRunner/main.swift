@@ -1,5 +1,6 @@
 import Foundation
 import MarkViewCore
+import MarkViewAppCore
 
 // Simple test runner — no XCTest dependency required
 struct TestRunner {
@@ -32,6 +33,35 @@ func expect(_ condition: Bool, _ message: String = "Assertion failed", file: Str
     guard condition else {
         throw TestError.assertionFailed("\(message) (\(URL(fileURLWithPath: file).lastPathComponent):\(line))")
     }
+}
+
+/// Thread-safe value box for probing detached-task behavior from tests —
+/// Swift 6 forbids capturing mutable locals in @Sendable closures.
+final class LockedBox<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: T
+    init(_ value: T) { _value = value }
+    var value: T {
+        get { lock.lock(); defer { lock.unlock() }; return _value }
+        set { lock.lock(); defer { lock.unlock() }; _value = newValue }
+    }
+}
+
+/// Drive an async main-actor operation to completion from the synchronous
+/// top-level test flow by spinning the main run loop (which services the
+/// MainActor executor in a CLI process). Returns true if it finished in time.
+@MainActor
+func drainMainActor(timeout: TimeInterval = 10, _ operation: @escaping @MainActor () async -> Void) -> Bool {
+    let done = LockedBox(false)
+    Task { @MainActor in
+        await operation()
+        done.value = true
+    }
+    let deadline = Date().addingTimeInterval(timeout)
+    while !done.value && Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    }
+    return done.value
 }
 
 enum TestError: Error, CustomStringConvertible {
@@ -4271,7 +4301,7 @@ runner.test("MV-007: the ⌘T \"New Tab\" menu item opens an untitled tab, not t
 }
 
 // =============================================================================
-// MARK: - item-713 hang triage: JS bundles load once per process, not per Coordinator
+// MARK: - item-713 hang triage / #55: JS bundles load once per process (JSBundleCache)
 //
 // Sentry hang report #48 (issue paulhkang94/markview#48) sampled the main thread
 // inside Coordinator.init's synchronous mermaid.min.js read (2.9 MB, line 130 in
@@ -4279,24 +4309,92 @@ runner.test("MV-007: the ⌘T \"New Tab\" menu item opens an untitled tab, not t
 // view recreation), and v1.7.0's MV-001 restore-all-tabs reopens EVERY persisted
 // tab at launch — N tabs meant N x ~3.2 MB of duplicate synchronous main-thread
 // disk reads before first paint. The fix caches the four bundles in a per-process
-// static so the read happens exactly once. Source-inspection (Tier 4) is the only
-// harness that can reach the AppKit-only WebPreviewView target; behavioral
-// load-once coverage would need an injectable loader seam in the app target.
+// static. mar-033 extracted that cache into JSBundleCache (MarkViewAppCore) with
+// an injectable loader, so the load-once contract is now tested BEHAVIORALLY here
+// instead of via String(contentsOfFile:) source inspection of the app target.
 
-runner.test("item-713: WebPreviewView JS bundles are cached in a process-wide static") {
-    let wpvSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(wpvSource.contains("static let sharedJSBundles"),
-        "WebPreviewView.Coordinator must define a static sharedJSBundles cache so the ~3.2 MB of JS bundles are read from disk once per process, not once per Coordinator instance")
+print("\n--- JSBundleCache behavioral tests (item-713 / #55 hang class) ---")
+
+runner.test("item-713/#55: JSBundleCache requests each bundle exactly once, regardless of tab count") {
+    let counts = LockedBox<[String: Int]>([:])
+    let cache = JSBundleCache(loader: { name in
+        counts.value[name, default: 0] += 1
+        return .success("// stub \(name)")
+    })
+    // Simulate MV-001 restore-all-tabs: 8 Coordinators each read all four bundles
+    // (this is exactly what Coordinator's stored properties do per tab).
+    for _ in 0..<8 {
+        try expect(cache.prism == "// stub prism-bundle.min", "cached prism must be served")
+        try expect(cache.mermaid == "// stub mermaid.min", "cached mermaid must be served")
+        try expect(cache.katex == "// stub katex.min", "cached katex must be served")
+        try expect(cache.katexAutoRender == "// stub auto-render.min", "cached auto-render must be served")
+    }
+    let expected = ["prism-bundle.min": 1, "mermaid.min": 1, "katex.min": 1, "auto-render.min": 1]
+    try expect(counts.value == expected,
+        "each bundle must be loaded exactly once per cache instance — got \(counts.value); more than 1 means the per-Coordinator disk read (hang report #48) crept back in")
+    try expect(cache.failures.isEmpty, "successful loads must not record failures")
 }
 
-runner.test("item-713: Coordinator.init no longer re-reads JS bundles from disk per instance") {
+runner.test("item-713/#55: JSBundleCache records failures for missing/unreadable bundles instead of crashing") {
+    let cache = JSBundleCache(loader: { name in
+        switch name {
+        case "mermaid.min": return .failure(.resourceNotFound)
+        case "katex.min": return .failure(.readFailed(message: "boom"))
+        default: return .success("// ok")
+        }
+    })
+    try expect(cache.mermaid == nil && cache.katex == nil, "failed bundles must be nil (graceful degradation, matching the old loadJSBundle behavior)")
+    try expect(cache.prism != nil && cache.katexAutoRender != nil, "unrelated bundles must still load")
+    try expect(cache.failures == [
+        .resourceNotFound(label: "Mermaid.js"),
+        .readFailed(label: "KaTeX", message: "boom"),
+    ], "failures must carry the exact labels + reasons the app logs to Sentry breadcrumbs; got \(cache.failures)")
+}
+
+runner.test("item-713/#55: JSBundleCache.shared loads all four real bundles via ResourceBundle") {
+    // Behavioral proof that the production loader finds MarkViewCore's resource
+    // bundle from a plain executable context (same lookup the .app performs).
+    let cache = JSBundleCache.shared
+    try expect(cache.failures.isEmpty, "shared cache must load without failures; got \(cache.failures)")
+    try expect((cache.prism?.count ?? 0) > 10_000, "prism-bundle.min must be non-trivial")
+    try expect((cache.mermaid?.count ?? 0) > 1_000_000, "mermaid.min is ~2.9 MB — a tiny read means the wrong resource was resolved")
+    try expect((cache.katex?.count ?? 0) > 10_000, "katex.min must be non-trivial")
+    try expect((cache.katexAutoRender?.count ?? 0) > 1_000, "auto-render.min must be non-trivial")
+}
+
+runner.test("item-713 budget: 8-tab restore main-thread work stays under 500ms with a warm JS cache") {
+    // Deterministic main-thread budget canary for the launch hang class
+    // (#55/#57/#59 amplified by MV-001 restore-all-tabs): after ONE warm-up
+    // access (the single allowed ~3.2 MB disk read), restoring 8 tabs — each
+    // reading all four cached bundles and building its HTMLPipeline, exactly
+    // what Coordinator.init does per tab — must be near-free. Reintroducing
+    // per-init disk reads or per-access loading blows this budget immediately.
+    _ = JSBundleCache.shared // warm: the one allowed load
+    let start = DispatchTime.now()
+    for _ in 0..<8 {
+        let bundles = JSBundleCache.shared
+        let pipeline = HTMLPipeline(
+            prismJS: bundles.prism,
+            mermaidJS: bundles.mermaid,
+            katexJS: bundles.katex,
+            katexAutoRenderJS: bundles.katexAutoRender
+        )
+        try expect(pipeline.mermaidJS != nil, "pipeline must receive the cached mermaid bundle")
+    }
+    let elapsedMS = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+    try expect(elapsedMS < 500,
+        "8-tab restore against the warm JS cache took \(Int(elapsedMS))ms — budget is 500ms; a regression here means per-tab bundle loads are back on the launch path (item-713)")
+}
+
+runner.test("item-713/#55 wiring: Coordinator reads bundles from JSBundleCache and performs zero disk reads") {
+    // Thin Tier-4 wiring check — the mechanism itself is covered behaviorally
+    // above; this only pins that the app target actually uses the tested cache.
     let wpvSource = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
-    try expect(!wpvSource.contains("override init()"),
-        "Coordinator's override init() — which performed four synchronous String(contentsOf:) disk reads on the main thread, the exact stack sampled in hang report #48 — must be gone; stored properties read from the static cache instead")
-    // Exactly ONE String(contentsOf: disk-read site may remain: the static loader helper.
+    try expect(wpvSource.contains("JSBundleCache.shared"),
+        "WebPreviewView.Coordinator must source its JS bundles from JSBundleCache.shared (MarkViewAppCore)")
     let readCount = wpvSource.components(separatedBy: "String(contentsOf:").count - 1
-    try expect(readCount == 1,
-        "exactly one String(contentsOf: site must remain in WebPreviewView.swift (the static loadJSBundle helper); got \(readCount) — more than one means a per-instance read crept back in")
+    try expect(readCount == 0,
+        "WebPreviewView.swift must contain no String(contentsOf: disk reads — got \(readCount); bundle loading belongs to JSBundleCache")
 }
 
 // =============================================================================
@@ -4381,16 +4479,54 @@ runner.test("DocumentStats: readingMinutes matches the old max(1, words/200) for
         "1000 words -> 5 min")
 }
 
-runner.test("item-713: StatusBarView no longer scans the document inside body") {
+// mar-033: the off-main orchestration formerly inlined in StatusBarView.task(id:)
+// now lives in StatusBarStatsModel (MarkViewAppCore) — tested behaviorally here.
+
+runner.test("item-713/#57: StatusBarStatsModel computes stats OFF the main thread and publishes them") {
+    try MainActor.assumeIsolated {
+        let sample = "hello world\nsecond line with  spacing\n"
+        let sawMainThread = LockedBox<[Bool]>([])
+        let model = StatusBarStatsModel(compute: { text in
+            sawMainThread.value.append(Thread.isMainThread)
+            return DocumentStats.compute(from: text)
+        })
+        try expect(model.stats == DocumentStats.zero, "model must start at .zero (the pre-compute placeholder the view renders)")
+        let finished = drainMainActor { await model.update(for: sample) }
+        try expect(finished, "update(for:) must complete — the detached compute task never resolved")
+        try expect(sawMainThread.value == [false],
+            "the document scan must run exactly once and OFF the main thread — that scan on main is the sampled hang stack (APPLE-MACOS-34/-37); got \(sawMainThread.value)")
+        try expect(model.stats == DocumentStats.compute(from: sample),
+            "published stats must equal DocumentStats.compute output for the same content")
+    }
+}
+
+runner.test("item-713/#57: StatusBarStatsModel default compute has exact DocumentStats parity") {
+    try MainActor.assumeIsolated {
+        // No injected compute — this exercises the production default closure.
+        let model = StatusBarStatsModel()
+        let sample = "# Title\n\nSome *markdown* body with seven words here.\r\nCRLF line"
+        let finished = drainMainActor { await model.update(for: sample) }
+        try expect(finished, "update(for:) must complete")
+        try expect(model.stats == DocumentStats.compute(from: sample),
+            "default compute must be DocumentStats.compute — got \(model.stats)")
+        try expect(model.stats.readingMinutes == max(1, model.stats.wordCount / 200),
+            "readingMinutes formula must be preserved")
+    }
+}
+
+runner.test("item-713/#57 wiring: StatusBarView delegates stats to StatusBarStatsModel") {
+    // Thin Tier-4 wiring check — the off-main mechanism is covered behaviorally
+    // above; this only pins that the view actually uses the tested model and
+    // never re-grows an inline main-thread scan.
     let source = try String(contentsOfFile: "Sources/MarkView/StatusBarView.swift", encoding: .utf8)
     try expect(!source.contains(".split(whereSeparator:"),
         "StatusBarView must not word-split the document on the main thread — that is the sampled hang stack (APPLE-MACOS-34)")
     try expect(!source.contains("components(separatedBy:"),
         "StatusBarView must not line-split the document on the main thread — that is the sampled hang stack (APPLE-MACOS-37)")
-    try expect(source.contains("DocumentStats.compute"),
-        "StatusBarView must delegate stats to DocumentStats.compute")
-    try expect(source.contains("Task.detached"),
-        "the DocumentStats computation must run off the main thread")
+    try expect(source.contains("StatusBarStatsModel"),
+        "StatusBarView must own a StatusBarStatsModel (MarkViewAppCore) — the behaviorally-tested home of the off-main stats compute")
+    try expect(source.contains(".task(id: content)"),
+        "the stats recompute must be driven by .task(id: content) so content changes cancel and restart it")
 }
 
 // =============================================================================

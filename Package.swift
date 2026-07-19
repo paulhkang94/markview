@@ -7,6 +7,10 @@ let package = Package(
     products: [
         // Expose MarkViewCore as a library so XcodeGen targets can depend on it
         .library(name: "MarkViewCore", targets: ["MarkViewCore"]),
+        // App-layer logic extracted from the XcodeGen app target so it is
+        // reachable from MarkViewTestRunner (mar-033: behavioral coverage for
+        // the item-713 hang fixes instead of source-inspection tests)
+        .library(name: "MarkViewAppCore", targets: ["MarkViewAppCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-cmark", from: "0.4.0"),
@@ -30,6 +34,15 @@ let package = Package(
                 .process("Resources/auto-render.min.js"),
             ]
         ),
+        // App-layer library: testable logic extracted from the Xcode app target
+        // (JS bundle cache, status-bar stats model). No resources of its own —
+        // reads MarkViewCore's resource bundle via ResourceBundle. Must never
+        // create WKWebViews (headless CI would hang); view shells stay in the app target.
+        .target(
+            name: "MarkViewAppCore",
+            dependencies: ["MarkViewCore"],
+            path: "Sources/MarkViewAppCore"
+        ),
         // MCP server — stdio JSON-RPC server for AI tool integration
         .executableTarget(
             name: "MarkViewMCPServer",
@@ -42,7 +55,7 @@ let package = Package(
         // Test runner (standalone executable — no XCTest dependency)
         .executableTarget(
             name: "MarkViewTestRunner",
-            dependencies: ["MarkViewCore"],
+            dependencies: ["MarkViewCore", "MarkViewAppCore"],
             path: "Tests/TestRunner",
             resources: [
                 .copy("Fixtures"),
