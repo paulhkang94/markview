@@ -396,6 +396,19 @@ struct WebPreviewView: NSViewRepresentable {
         /// (fileIdentifier may update before renderedHTML in separate @Published cycles).
         private var pendingFileReload = false
 
+        /// True while an async full-page load (assemble → temp-file write → loadFileURL)
+        /// is being prepared off-main. Content updates arriving in that window are routed
+        /// back through the full-reload path: a JS fast-path swap issued against the
+        /// outgoing page would be silently reverted the moment the in-flight loadFileURL
+        /// lands with its older snapshot (item-713 / mar-028).
+        private var fullReloadInFlight = false
+
+        /// Monotonic token for full-page loads: only the NEWEST prepared page may reach
+        /// loadFileURL. A stale completion (tab switch or live edit during preparation)
+        /// deletes its temp file and exits without touching the web view, so rapid
+        /// successive reloads always converge on the newest content.
+        private var loadGeneration = 0
+
         func updateContent(_ html: String, in webView: WKWebView) {
             let currentCSS = "\(Int(previewFontSize))|\(previewWidth)|\(theme)"
             let cssChanged = currentCSS != lastCSS
@@ -413,38 +426,74 @@ struct WebPreviewView: NSViewRepresentable {
             let baseDirChanged = baseDirectoryURL != lastBaseDirectory
             lastBaseDirectory = baseDirectoryURL
 
+            let contentChanged = html != lastHTML || cssChanged
             let needsFullReload = !hasLoadedInitialPage || baseDirChanged || pendingFileReload
+                || (fullReloadInFlight && contentChanged)
 
-            guard html != lastHTML || cssChanged || needsFullReload else { return }
+            guard contentChanged || needsFullReload else { return }
             lastHTML = html
 
             let styledHTML = injectSettingsCSS(into: html)
 
             if needsFullReload {
                 pendingFileReload = false
-                let fullHTML = pipeline.assemble(styledHTML)
-                loadViaFileURL(fullHTML, in: webView)
+                loadViaFileURL(styledHTML, in: webView)
                 hasLoadedInitialPage = true
             } else {
                 updateContentViaJS(styledHTML, in: webView)
             }
         }
 
-        /// Write HTML to a temp file and load via loadFileURL so WKWebView can access local images.
-        private func loadViaFileURL(_ html: String, in webView: WKWebView) {
-            var finalHTML = html
-            // Inline local images as data URIs: the sandboxed WKWebView WebContent process can't
-            // access files outside the app container even with allowingReadAccessTo. Embedding images
-            // in the HTML string eliminates the file access requirement entirely.
-            if let dir = baseDirectoryURL {
-                finalHTML = HTMLPipeline.inlineLocalImages(in: finalHTML, baseDirectory: dir)
+        /// Kick off a full page load: assemble the document, write it to a temp file,
+        /// and hand it to loadFileURL so WKWebView renders it as a real page.
+        ///
+        /// The assembly (string surgery over ~3.2 MB of injected JS bundles), image
+        /// inlining, and the synchronous temp-file write previously all ran on the
+        /// main thread here — the third item-713 hang class (mar-028). They now run
+        /// in a detached task (userInitiated — the user is watching the page load)
+        /// via PreviewPageBuilder (MarkViewCore);
+        /// only the completion touches the web view, back on the main actor.
+        private func loadViaFileURL(_ styledHTML: String, in webView: WKWebView) {
+            loadGeneration += 1
+            fullReloadInFlight = true
+            let generation = loadGeneration
+            let baseDir = baseDirectoryURL
+            let pipeline = self.pipeline
+            Task.detached(priority: .userInitiated) { [weak self] in
+                var tempFile: URL?
+                do {
+                    tempFile = try PreviewPageBuilder.assembleAndWrite(
+                        styledHTML: styledHTML,
+                        baseDirectory: baseDir,
+                        pipeline: pipeline
+                    )
+                } catch {
+                    AppLogger.render.error("Failed to write temp preview file: \(error.localizedDescription)")
+                    AppLogger.captureError(error, category: "render", message: "Temp file write failed")
+                }
+                await self?.finishFullPageLoad(tempFile, generation: generation)
             }
-            let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("markview-preview-\(UUID().uuidString).html")
-            do {
-                try finalHTML.write(to: tempFile, atomically: true, encoding: .utf8)
-            } catch {
-                AppLogger.render.error("Failed to write temp preview file: \(error.localizedDescription)")
-                AppLogger.captureError(error, category: "render", message: "Temp file write failed")
+        }
+
+        /// Main-actor completion of loadViaFileURL: hands the prepared temp file to
+        /// WKWebView. Ordering guarantee: a stale generation (a newer full load started
+        /// while this one was being prepared) never reaches the web view — it deletes
+        /// its temp file and exits, so tab switches and rapid edits always end on the
+        /// newest content, and renderComplete stays once-per-real-load (MV-002).
+        private func finishFullPageLoad(_ tempFile: URL?, generation: Int) {
+            guard generation == loadGeneration else {
+                // Superseded while preparing — discard without touching the web view.
+                if let tempFile { try? FileManager.default.removeItem(at: tempFile) }
+                return
+            }
+            // Write failed (already logged off-main): keep fullReloadInFlight true so
+            // the next content update retries the full-reload path instead of issuing
+            // a JS swap against a page that never loaded.
+            guard let tempFile else { return }
+            fullReloadInFlight = false
+            guard let webView else {
+                try? FileManager.default.removeItem(at: tempFile)
+                return
             }
             // Images are already inlined as data URIs, so WKWebView only needs access to the
             // temp directory. Never grant access to "/" or user home — least-privilege scope.
