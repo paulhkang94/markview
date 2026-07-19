@@ -18,7 +18,9 @@ enum PHKDebug {
 ///
 /// Extracted from WebPreviewView so the injection pipeline is testable
 /// without an AppKit dependency. All methods are pure String transformations.
-public struct HTMLPipeline {
+/// Sendable (all-String value type) so PreviewPageBuilder can assemble pages
+/// off the main actor (item-713 / mar-028).
+public struct HTMLPipeline: Sendable {
 
     public let prismJS: String?
     public let diff2htmlJS: String?

@@ -4394,6 +4394,129 @@ runner.test("item-713: StatusBarView no longer scans the document inside body") 
 }
 
 // =============================================================================
+// MARK: - item-713 (third hang class) / mar-028: off-main full-page load pipeline
+//
+// The Coordinator's full-reload path ran HTMLPipeline.assemble (string surgery
+// over ~3.2 MB of injected JS), local-image inlining (file reads + base64), and
+// a synchronous temp-file write ON THE MAIN THREAD in loadViaFileURL on every
+// file open / tab switch / base-dir change. PreviewPageBuilder (MarkViewCore)
+// now owns that pipeline so the Coordinator can run it in a detached task and
+// only touch WKWebView back on the main actor, generation-guarded so rapid tab
+// switches always converge on the newest content. The behavioral tests below
+// read the written file back from disk (never just assert the call happened)
+// and pin byte-parity with the exact old main-thread sequence.
+
+print("\n--- PreviewPageBuilder tests (mar-028 off-main loadViaFileURL) ---")
+
+runner.test("PreviewPageBuilder: written file byte-equals pipeline.assemble output (disk read-back)") {
+    let pipeline = HTMLPipeline(prismJS: "var P=1;", mermaidJS: "var M=1;", katexJS: "var K=1;", katexAutoRenderJS: "var AR=1;")
+    let input = "<html><head></head><body><p>hello mar-028</p></body></html>"
+    let url = try PreviewPageBuilder.assembleAndWrite(styledHTML: input, baseDirectory: nil, pipeline: pipeline)
+    defer { try? FileManager.default.removeItem(at: url) }
+    let written = try String(contentsOf: url, encoding: .utf8)
+    try expect(written == pipeline.assemble(input),
+        "file content must byte-equal the assembled document — parity with the replaced main-thread path")
+    try expect(written.contains("var M=1;"),
+        "injected JS must be present in the written page")
+}
+
+runner.test("PreviewPageBuilder: unique markview-preview-*.html file per call (5s-delayed cleanup must never race a newer load)") {
+    let pipeline = HTMLPipeline()
+    let a = try PreviewPageBuilder.assembleAndWrite(styledHTML: "<body></body>", baseDirectory: nil, pipeline: pipeline)
+    let b = try PreviewPageBuilder.assembleAndWrite(styledHTML: "<body></body>", baseDirectory: nil, pipeline: pipeline)
+    defer {
+        try? FileManager.default.removeItem(at: a)
+        try? FileManager.default.removeItem(at: b)
+    }
+    try expect(a != b, "each load must get its own temp file, got the same URL twice")
+    try expect(a.lastPathComponent.hasPrefix("markview-preview-") && a.pathExtension == "html",
+        "temp filename contract markview-preview-<uuid>.html must hold, got \(a.lastPathComponent)")
+    try expect(FileManager.default.fileExists(atPath: a.path) && FileManager.default.fileExists(atPath: b.path),
+        "both temp files must exist on disk")
+}
+
+runner.test("PreviewPageBuilder: inlines relative local images, preserving the old order (assemble first, then inline)") {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mar028-imgs-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try Data([0x89, 0x50, 0x4E, 0x47]).write(to: dir.appendingPathComponent("pic.png"))
+
+    let input = "<html><body><img src=\"pic.png\"></body></html>"
+    let pipeline = HTMLPipeline(mermaidJS: "var M=1;")
+    let url = try PreviewPageBuilder.assembleAndWrite(styledHTML: input, baseDirectory: dir, pipeline: pipeline)
+    defer { try? FileManager.default.removeItem(at: url) }
+    let written = try String(contentsOf: url, encoding: .utf8)
+    try expect(written.contains("data:image/png;base64,"),
+        "relative image src must be inlined as a data URI (sandboxed WebContent can't read local files)")
+    try expect(!written.contains("src=\"pic.png\""),
+        "the raw relative src must be gone after inlining")
+    // Order pin: byte-parity with the exact old main-thread sequence
+    // (pipeline.assemble in updateContent, THEN inlineLocalImages in loadViaFileURL).
+    let oldPath = HTMLPipeline.inlineLocalImages(in: pipeline.assemble(input), baseDirectory: dir)
+    try expect(written == oldPath,
+        "must preserve the replaced pipeline's step order: assemble first, then inline images")
+}
+
+runner.test("PreviewPageBuilder: nil baseDirectory leaves relative srcs untouched (old behavior)") {
+    let url = try PreviewPageBuilder.assembleAndWrite(
+        styledHTML: "<html><body><img src=\"pic.png\"></body></html>",
+        baseDirectory: nil,
+        pipeline: HTMLPipeline()
+    )
+    defer { try? FileManager.default.removeItem(at: url) }
+    let written = try String(contentsOf: url, encoding: .utf8)
+    try expect(written.contains("src=\"pic.png\""),
+        "no baseDirectory → no inlining, src must pass through unchanged")
+}
+
+runner.test("PreviewPageBuilder: unwritable temporaryDirectory throws — write failures must be observable") {
+    let bogus = URL(fileURLWithPath: "/nonexistent-mar028-\(UUID().uuidString)")
+    var threw = false
+    do {
+        _ = try PreviewPageBuilder.assembleAndWrite(
+            styledHTML: "<body></body>", baseDirectory: nil,
+            pipeline: HTMLPipeline(), temporaryDirectory: bogus
+        )
+    } catch {
+        threw = true
+    }
+    try expect(threw,
+        "writing into a nonexistent directory must throw so the Coordinator can log and keep the reload retryable")
+}
+
+runner.test("PreviewPageBuilder: UTF-8 disk round-trip is exact for multi-byte + CRLF content (determinism pin)") {
+    // Same determinism precedent as the DocumentStats CRLF scalar-parity pin:
+    // the written page must round-trip byte-exactly — no newline normalization
+    // (CRLF preserved) and no grapheme mangling for multi-scalar characters.
+    let input = "<html><body><p>émoji 🎉 café\r\nnaïve\nend\u{200D}</p></body></html>"
+    let pipeline = HTMLPipeline(prismJS: "var P=1;")
+    let url = try PreviewPageBuilder.assembleAndWrite(styledHTML: input, baseDirectory: nil, pipeline: pipeline)
+    defer { try? FileManager.default.removeItem(at: url) }
+    let written = try String(contentsOf: url, encoding: .utf8)
+    try expect(written == pipeline.assemble(input),
+        "multi-byte + CRLF content must round-trip byte-exactly through the temp file")
+    try expect(written.contains("\r\n"),
+        "CRLF must survive the disk round-trip un-normalized")
+}
+
+runner.test("mar-028: Coordinator no longer assembles or writes the page on the main thread") {
+    // Tier-4 source guard, paired with the behavioral disk read-back tests above.
+    let source = try String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    try expect(!source.contains("pipeline.assemble("),
+        "the Coordinator must not run HTMLPipeline.assemble on the main thread — that is the mar-028 hang path")
+    try expect(!source.contains(".write(to: tempFile"),
+        "the Coordinator must not perform the synchronous temp-file write on the main thread")
+    try expect(source.contains("PreviewPageBuilder.assembleAndWrite"),
+        "the Coordinator must delegate the full-page build to PreviewPageBuilder")
+    try expect(source.contains("Task.detached"),
+        "the page build must run off the main thread")
+    try expect(source.contains("loadGeneration"),
+        "stale prepared pages must be generation-guarded so tab switches always end on the newest content")
+    try expect(source.contains("fullReloadInFlight"),
+        "updates arriving while a full load is in flight must re-route through the full-reload path (JS swaps against the outgoing page get reverted)")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
