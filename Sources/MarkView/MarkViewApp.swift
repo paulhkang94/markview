@@ -129,6 +129,16 @@ struct MarkViewApp: App {
                         tabManager.openFile(lastURL)
                     }
 
+                    // GUI launch canary (Layer 2, mar-033 Tier-B, mar-039): strict
+                    // no-op unless MARKVIEW_LAUNCH_CANARY is set (CI's bundle job
+                    // and scripts/launch_canary.py). Layer 1 (the item-713 main-
+                    // thread budget test in MarkViewTestRunner, mar-033 PR1) never
+                    // constructs a WKWebView/Coordinator; this is the real,
+                    // GUI-inclusive protection the S157 note flagged as missing.
+                    if ProcessInfo.processInfo.environment["MARKVIEW_LAUNCH_CANARY"] != nil {
+                        LaunchCanary.armIfNeeded(tabManager: tabManager)
+                    }
+
                     // Defer window sizing to next run loop — window may not exist yet during onAppear.
                     // Always apply to override macOS state restoration which saves the previous frame.
                     DispatchQueue.main.async {
@@ -323,5 +333,52 @@ enum FindHelper {
         let item = NSMenuItem()
         item.tag = Int(action.rawValue)
         NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: item)
+    }
+}
+
+/// GUI launch canary (Layer 2, mar-033 Tier-B "Layer 2" plan, mar-039).
+///
+/// Armed only when MARKVIEW_LAUNCH_CANARY is set in the environment — never
+/// in a normal user launch. Polls until every tab opened by the onAppear
+/// restore path (CLI arg / persisted session / legacy last-opened fallback)
+/// finishes loading — the exact PreviewViewModel.isLoaded flag the item-713
+/// hang fixes (#55/#57/#59/mar-037) target — then waits one more short
+/// interval for SwiftUI/WebKit to paint, prints the `LAUNCH_OK` sentinel to
+/// stderr, and exits. scripts/launch_canary.py launches the real .app with
+/// this env var set and a fixture file as argv[1], and fails (capturing a
+/// `sample` spindump) if the sentinel never arrives within its timeout —
+/// which is what happens if a regression reintroduces a main-thread block on
+/// this exact launch path, since a blocked main thread can never run the
+/// DispatchQueue.main polling closures below.
+///
+/// If launched with zero tabs (no CLI arg, no persisted session, no recents),
+/// `tabs.allSatisfy` on an empty array is vacuously true, so the canary still
+/// completes — it only *waits* on tabs that actually got opened.
+@MainActor
+enum LaunchCanary {
+    static func armIfNeeded(tabManager: TabManager) {
+        poll(tabManager: tabManager)
+    }
+
+    private static func poll(tabManager: TabManager) {
+        guard tabManager.tabs.allSatisfy({ $0.viewModel.isLoaded }) else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                poll(tabManager: tabManager)
+            }
+            return
+        }
+        // First-render settle: one more short interval so SwiftUI/WebKit have a
+        // chance to paint before the sentinel fires — an approximation (per the
+        // mar-033 plan), not a true "did-finish-navigation" hook.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            fireSentinel()
+        }
+    }
+
+    private static func fireSentinel() {
+        if let data = "LAUNCH_OK\n".data(using: .utf8) {
+            FileHandle.standardError.write(data)
+        }
+        exit(0)
     }
 }

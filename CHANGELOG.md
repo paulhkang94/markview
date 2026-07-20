@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fix a fourth app hang class (#62): the preview pane read file content synchronously on the main thread on every file open, external-change reload, and file-watcher callback. A large file, or one on a slow or network volume, could freeze the window during that read. The read now happens off the main thread.
+- Fix a third app hang class (#59): assembling the full preview page and writing it to a temp file happened synchronously on the main thread on every tab switch and reload. A large document with many inline images could freeze the window during that write. Now off the main thread.
+- Fix a race in the v1.7.1 status bar hang fix (#61): rapid edits on a large document could publish stale word and line counts if an older background computation finished after a newer one started. Cancelled computations are now dropped instead of published.
+- Internal: extract the app's hang-fix logic (JS bundle cache, status bar stats, tab management, file loading, recent files, settings, and error presentation) into a new MarkViewAppCore library so it runs under the automated test suite instead of relying on manual verification or source-text checks (#60, mar-038).
+- Internal: add a CI-advisory GUI launch canary (mar-039) that launches the real built app and waits for a sentinel the restore-loop only prints once every tab finishes loading, so a regression that reintroduces a main-thread hang on that path shows up as a timed-out launch instead of only a simulated budget test.
+
 ## v1.7.1
 
 - Fix app hangs on launch and tab restore (#55): the 3 MB of preview JS bundles (Mermaid, KaTeX, Prism) are now read once per process instead of once per tab, eliminating the main-thread stalls several users reported after v1.6/v1.7. If MarkView felt frozen with multiple restored tabs, this release is for you.
