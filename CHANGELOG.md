@@ -6,6 +6,7 @@
 - Fix a third app hang class (#59): assembling the full preview page and writing it to a temp file happened synchronously on the main thread on every tab switch and reload. A large document with many inline images could freeze the window during that write. Now off the main thread.
 - Fix a race in the v1.7.1 status bar hang fix (#61): rapid edits on a large document could publish stale word and line counts if an older background computation finished after a newer one started. Cancelled computations are now dropped instead of published.
 - Internal: extract the app's hang-fix logic (JS bundle cache, status bar stats, tab management, file loading, recent files, settings, and error presentation) into a new MarkViewAppCore library so it runs under the automated test suite instead of relying on manual verification or source-text checks (#60, mar-038).
+- Internal: add a CI-advisory GUI launch canary (mar-039) that launches the real built app and waits for a sentinel the restore-loop only prints once every tab finishes loading, so a regression that reintroduces a main-thread hang on that path shows up as a timed-out launch instead of only a simulated budget test.
 
 ## v1.7.1
 

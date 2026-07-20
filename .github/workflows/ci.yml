@@ -126,6 +126,24 @@ jobs:
       - name: Test distribution (local install path)
         run: bash scripts/test-distribution.sh --local
 
+      - name: GUI launch canary (advisory - mar-039 Layer 2)
+        id: launch_canary
+        # WKWebView/window-server behavior on headless CI runners is unreliable
+        # (see visual-smoke's continue-on-error above), so this starts advisory,
+        # same as visual-smoke's precedent - promote to blocking once it has a
+        # run of stable green results. Locally (a real display) this is a strict
+        # pass/fail signal; see scripts/launch_canary.py's docstring.
+        continue-on-error: true
+        run: python3 scripts/launch_canary.py --app /Applications/MarkView.app --timeout 20
+
+      - name: Upload launch canary diagnostic sample (on hang only)
+        if: steps.launch_canary.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-canary-hang-sample
+          path: /tmp/markview-launch-canary/launch-canary-hang.sample.txt
+          if-no-files-found: ignore
+
   mcp:
     name: MCP Tests
     runs-on: macos-15
