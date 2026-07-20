@@ -1,6 +1,8 @@
 import Foundation
 import MarkViewCore
 
+/// Moved from the Xcode app target to MarkViewAppCore (mar-033 Tier-B, mar-038).
+///
 /// Persists the ordered list of currently-open tabs (MV-001 fix).
 ///
 /// Before this existed, the only thing persisted across quit/relaunch was
@@ -12,13 +14,13 @@ import MarkViewCore
 /// file — the SSOT explicitly rejects per-file sidecars for a Viewer-role
 /// app handling other people's files).
 @MainActor
-enum TabSessionStore {
-    static let sessionKey = "openTabSession"
+public enum TabSessionStore {
+    public static let sessionKey = "openTabSession"
 
     /// Write-through save, called from `TabManager.persistSession()` on every
     /// tabs/selectedTabID change. Not debounced — see TabManager for why a
     /// synchronous write is fine at this change frequency.
-    static func save(openPaths: [String], selectedIndex: Int?) {
+    public static func save(openPaths: [String], selectedIndex: Int?) {
         let state = TabSessionState(openPaths: openPaths, selectedIndex: selectedIndex)
         guard let data = try? JSONEncoder().encode(state) else { return }
         UserDefaults.standard.set(data, forKey: sessionKey)
@@ -30,7 +32,7 @@ enum TabSessionStore {
     /// is nothing to restore (restore disabled, user explicitly closed
     /// everything last session, no session ever recorded, or every recorded
     /// path is now unreachable).
-    static func loadSession() -> TabSessionState? {
+    public static func loadSession() -> TabSessionState? {
         let windowRestore: Bool
         if UserDefaults.standard.object(forKey: "windowRestore") != nil {
             windowRestore = UserDefaults.standard.bool(forKey: "windowRestore")

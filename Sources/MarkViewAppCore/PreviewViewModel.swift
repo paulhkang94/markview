@@ -1,33 +1,43 @@
-import SwiftUI
 import Combine
 import WebKit
 import MarkViewCore
-import MarkViewAppCore
 
+/// Moved from the Xcode app target to MarkViewAppCore (mar-033 Tier-B, mar-038):
+/// previously only reachable from MarkViewTestRunner via source-inspection tests
+/// that grepped this file as a string (see mar-037's "no longer reads on the
+/// main thread" regression test below), now directly importable and
+/// behaviorally testable — including as the per-tab model driven by
+/// TabManager.openFile in the restore-loop tests this move exists to enable.
+///
+/// AppLogger/Sentry calls became `AppCoreLog.logger` calls (see
+/// AppCoreLogging.swift) so this library stays Sentry-free; the app target
+/// installs the real Sentry-backed bridge once at startup
+/// (`AppCoreLog.logger = SentryAppCoreLogger()` in MarkViewApp.init), so
+/// production logging behavior is unchanged. Tests get the default no-op.
 @MainActor
-final class PreviewViewModel: ObservableObject {
-    @Published var renderedHTML: String = ""
-    @Published var isLoaded: Bool = false
-    @Published var editorContent: String = ""
-    @Published var isDirty: Bool = false
-    @Published var externalChangeConflict: Bool = false
-    @Published var lintWarnings: Int = 0
-    @Published var lintErrors: Int = 0
-    @Published var lintDiagnostics: [LintDiagnostic] = []
-    @Published var lastError: Error?
+public final class PreviewViewModel: ObservableObject {
+    @Published public var renderedHTML: String = ""
+    @Published public var isLoaded: Bool = false
+    @Published public var editorContent: String = ""
+    @Published public var isDirty: Bool = false
+    @Published public var externalChangeConflict: Bool = false
+    @Published public var lintWarnings: Int = 0
+    @Published public var lintErrors: Int = 0
+    @Published public var lintDiagnostics: [LintDiagnostic] = []
+    @Published public var lastError: Error?
 
-    @Published var currentFilePath: String?
-    @Published var fileName: String = "MarkView"
+    @Published public var currentFilePath: String?
+    @Published public var fileName: String = "MarkView"
 
     /// Directory URL of the current file, used as base URL for resolving relative paths (images, links)
-    var currentFileDirectoryURL: URL? {
+    public var currentFileDirectoryURL: URL? {
         guard let path = currentFilePath else { return nil }
         return URL(fileURLWithPath: path).deletingLastPathComponent()
     }
 
     /// Direct reference to the live WKWebView, set via WebPreviewView.onWebViewCreated.
     /// Used for PDF export — avoids fragile view-hierarchy search at export time.
-    weak var previewWebView: WKWebView?
+    public weak var previewWebView: WKWebView?
 
     private var fileWatcher: FileWatcher?
     private var renderTask: Task<Void, Never>?
@@ -46,7 +56,9 @@ final class PreviewViewModel: ObservableObject {
     /// reading back the file we just wrote and triggering a redundant (or racy) content reload.
     private var suppressFileWatcher = false
 
-    func loadFile(at path: String) {
+    public init() {}
+
+    public func loadFile(at path: String) {
         currentFilePath = path
         fileName = URL(fileURLWithPath: path).lastPathComponent
 
@@ -67,7 +79,7 @@ final class PreviewViewModel: ObservableObject {
     /// or save to. The first successful ⌘S promotes the tab via
     /// TabManager.promoteUntitledTab → loadFile, which starts all of those exactly
     /// once. Loads the template + renders an empty document so typing renders live.
-    func startUntitled() {
+    public func startUntitled() {
         loadTemplate()
         currentFilePath = nil
         fileName = "Untitled"
@@ -78,20 +90,20 @@ final class PreviewViewModel: ObservableObject {
         isLoaded = true
     }
 
-    func contentDidChange(_ newText: String) {
+    public func contentDidChange(_ newText: String) {
         editorContent = newText
         isDirty = newText != originalContent
         renderDebounced(newText)
         lintDebounced(newText)
     }
 
-    func reloadFromDisk() {
+    public func reloadFromDisk() {
         guard let path = currentFilePath else { return }
         loadContent(from: path)
         externalChangeConflict = false
     }
 
-    func autoFixLint() {
+    public func autoFixLint() {
         let fixed = linter.autoFix(editorContent)
         guard fixed != editorContent else { return }
         editorContent = fixed
@@ -100,7 +112,7 @@ final class PreviewViewModel: ObservableObject {
         runLint(fixed)
     }
 
-    func save(applyFormat: Bool = true) throws {
+    public func save(applyFormat: Bool = true) throws {
         guard let path = currentFilePath else { return }
         // Format only on explicit save (Cmd+S) — never during auto-save.
         // Auto-save fires on a timer mid-typing; running autoFixLint() then rewrites
@@ -124,7 +136,7 @@ final class PreviewViewModel: ObservableObject {
         }
     }
 
-    func startAutoSaveTimer() {
+    public func startAutoSaveTimer() {
         stopAutoSaveTimer()
         guard AppSettings.shared.autoSave else { return }
         let interval = AppSettings.shared.autoSaveInterval
@@ -135,20 +147,20 @@ final class PreviewViewModel: ObservableObject {
                     try self.save(applyFormat: false)  // never auto-format during timer-based saves
                 } catch {
                     self.lastError = error
-                    AppLogger.captureError(error, category: "file", message: "Auto-save failed")
+                    AppCoreLog.logger.logError(error, category: "file", message: "Auto-save failed")
                 }
             }
         }
     }
 
-    func stopAutoSaveTimer() {
+    public func stopAutoSaveTimer() {
         autoSaveTimer?.invalidate()
         autoSaveTimer = nil
     }
 
     /// Unload the current file and return the app to the home screen.
     /// Records an explicit close so the next cold launch does not auto-reopen.
-    func unloadFile() {
+    public func unloadFile() {
         fileWatcher?.stop()
         fileWatcher = nil
         stopAutoSaveTimer()
@@ -172,8 +184,8 @@ final class PreviewViewModel: ObservableObject {
 
     private func loadTemplate() {
         guard let url = ResourceBundle.url(forResource: "template", withExtension: "html", subdirectory: "Resources") else {
-            AppLogger.render.error("Template resource not found in bundle — preview will use fallback template")
-            AppLogger.captureError(CocoaError(.fileNoSuchFile), category: "render", message: "Template resource missing from bundle")
+            AppCoreLog.logger.logWarning("Template resource not found in bundle — preview will use fallback template", category: "render")
+            AppCoreLog.logger.logError(CocoaError(.fileNoSuchFile), category: "render", message: "Template resource missing from bundle")
             assertionFailure("Template resource not found — ResourceBundle may not be resolving correctly")
             return
         }
@@ -185,8 +197,8 @@ final class PreviewViewModel: ObservableObject {
             assert(template?.contains("id=\"\(TemplateConstants.contentElementID)\"") == true,
                    "Template missing element with id=\"\(TemplateConstants.contentElementID)\"")
         } catch {
-            AppLogger.render.error("Failed to load template: \(error.localizedDescription)")
-            AppLogger.captureError(error, category: "render", message: "Template load failed")
+            AppCoreLog.logger.logWarning("Failed to load template: \(error.localizedDescription)", category: "render")
+            AppCoreLog.logger.logError(error, category: "render", message: "Template load failed")
         }
     }
 
@@ -225,8 +237,8 @@ final class PreviewViewModel: ObservableObject {
 
     private func failLoadContent(_ error: Error, path: String, generation: Int) {
         guard generation == contentLoadGeneration else { return }
-        AppLogger.file.error("Failed to load file at \(path): \(error.localizedDescription)")
-        AppLogger.captureError(error, category: "file", message: "File load failed: \(path)")
+        AppCoreLog.logger.logWarning("Failed to load file at \(path): \(error.localizedDescription)", category: "file")
+        AppCoreLog.logger.logError(error, category: "file", message: "File load failed: \(path)")
         lastError = error
     }
 
