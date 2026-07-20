@@ -25,7 +25,7 @@ fi
 if bash scripts/check-rule-gates.sh > /dev/null 2>&1; then
     pass "Rule gates"
 else
-    fail "Rule gate missing — run: python3 scripts/check-rule-gates.sh"
+    fail "Rule gate missing — run: bash scripts/check-rule-gates.sh"
 fi
 
 # 3. MCP config file path correct in docs

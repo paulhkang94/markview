@@ -7,6 +7,7 @@
 - Fix a race in the v1.7.1 status bar hang fix (#61): rapid edits on a large document could publish stale word and line counts if an older background computation finished after a newer one started. Cancelled computations are now dropped instead of published.
 - Internal: extract the app's hang-fix logic (JS bundle cache, status bar stats, tab management, file loading, recent files, settings, and error presentation) into a new MarkViewAppCore library so it runs under the automated test suite instead of relying on manual verification or source-text checks (#60, mar-038).
 - Internal: add a CI-advisory GUI launch canary (mar-039) that launches the real built app and waits for a sentinel the restore-loop only prints once every tab finishes loading, so a regression that reintroduces a main-thread hang on that path shows up as a timed-out launch instead of only a simulated budget test.
+- Internal: migrate six bash scripts with real branching/parsing logic (auto-install.sh, render-verify-gate.sh, check-rule-gates.sh, post-launch.sh, github-parity-check.sh, ci-status.sh) to tested Python, following the existing metrics.py/check_traction.py pattern; each keeps its `.sh` name as a thin exec-delegating wrapper so no CI workflow, hook config, or doc callsite had to change (item-663).
 
 ## v1.7.1
 

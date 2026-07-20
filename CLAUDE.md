@@ -68,6 +68,11 @@ swift run MarkViewE2ETester           # UI tests (requires .app + AX permissions
 bash scripts/test-mcp.sh              # MCP protocol tests (91 tests — 9 tools)
 python3 scripts/test-metrics.py       # Script unit tests (19 tests — metrics.py + check_traction.py, no live API)
 python3 scripts/test-release-scripts.py  # Release script tests (release_preflight, check_version_sync, tap_audit — no live gh/git/network)
+python3 scripts/test-check-rule-gates.py  # check_rule_gates.py tests (17 tests)
+python3 scripts/test-hooks.py         # auto_install.py + render_verify_gate.py tests (26 tests, no real git push/build)
+python3 scripts/test-post-launch.py   # post_launch.py tests (10 tests, never opens a real browser tab)
+python3 scripts/test-github-parity-check.py  # github_parity_check.py tests (13 tests, no live GitHub API/swift build)
+python3 scripts/test-ci-status.py     # ci_status.py tests (24 tests, no live gh CLI)
 make playwright                       # Playwright e2e DOM tests (66 tests) — rebuilds MarkViewHTMLGen, runs Chromium
 ```
 

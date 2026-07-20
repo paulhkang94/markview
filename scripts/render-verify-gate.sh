@@ -1,52 +1,5 @@
 #!/usr/bin/env bash
-# Warn if template.html or HTMLPipeline.swift was recently modified but
-# the verify stamp (.last-verify-at) hasn't been refreshed.
-# Wired as a PreToolUse Bash hook in .claude/settings.json.
-
+# bash-justified: thin wrapper — exec-delegates to render_verify_gate.py immediately
 set -euo pipefail
-
-REPO_ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel 2>/dev/null || pwd)"
-STAMP="$REPO_ROOT/.last-verify-at"
-THRESHOLD=600  # 10 minutes
-
-# Read the stdin JSON to check if this is a git commit command
-INPUT="$(cat)"
-command=$(echo "$INPUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null) || exit 0
-
-# Only warn on git commit commands
-if ! echo "$command" | grep -qE '^\s*git (commit|push)'; then
-    exit 0
-fi
-
-# Check if render-critical files were recently modified
-CRITICAL_FILES=(
-    "Sources/MarkViewCore/Resources/template.html"
-    "Sources/MarkViewCore/HTMLPipeline.swift"
-    "Sources/MarkViewCore/MarkdownRenderer.swift"
-)
-
-STALE=0
-for f in "${CRITICAL_FILES[@]}"; do
-    if [[ -f "$f" ]]; then
-        # Check if file is modified (staged or unstaged)
-        if git diff --name-only HEAD 2>/dev/null | grep -q "$(basename $f)" || \
-           git diff --cached --name-only 2>/dev/null | grep -q "$(basename $f)"; then
-            STALE=1
-            break
-        fi
-    fi
-done
-
-[[ $STALE -eq 0 ]] && exit 0
-
-# Check stamp freshness
-if [[ -f "$STAMP" ]]; then
-    # HA-008 format "TIER=x\nTS=<epoch>"; fall back to legacy bare epoch
-    stamp_ts=$(grep -oE '^TS=[0-9]+' "$STAMP" | cut -d= -f2 || true)
-    [[ -z "$stamp_ts" ]] && stamp_ts=$(head -1 "$STAMP")
-    stamp_age=$(( $(date +%s) - ${stamp_ts:-0} ))
-    [[ $stamp_age -lt $THRESHOLD ]] && exit 0
-fi
-
-echo "render-verify: template.html/HTMLPipeline.swift changed. Run 'make playwright' before committing." >&2
-exit 0  # warn only, don't block
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$SCRIPT_DIR/render_verify_gate.py" "$@"
