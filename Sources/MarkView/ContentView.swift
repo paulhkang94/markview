@@ -1,5 +1,6 @@
 import SwiftUI
 import MarkViewCore
+import MarkViewAppCore
 import WebKit
 
 /// Reference-type wrapper so the NSEvent monitor can be stored in a @State.

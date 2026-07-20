@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import MarkViewAppCore
 
 /// A markdown editor backed by NSTextView for native find/replace, undo/redo, and text editing.
 ///

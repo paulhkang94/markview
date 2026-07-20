@@ -1,40 +1,50 @@
 import AppKit
+import Combine
 import Foundation
 import MarkViewCore
-import SwiftUI
 
+/// Moved from the Xcode app target to MarkViewAppCore (mar-033 Tier-B, mar-038).
+/// TabManager/TabState previously could only be covered by
+/// `String(contentsOfFile:)` source-inspection tests (see the old
+/// "TabManager source-inspection tests" section in Tests/TestRunner/main.swift)
+/// because they lived outside the SPM dependency graph. Moving them — together
+/// with PreviewViewModel, which TabState owns — makes the restore-all-tabs
+/// launch path (MV-001, `MarkViewApp.swift`'s `for path in session.openPaths`
+/// loop) directly driveable from MarkViewTestRunner via real `TabManager.openFile`
+/// calls, instead of a canary that can only simulate the shape of that work.
+///
 /// One open file tab. Owns its own PreviewViewModel (and therefore its own
 /// FileWatcher) so each tab's live-reload, lint, and render state are isolated.
 @MainActor
-final class TabState: ObservableObject, Identifiable {
-    let id = UUID()
+public final class TabState: ObservableObject, Identifiable {
+    public let id = UUID()
 
     /// The file this tab shows, or nil for an untitled scratch tab (MV-007) with
     /// no file on disk yet. Transitions from nil to a real value exactly once, on
     /// the first successful save (TabManager.promoteUntitledTab). @Published so the
     /// tab bar re-derives displayName the moment an untitled tab is promoted.
-    @Published var url: URL?
+    @Published public var url: URL?
 
-    let viewModel: PreviewViewModel
+    public let viewModel: PreviewViewModel
 
     /// Last preview scroll position as a 1-based markdown source line (0 = top).
     /// Written through continuously from ScrollSyncController.onLineChange and read
     /// to seed the recreated ActiveTabView on tab reselect (MV-003). Deliberately
     /// NOT @Published — it changes on every scroll frame and must not invalidate
     /// the tab bar or any observing view.
-    var scrollLine: Int = 0
+    public var scrollLine: Int = 0
 
     /// Editor pane visibility for this tab (MV-003). Not @Published — ActiveTabView
     /// copies it into local @State at creation and writes back on toggle.
-    var showEditor: Bool = false
+    public var showEditor: Bool = false
 
     /// Fixed display name for an untitled (nil-url) tab, chosen once at CREATION in
     /// TabManager.newUntitledTab() so the number ("Untitled", "Untitled 2", …) does
     /// not shift when other tabs close (MV-007). Nil for a real-file tab, whose
     /// displayName derives from `url`.
-    let untitledName: String?
+    public let untitledName: String?
 
-    var displayName: String {
+    public var displayName: String {
         guard let url else { return untitledName ?? "Untitled" }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let path = url.path
@@ -44,7 +54,7 @@ final class TabState: ObservableObject, Identifiable {
         return path
     }
 
-    init(url: URL) {
+    public init(url: URL) {
         self.url = url
         self.untitledName = nil
         self.viewModel = PreviewViewModel()
@@ -55,7 +65,7 @@ final class TabState: ObservableObject, Identifiable {
     /// no path to load — and instead puts the viewModel in an empty-but-loaded
     /// state. No recents entry, file watcher, or auto-save timer starts until the
     /// first save promotes the tab to a real file.
-    init(untitledName: String) {
+    public init(untitledName: String) {
         self.url = nil
         self.untitledName = untitledName
         self.viewModel = PreviewViewModel()
@@ -67,7 +77,7 @@ final class TabState: ObservableObject, Identifiable {
 /// Every file-open path (AppDelegate, ⌘O panel, CLI args, MCP open_file, auto-reopen)
 /// routes through `openFile(_:)` so deduplication and selection stay consistent.
 @MainActor
-final class TabManager: ObservableObject {
+public final class TabManager: ObservableObject {
     // Write-through session persistence (MV-001): every add/remove/selection
     // change re-derives and saves the full ordered tab list, so relaunch can
     // reopen ALL of them — not just the single "last opened file" path that
@@ -75,19 +85,21 @@ final class TabManager: ObservableObject {
     // as MV-003's scrollLine write-through; tab-list changes are rare enough
     // (open/close/switch) that a synchronous UserDefaults write per change is
     // cheap, unlike the higher-frequency per-scroll-frame case.
-    @Published var tabs: [TabState] = [] {
+    @Published public var tabs: [TabState] = [] {
         didSet { persistSession() }
     }
-    @Published var selectedTabID: UUID? {
+    @Published public var selectedTabID: UUID? {
         didSet { persistSession() }
     }
 
-    var selectedTab: TabState? {
+    public init() {}
+
+    public var selectedTab: TabState? {
         tabs.first { $0.id == selectedTabID }
     }
 
     /// Open a file. If already open, switch to it; otherwise create a new tab.
-    func openFile(_ url: URL) {
+    public func openFile(_ url: URL) {
         let resolved = url.resolvingSymlinksInPath()
         // Optional-chained so untitled (nil-url) tabs are silently skipped rather
         // than force-unwrapped — dedup is meaningless for a tab with no file (MV-007).
@@ -105,7 +117,7 @@ final class TabManager: ObservableObject {
     /// dedup is meaningless for a tab with no URL — and forces the editor pane on,
     /// since a preview with no file loaded is useless. The "Untitled" number is
     /// fixed here at creation so it does not shift when other tabs close.
-    func newUntitledTab() {
+    public func newUntitledTab() {
         let existingUntitled = tabs.filter { $0.url == nil }.count
         let name = existingUntitled == 0 ? "Untitled" : "Untitled \(existingUntitled + 1)"
         let tab = TabState(untitledName: name)
@@ -120,7 +132,7 @@ final class TabManager: ObservableObject {
     /// SINGLE untitled→file transition path — so recents, the file watcher, and the
     /// auto-save timer all start correctly with zero duplicated side effects to keep
     /// in sync. Setting `url` (which is @Published) refreshes the tab bar title.
-    func promoteUntitledTab(_ tab: TabState, to url: URL) throws {
+    public func promoteUntitledTab(_ tab: TabState, to url: URL) throws {
         let resolved = url.resolvingSymlinksInPath()
         try tab.viewModel.editorContent.write(to: resolved, atomically: true, encoding: .utf8)
         tab.url = resolved
@@ -150,7 +162,7 @@ final class TabManager: ObservableObject {
     }
 
     /// Close a tab. Selects the nearest remaining tab; returns to home if none left.
-    func closeTab(_ id: UUID) {
+    public func closeTab(_ id: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs[idx].viewModel.unloadFile()
         tabs.remove(at: idx)
@@ -167,12 +179,12 @@ final class TabManager: ObservableObject {
 
     // Wrap math lives in MarkViewCore.TabCycling so MarkViewTestRunner can cover
     // cycling order + wraparound behaviorally (this class is not SPM-importable).
-    func selectNext() {
+    public func selectNext() {
         guard let cur = selectedTabID, let idx = tabs.firstIndex(where: { $0.id == cur }), tabs.count > 1 else { return }
         selectedTabID = tabs[TabCycling.nextIndex(after: idx, count: tabs.count)].id
     }
 
-    func selectPrevious() {
+    public func selectPrevious() {
         guard let cur = selectedTabID, let idx = tabs.firstIndex(where: { $0.id == cur }), tabs.count > 1 else { return }
         selectedTabID = tabs[TabCycling.previousIndex(before: idx, count: tabs.count)].id
     }
@@ -195,7 +207,7 @@ final class TabManager: ObservableObject {
     /// dispatches them to ANY responder (WKWebView included), so it is the one
     /// mechanism that works for Tab-key shortcuts specifically. All non-Tab
     /// shortcuts stay on main-menu key equivalents (the sanctioned mechanism).
-    func installTabCycleMonitor() {
+    public func installTabCycleMonitor() {
         guard tabCycleMonitor == nil else { return }
         tabCycleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let flags = event.modifierFlags

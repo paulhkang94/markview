@@ -1,5 +1,6 @@
 import Combine
 import MarkViewCore
+import MarkViewAppCore
 import SwiftUI
 import Sentry
 
@@ -73,6 +74,11 @@ struct MarkViewApp: App {
     @State private var errorPresenter = ErrorPresenter()
 
     init() {
+        // Install the Sentry-backed logging bridge before any MarkViewAppCore
+        // type (PreviewViewModel, moved mar-033 Tier-B / mar-038) can log
+        // anything — see SentryAppCoreLogger in AppLogger.swift.
+        AppCoreLog.logger = SentryAppCoreLogger()
+
         SentrySDK.start { options in
             options.dsn = "https://b72cf30350da5450221ea62ce5dc1069@o4510904217108480.ingest.us.sentry.io/4510904219074560"
             options.enableUncaughtNSExceptionReporting = true

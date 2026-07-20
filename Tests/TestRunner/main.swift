@@ -76,6 +76,24 @@ enum TestError: Error, CustomStringConvertible {
     }
 }
 
+/// Extract one function's source body for the `Sources/MarkView*/*.swift` source-
+/// inspection tests below: slice from `functionSignature` (e.g. "func closeTab")
+/// to the next member declaration at the same 4-space indent, regardless of its
+/// access modifier. mar-038 moved TabManager/PreviewViewModel to MarkViewAppCore
+/// and made their members `public`/kept some `private` — a delimiter hardcoded to
+/// "\n    func " (no modifier) silently stops matching on a mix of "public func"/
+/// "private func" boundaries and the extracted "body" over-runs into unrelated
+/// later methods, which can hide a real regression. This tries every modifier.
+func extractFunctionBody(_ source: String, functionSignature: String) -> String? {
+    guard let start = source.range(of: functionSignature) else { return nil }
+    let tail = source[start.lowerBound...]
+    let delimiters = ["\n    func ", "\n    public func ", "\n    private func ", "\n    fileprivate func "]
+    let nextBoundary = delimiters
+        .compactMap { tail.range(of: $0, range: tail.index(after: tail.startIndex)..<tail.endIndex) }
+        .min { $0.lowerBound < $1.lowerBound }
+    return nextBoundary.map { String(tail[..<$0.lowerBound]) } ?? String(tail)
+}
+
 func loadFixture(_ name: String) throws -> String {
     guard let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures") else {
         throw TestError.fixtureNotFound(name)
@@ -3801,18 +3819,24 @@ runner.test("diff.md fixture renders through full pipeline — diff block parsed
 
 // =============================================================================
 // MARK: - TabManager source-inspection tests
-// TabManager is @MainActor and lives in the app target (not MarkViewCore), so it
-// can't be imported here. Source inspection verifies structural invariants; behavioral
-// coverage (open 2 files, Cmd+W, wrap-around) is in MarkViewE2ETester.
+// TabManager/TabState/PreviewViewModel moved to MarkViewAppCore (mar-033 Tier-B,
+// mar-038) and are now directly importable/constructible here — see the
+// "TabManager/PreviewViewModel behavioral tests" section below for real
+// TabManager.openFile-driven coverage, including the restore-loop test that
+// motivated the move. These pre-existing source-inspection tests are kept
+// (path updated to Sources/MarkViewAppCore/) as cheap structural regression
+// guards alongside the new behavioral tests, not replaced wholesale — full
+// GUI/window-server coverage (open 2 files, Cmd+W, wrap-around) stays in
+// MarkViewE2ETester.
 // =============================================================================
 
-let tabManagerSource = try! String(contentsOfFile: "Sources/MarkView/TabManager.swift", encoding: .utf8)
+let tabManagerSource = try! String(contentsOfFile: "Sources/MarkViewAppCore/TabManager.swift", encoding: .utf8)
 let tabBarSource     = try! String(contentsOfFile: "Sources/MarkView/TabBarView.swift", encoding: .utf8)
 
 print("\n--- TabManager source-inspection tests ---")
 
 runner.test("TabManager: class is @MainActor isolated") {
-    try expect(tabManagerSource.contains("@MainActor\nfinal class TabManager"),
+    try expect(tabManagerSource.contains("@MainActor\npublic final class TabManager"),
         "TabManager must be @MainActor — required for @Published mutation on main thread")
 }
 
@@ -3962,18 +3986,16 @@ runner.test("MV-002: WebPreviewView registers renderComplete with a once-per-loa
 runner.test("MV-001: unloadFile must not mark explicitly-closed (fires on EVERY tab close)") {
     // Regression: markExplicitlyClosed() inside unloadFile() poisoned relaunch
     // auto-reopen whenever ANY tab closed, even with other tabs still open.
-    let vmSource = try! String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    let vmSource = try! String(contentsOfFile: "Sources/MarkViewAppCore/PreviewViewModel.swift", encoding: .utf8)
     try expect(!vmSource.contains("markExplicitlyClosed"),
         "PreviewViewModel must not call markExplicitlyClosed — ownership moved to TabManager.closeTab (MV-001)")
 }
 
 runner.test("MV-001: closeTab marks explicitly-closed only when the LAST tab closes") {
     // The call must live in closeTab's body, gated on tabs.isEmpty after removal.
-    guard let start = tabManagerSource.range(of: "func closeTab") else {
+    guard let closeBody = extractFunctionBody(tabManagerSource, functionSignature: "func closeTab") else {
         try expect(false, "TabManager must define closeTab"); return
     }
-    let tail = tabManagerSource[start.lowerBound...]
-    let closeBody = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
     try expect(closeBody.contains("markExplicitlyClosed"),
         "TabManager.closeTab must own the explicitly-closed signal (MV-001)")
     try expect(closeBody.contains("tabs.isEmpty"),
@@ -4105,7 +4127,7 @@ runner.test("TabSessionState: round-trips through JSON (the actual UserDefaults 
 print("\n--- TabManager / MarkViewApp source-inspection tests (MV-001) ---")
 
 runner.test("MV-001: TabManager persists the tab session on every tabs/selectedTabID change") {
-    try expect(tabManagerSource.contains("@Published var tabs: [TabState] = [] {") &&
+    try expect(tabManagerSource.contains("@Published public var tabs: [TabState] = [] {") &&
                tabManagerSource.contains("didSet { persistSession() }"),
         "TabManager.tabs must persist via didSet on every add/remove — write-through, not a debounced/quit-only flush, matching the existing continuous-capture convention (MV-003 scrollLine)")
     try expect(tabManagerSource.contains("func persistSession"),
@@ -4215,11 +4237,9 @@ runner.test("MV-007: persistSession compactMaps $0.url?.path (untitled excluded)
 }
 
 runner.test("MV-007: newUntitledTab appends a nil-url tab, selects it, forces the editor on, and bypasses openFile") {
-    guard let start = tabManagerSource.range(of: "func newUntitledTab") else {
+    guard let body = extractFunctionBody(tabManagerSource, functionSignature: "func newUntitledTab") else {
         try expect(false, "TabManager must define newUntitledTab() for ⌘T"); return
     }
-    let tail = tabManagerSource[start.lowerBound...]
-    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
     try expect(body.contains("TabState(untitledName:"),
         "newUntitledTab must create a nil-url TabState via the untitledName initializer (not the file initializer)")
     try expect(body.contains("tabs.append(tab)") && body.contains("selectedTabID = tab.id"),
@@ -4231,11 +4251,9 @@ runner.test("MV-007: newUntitledTab appends a nil-url tab, selects it, forces th
 }
 
 runner.test("MV-007: promoteUntitledTab writes the buffer then routes through the single loadFile transition") {
-    guard let start = tabManagerSource.range(of: "func promoteUntitledTab") else {
+    guard let body = extractFunctionBody(tabManagerSource, functionSignature: "func promoteUntitledTab") else {
         try expect(false, "TabManager must define promoteUntitledTab(_:to:)"); return
     }
-    let tail = tabManagerSource[start.lowerBound...]
-    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
     try expect(body.contains("editorContent.write("),
         "promoteUntitledTab must write the current editor buffer to the chosen URL")
     try expect(body.contains("tab.url = resolved"),
@@ -4247,12 +4265,10 @@ runner.test("MV-007: promoteUntitledTab writes the buffer then routes through th
 }
 
 runner.test("MV-007: startUntitled starts NO file-backed side effects (recents/watcher/auto-save) and skips loadFile") {
-    let vmSource = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
-    guard let start = vmSource.range(of: "func startUntitled") else {
+    let vmSource = try String(contentsOfFile: "Sources/MarkViewAppCore/PreviewViewModel.swift", encoding: .utf8)
+    guard let body = extractFunctionBody(vmSource, functionSignature: "func startUntitled") else {
         try expect(false, "PreviewViewModel must define startUntitled()"); return
     }
-    let tail = vmSource[start.lowerBound...]
-    let body = tail.range(of: "\n    func ").map { String(tail[..<$0.lowerBound]) } ?? String(tail)
     try expect(body.contains("isLoaded = true"),
         "startUntitled must mark the buffer loaded so the editor/preview show instead of the home screen")
     try expect(!body.contains("recordOpen"),
@@ -4284,7 +4300,7 @@ runner.test("MV-007: ⌘S on an untitled tab runs an NSSavePanel and promotes vi
         "an untitled ⌘S must present an NSSavePanel so the user can choose a file location")
     try expect(cvSource.contains("tabManager.promoteUntitledTab(tab, to: url)"),
         "after the panel returns a URL, the tab must be promoted via TabManager.promoteUntitledTab — the single untitled→file transition")
-    let vmSource = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    let vmSource = try String(contentsOfFile: "Sources/MarkViewAppCore/PreviewViewModel.swift", encoding: .utf8)
     try expect(!vmSource.contains("NSSavePanel"),
         "PreviewViewModel must NOT reference NSSavePanel — per spec option (b) the panel lives in the View layer, keeping the viewModel free of AppKit panel dependencies")
 }
@@ -4298,6 +4314,216 @@ runner.test("MV-007: the ⌘T \"New Tab\" menu item opens an untitled tab, not t
     // ⌘O must remain the file picker so the two shortcuts stay genuinely distinct.
     try expect(appSource.contains("Button(Strings.openFile) { openFile() }"),
         "⌘O must remain the file-open picker (openFile), unchanged by MV-007")
+}
+
+// =============================================================================
+// MARK: - TabManager/PreviewViewModel behavioral tests (mar-033 Tier-B, mar-038)
+//
+// TabManager, TabState, and PreviewViewModel moved from the Xcode app target to
+// MarkViewAppCore this PR (RecentFilesManager, TabSessionStore, AppSettings, and
+// ErrorPresenter moved alongside them). They are @MainActor and only ever
+// constructed on the main actor by the app; MarkViewTestRunner is a CLI process
+// with no window server, so these tests drive the exact same object graph
+// (TabManager -> TabState -> PreviewViewModel -> FileWatcher/Task.detached
+// content loads) MarkViewApp's onAppear restore loop drives, using real files
+// on disk — the launch-path amplifier these hang fixes (#55/#57/#59/mar-037)
+// all shared. This does NOT construct a WKWebView/Coordinator (those stay
+// app-target, per PR1's rule) — the GUI-inclusive canary is mar-039 (PR3).
+// =============================================================================
+
+print("\n--- TabManager/PreviewViewModel behavioral tests (mar-033 Tier-B, mar-038) ---")
+
+/// Write `count` small markdown files into a fresh temp directory and return
+/// their file URLs in creation order.
+func makeTempMarkdownFiles(_ count: Int, prefix: String) throws -> (dir: URL, files: [URL]) {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("\(prefix)-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    var files: [URL] = []
+    for i in 0..<count {
+        let file = dir.appendingPathComponent("doc\(i).md")
+        try "# Doc \(i)\n\nBody text for file \(i).\n".write(to: file, atomically: true, encoding: .utf8)
+        files.append(file)
+    }
+    return (dir, files)
+}
+
+/// Poll (cooperatively, off the RunLoop-blocking path) until every tab's
+/// PreviewViewModel finishes its async loadContent, or the timeout elapses.
+/// loadFile kicks off Task.detached without TabManager/PreviewViewModel
+/// exposing anything awaitable, so tests observe convergence the same way the
+/// app's UI does — via the @Published isLoaded flag.
+@MainActor
+func waitUntilAllLoaded(_ tabs: [TabState]) async {
+    let deadline = Date().addingTimeInterval(5)
+    while tabs.contains(where: { !$0.viewModel.isLoaded }) && Date() < deadline {
+        try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+    }
+}
+
+runner.test("TabManager.openFile: opening N real files creates N tabs, each loaded from disk") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(5, prefix: "mar038-restore")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tabManager = TabManager()
+        for file in files { tabManager.openFile(file) }
+        let finished = drainMainActor { await waitUntilAllLoaded(tabManager.tabs) }
+        try expect(finished, "all 5 tabs must finish loading within the timeout")
+        try expect(tabManager.tabs.count == 5, "opening 5 distinct files must create 5 tabs, got \(tabManager.tabs.count)")
+        for (idx, tab) in tabManager.tabs.enumerated() {
+            try expect(tab.url?.resolvingSymlinksInPath() == files[idx].resolvingSymlinksInPath(),
+                "tab \(idx) must show file \(idx) in open order")
+            try expect(tab.viewModel.editorContent.contains("Doc \(idx)"),
+                "tab \(idx)'s PreviewViewModel must have loaded doc\(idx).md's real content off disk")
+            try expect(!tab.viewModel.renderedHTML.isEmpty, "tab \(idx) must have rendered HTML once loaded")
+        }
+        try expect(tabManager.selectedTabID == tabManager.tabs.last?.id,
+            "the most recently opened file must be selected")
+    }
+}
+
+runner.test("TabManager.openFile: reopening an already-open file (including via a symlink) switches tabs instead of duplicating") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(2, prefix: "mar038-dedup")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let link = dir.appendingPathComponent("alias.md")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: files[0])
+        let tabManager = TabManager()
+        tabManager.openFile(files[0])
+        tabManager.openFile(files[1])
+        let firstTabID = tabManager.tabs[0].id
+        tabManager.openFile(link) // resolves to files[0] — must switch, not duplicate
+        try expect(tabManager.tabs.count == 2, "reopening via a symlink to an already-open file must not create a 3rd tab, got \(tabManager.tabs.count)")
+        try expect(tabManager.selectedTabID == firstTabID, "reopening files[0] (via symlink) must reselect its existing tab")
+    }
+}
+
+runner.test("TabManager restore-loop: replays MarkViewApp's onAppear session-restore for N tabs and lands on the persisted selection") {
+    try MainActor.assumeIsolated {
+        // Mirrors MarkViewApp.swift's onAppear branch exactly:
+        //   for path in session.openPaths { tabManager.openFile(URL(fileURLWithPath: path)) }
+        //   if let idx = session.selectedIndex … { tabManager.selectedTabID = tabManager.tabs[idx].id }
+        let (dir, files) = try makeTempMarkdownFiles(4, prefix: "mar038-restore-loop")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let paths = files.map { $0.path }
+        let persistedSelectedIndex = 2
+
+        let tabManager = TabManager()
+        for path in paths {
+            tabManager.openFile(URL(fileURLWithPath: path))
+        }
+        if persistedSelectedIndex >= 0, persistedSelectedIndex < tabManager.tabs.count {
+            tabManager.selectedTabID = tabManager.tabs[persistedSelectedIndex].id
+        }
+        let finished = drainMainActor { await waitUntilAllLoaded(tabManager.tabs) }
+        try expect(finished, "restore-loop tabs must all finish loading within the timeout")
+        try expect(tabManager.tabs.count == paths.count, "restore must reopen every persisted path exactly once")
+        try expect(tabManager.selectedTab?.url?.path == files[persistedSelectedIndex].path,
+            "restore must land on the persisted selectedIndex, not the last-opened tab")
+
+        // The real TabSessionStore round-trip: what this restore just did should
+        // itself be re-persisted (TabManager writes through on every tabs/selection
+        // change), so loading the session back must reproduce the same state.
+        let reloaded = TabSessionStore.loadSession()
+        try expect(reloaded?.openPaths.count == paths.count,
+            "TabSessionStore must have captured all \(paths.count) restored tabs via write-through persistSession")
+        try expect(reloaded?.selectedIndex == persistedSelectedIndex,
+            "TabSessionStore must have captured the restored selection index")
+    }
+}
+
+runner.test("TabManager.closeTab: unloads the closed tab's PreviewViewModel and selects the nearest remaining tab") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(3, prefix: "mar038-close")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tabManager = TabManager()
+        for file in files { tabManager.openFile(file) }
+        _ = drainMainActor { await waitUntilAllLoaded(tabManager.tabs) }
+        let middleTab = tabManager.tabs[1]
+        tabManager.closeTab(middleTab.id)
+        try expect(tabManager.tabs.count == 2, "closing 1 of 3 tabs must leave 2")
+        try expect(!middleTab.viewModel.isLoaded, "closeTab must unload the closed tab's PreviewViewModel (isLoaded reset)")
+        try expect(tabManager.selectedTabID != nil, "closing a middle tab with others remaining must select a nearest neighbor, not nil")
+    }
+}
+
+runner.test("PreviewViewModel.loadFile: reads real file content off the main thread and publishes lint + render state") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(1, prefix: "mar038-vm")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let vm = PreviewViewModel()
+        vm.loadFile(at: files[0].path)
+        let finished = drainMainActor {
+            let deadline = Date().addingTimeInterval(5)
+            while !vm.isLoaded && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        try expect(finished, "PreviewViewModel must finish loading within the timeout")
+        try expect(vm.editorContent.contains("Doc 0"), "editorContent must match the file written to disk")
+        try expect(!vm.renderedHTML.isEmpty, "renderedHTML must be populated once loaded")
+        try expect(vm.currentFilePath == files[0].path, "currentFilePath must reflect the loaded file")
+    }
+}
+
+runner.test("RecentFilesManager: recordOpen/removeFromRecents/clearAll round-trip through UserDefaults") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(1, prefix: "mar038-recents")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let mgr = RecentFilesManager.shared
+        // Normalize first: earlier tests in this run (TabManager/PreviewViewModel
+        // behavioral tests above) also call recordOpen via loadFile, on temp files
+        // whose directories are already removed by the time this test runs.
+        // refresh() prunes those now-unreachable entries so `before` is a stable
+        // baseline instead of a stale count from mid-run.
+        mgr.refresh()
+        let before = mgr.recentFileURLs.count
+        mgr.recordOpen(url: files[0])
+        try expect(mgr.recentFileURLs.contains(files[0]), "recordOpen must add the file to recentFileURLs")
+        try expect(mgr.recentFileURLs.count == before + 1, "recordOpen must add exactly one new entry, got \(mgr.recentFileURLs.count) vs baseline \(before)")
+        try expect(mgr.lastOpenedURL == files[0], "recordOpen must set lastOpenedURL to the just-opened file")
+        mgr.removeFromRecents(url: files[0])
+        try expect(!mgr.recentFileURLs.contains(files[0]), "removeFromRecents must drop the file from recentFileURLs")
+        try expect(mgr.recentFileURLs.count == before, "state must return to its pre-test baseline so this test doesn't leak into others")
+    }
+}
+
+runner.test("ErrorPresenter: show sets currentNotification, dismiss clears it, reportURL encodes message+detail") {
+    try MainActor.assumeIsolated {
+        let presenter = ErrorPresenter()
+        try expect(presenter.currentNotification == nil, "presenter must start with no notification")
+        presenter.show("Export failed", level: .error, detail: "disk full")
+        guard let notification = presenter.currentNotification else {
+            try expect(false, "show() must set currentNotification"); return
+        }
+        try expect(notification.message == "Export failed", "currentNotification.message must match show()'s argument")
+        try expect(notification.detail == "disk full", "currentNotification.detail must match show()'s argument")
+        let url = presenter.reportURL(for: notification)
+        try expect(url?.absoluteString.contains("Export%20failed") == true || url?.absoluteString.contains("Export+failed") == true || url?.query?.contains("Export failed") == true,
+            "reportURL must encode the notification message into the GitHub issue URL, got \(url?.absoluteString ?? "nil")")
+        presenter.dismiss()
+        try expect(presenter.currentNotification == nil, "dismiss() must clear currentNotification")
+    }
+}
+
+runner.test("AppSettings: computed enum properties round-trip through their raw AppStorage-backed properties") {
+    try MainActor.assumeIsolated {
+        let settings = AppSettings.shared
+        let originalTheme = settings.theme
+        let originalWidth = settings.previewWidth
+        let originalTabBehavior = settings.tabBehavior
+        defer {
+            settings.theme = originalTheme
+            settings.previewWidth = originalWidth
+            settings.tabBehavior = originalTabBehavior
+        }
+        settings.theme = .dark
+        try expect(settings.themeRaw == "dark", "setting theme must write through to themeRaw")
+        try expect(settings.theme == .dark, "theme getter must reflect the value just set")
+        settings.previewWidth = .narrow
+        try expect(settings.previewWidthRaw == "narrow", "setting previewWidth must write through to previewWidthRaw")
+        settings.tabBehavior = .twoSpaces
+        try expect(settings.tabBehavior.insertionString == "  ", "TabBehavior.twoSpaces must insert 2 spaces")
+    }
 }
 
 // =============================================================================
@@ -4738,7 +4964,7 @@ runner.test("mar-037: PreviewViewModel no longer reads file content on the main 
     // Tier-4 source guard, paired with the behavioral FileContentLoader tests above
     // (PreviewViewModel lives in the Xcode app target, not visible to TestRunner —
     // same split as mar-028's PreviewPageBuilder/Coordinator pairing).
-    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    let source = try String(contentsOfFile: "Sources/MarkViewAppCore/PreviewViewModel.swift", encoding: .utf8)
     try expect(!source.contains("String(contentsOfFile:"),
         "PreviewViewModel must not read file content directly — that is the mar-037 hang path (APPLE-MACOS-33)")
     try expect(source.contains("FileContentLoader.read"),
