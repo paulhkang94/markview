@@ -301,13 +301,18 @@ def tier_golden_drift() -> bool:
 
 
 def tier_script_tests() -> bool:
-    header("Script Tests (metrics + traction + release)")
+    header("Script Tests (metrics + traction + release + hooks + CI tooling)")
     suites = [
         ("scripts/test-metrics.py", "metrics + check_traction"),
         (
             "scripts/test-release-scripts.py",
             "release_preflight + check_version_sync + tap_audit",
         ),
+        ("scripts/test-check-rule-gates.py", "check_rule_gates"),
+        ("scripts/test-hooks.py", "auto_install + render_verify_gate"),
+        ("scripts/test-post-launch.py", "post_launch"),
+        ("scripts/test-github-parity-check.py", "github_parity_check"),
+        ("scripts/test-ci-status.py", "ci_status"),
     ]
     all_passed = True
     for rel_path, label in suites:
