@@ -4685,6 +4685,71 @@ runner.test("mar-028: Coordinator no longer assembles or writes the page on the 
 }
 
 // =============================================================================
+// MARK: - item-713 (fourth hang class) / mar-037 (APPLE-MACOS-33): off-main
+// PreviewViewModel.loadContent
+//
+// PreviewViewModel.loadContent ran String(contentsOfFile:) synchronously on
+// the main actor for every file open, external-change reload, and
+// file-watcher callback. FileContentLoader (MarkViewCore) now owns the read
+// (resolve-symlinks + fallback, parity-exact with the replaced code) so
+// PreviewViewModel can run it in a detached task and only publish the
+// @Published properties back on the main actor.
+
+print("\n--- FileContentLoader tests (mar-037 off-main loadContent) ---")
+
+runner.test("FileContentLoader: reads UTF-8 content exactly, including multi-byte + CRLF (determinism pin)") {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mar037-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let file = dir.appendingPathComponent("doc.md")
+    let content = "émoji 🎉 café\r\nnaïve\nend\u{200D}"
+    try content.write(to: file, atomically: true, encoding: .utf8)
+
+    let read = try FileContentLoader.read(from: file.path)
+    try expect(read == content, "content must round-trip byte-exactly, including CRLF un-normalized")
+}
+
+runner.test("FileContentLoader: resolves symlinks — reading through a symlink returns the target's content") {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mar037-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let real = dir.appendingPathComponent("real.md")
+    let link = dir.appendingPathComponent("link.md")
+    try "real content".write(to: real, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+    let read = try FileContentLoader.read(from: link.path)
+    try expect(read == "real content", "reading via a symlink must return the resolved target's content")
+}
+
+runner.test("FileContentLoader: throws when neither the resolved nor the original path exists") {
+    let bogus = FileManager.default.temporaryDirectory
+        .appendingPathComponent("mar037-nonexistent-\(UUID().uuidString).md").path
+    var threw = false
+    do {
+        _ = try FileContentLoader.read(from: bogus)
+    } catch {
+        threw = true
+    }
+    try expect(threw, "a missing file must throw so the caller can log and surface lastError instead of silently loading empty content")
+}
+
+runner.test("mar-037: PreviewViewModel no longer reads file content on the main thread") {
+    // Tier-4 source guard, paired with the behavioral FileContentLoader tests above
+    // (PreviewViewModel lives in the Xcode app target, not visible to TestRunner —
+    // same split as mar-028's PreviewPageBuilder/Coordinator pairing).
+    let source = try String(contentsOfFile: "Sources/MarkView/PreviewViewModel.swift", encoding: .utf8)
+    try expect(!source.contains("String(contentsOfFile:"),
+        "PreviewViewModel must not read file content directly — that is the mar-037 hang path (APPLE-MACOS-33)")
+    try expect(source.contains("FileContentLoader.read"),
+        "loadContent must delegate the disk read to FileContentLoader")
+    try expect(source.contains("Task.detached"),
+        "the file read must run off the main thread")
+    try expect(source.contains("contentLoadGeneration"),
+        "stale completions (a newer load started while an older read was in flight) must be generation-guarded so rapid reloads always end on the newest content")
+}
+
+// =============================================================================
 
 print("")
 runner.summary()
