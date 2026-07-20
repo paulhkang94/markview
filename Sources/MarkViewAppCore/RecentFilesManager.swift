@@ -1,6 +1,9 @@
 import AppKit
-import SwiftUI
+import Combine
+import Foundation
 
+/// Moved from the Xcode app target to MarkViewAppCore (mar-033 Tier-B, mar-038).
+///
 /// Manages the app's recently opened files list.
 ///
 /// **Why not NSDocumentController?**
@@ -11,23 +14,23 @@ import SwiftUI
 /// Storage: up to `maxItems` file paths as a JSON array under `recentFilePaths` in
 /// UserDefaults.standard. The list is in MRU order (most recently opened first).
 @MainActor
-final class RecentFilesManager: ObservableObject {
+public final class RecentFilesManager: ObservableObject {
     // Swift 6: final @MainActor class is implicitly Sendable; static let is safe without annotation.
-    static let shared = RecentFilesManager()
+    public static let shared = RecentFilesManager()
     private init() { pruneAndPublish() }
 
     /// Currently-known recent URLs that exist on disk, in MRU order.
-    @Published private(set) var recentFileURLs: [URL] = []
+    @Published public private(set) var recentFileURLs: [URL] = []
 
     private let pathsKey = "recentFilePaths"
     private let lastFileKey = "lastOpenedFilePath"
     private let explicitlyClosedKey = "didExplicitlyCloseFile"
-    static let maxItems = 15
+    public static let maxItems = 15
 
     // MARK: - Public Interface
 
     /// Record a file open. Call this whenever a file is successfully loaded.
-    func recordOpen(url: URL) {
+    public func recordOpen(url: URL) {
         var paths = storedPaths()
         // Remove any existing entry for this path, then prepend (MRU = front)
         paths.removeAll { $0 == url.path }
@@ -48,12 +51,12 @@ final class RecentFilesManager: ObservableObject {
     }
 
     /// Re-read from UserDefaults (e.g., after external changes or on view appear).
-    func refresh() {
+    public func refresh() {
         pruneAndPublish()
     }
 
     /// Remove a single URL from the list.
-    func removeFromRecents(url: URL) {
+    public func removeFromRecents(url: URL) {
         var paths = storedPaths()
         paths.removeAll { $0 == url.path }
         UserDefaults.standard.set(paths, forKey: pathsKey)
@@ -64,7 +67,7 @@ final class RecentFilesManager: ObservableObject {
     }
 
     /// Clear all recents.
-    func clearAll() {
+    public func clearAll() {
         UserDefaults.standard.removeObject(forKey: pathsKey)
         UserDefaults.standard.removeObject(forKey: lastFileKey)
         pruneAndPublish()
@@ -72,7 +75,7 @@ final class RecentFilesManager: ObservableObject {
 
     /// Mark that the user explicitly closed the current file.
     /// Suppresses auto-reopen on the next cold launch.
-    func markExplicitlyClosed() {
+    public func markExplicitlyClosed() {
         UserDefaults.standard.set(true, forKey: explicitlyClosedKey)
         if ProcessInfo.processInfo.environment["PHK_DEBUG"] != nil {
             NSLog("[PHK] markExplicitlyClosed: bundleID=%@ flag-readback=%d",
@@ -82,7 +85,7 @@ final class RecentFilesManager: ObservableObject {
     }
 
     /// The file to auto-reopen on cold launch, or nil if disabled or no history.
-    var lastOpenedURL: URL? {
+    public var lastOpenedURL: URL? {
         // Read directly from UserDefaults (not @AppStorage) to ensure the value
         // is current at the time this is called, even before SwiftUI has set up
         // the @AppStorage binding. Default is true when the key has never been set.

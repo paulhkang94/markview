@@ -1,4 +1,5 @@
 import SwiftUI
+import MarkViewAppCore
 
 /// Non-modal notification banner that slides down from top of window.
 /// Auto-dismisses after 5s or can be manually dismissed.

@@ -1,4 +1,5 @@
 import SwiftUI
+import MarkViewAppCore
 
 /// Horizontal scrollable tab bar. Always visible — even with one tab open.
 /// Each pill shows filename + close button. Active tab is highlighted.

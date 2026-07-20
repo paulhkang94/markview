@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import MarkViewAppCore
 
 /// Handles exporting markdown preview to HTML and PDF formats.
 /// Returns errors to caller for toast display.
