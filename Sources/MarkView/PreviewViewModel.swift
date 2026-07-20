@@ -36,6 +36,12 @@ final class PreviewViewModel: ObservableObject {
     private var template: String?
     private var originalContent: String = ""
     private let linter = MarkdownLinter()
+    /// Monotonic token for loadContent (item-713 fourth hang class, mar-037):
+    /// only the NEWEST in-flight read may publish. A stale completion (a
+    /// newer loadFile/reloadFromDisk/watcher-triggered read started while an
+    /// older one was still on disk) is dropped instead of overwriting the
+    /// editor with older content — same pattern as mar-028's loadGeneration.
+    private var contentLoadGeneration = 0
     /// Suppresses file watcher reload during our own saves to prevent the watcher from
     /// reading back the file we just wrote and triggering a redundant (or racy) content reload.
     private var suppressFileWatcher = false
@@ -184,29 +190,44 @@ final class PreviewViewModel: ObservableObject {
         }
     }
 
+    /// Read `path` off the main thread (item-713 fourth hang class, mar-037 /
+    /// APPLE-MACOS-33) and publish the result on the main actor. Previously
+    /// this read the file's content synchronously, in-line, here — for a large
+    /// document, or a file on a slow/network volume, that blocks the main
+    /// thread for the duration of the read on every file open, external-change
+    /// reload, and file-watcher callback.
     private func loadContent(from path: String) {
-        // Resolve symlinks and normalize path to avoid file:// URL mismatches
-        let resolvedPath = (path as NSString).resolvingSymlinksInPath
-        let content: String
-        do {
-            content = try String(contentsOfFile: resolvedPath, encoding: .utf8)
-        } catch {
-            // Fallback: try original path in case resolution changed it incorrectly
+        contentLoadGeneration += 1
+        let generation = contentLoadGeneration
+        Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                content = try String(contentsOfFile: path, encoding: .utf8)
+                let content = try FileContentLoader.read(from: path)
+                await self?.finishLoadContent(content, generation: generation)
             } catch {
-                AppLogger.file.error("Failed to load file at \(path): \(error.localizedDescription)")
-                AppLogger.captureError(error, category: "file", message: "File load failed: \(path)")
-                lastError = error
-                return
+                await self?.failLoadContent(error, path: path, generation: generation)
             }
         }
+    }
+
+    /// Main-actor completion of loadContent. Superseded reads (a newer
+    /// loadFile/reloadFromDisk/watcher-triggered call started while this one
+    /// was still on disk) are dropped so rapid successive reloads always
+    /// converge on the newest content instead of racing.
+    private func finishLoadContent(_ content: String, generation: Int) {
+        guard generation == contentLoadGeneration else { return }
         editorContent = content
         originalContent = content
         isDirty = false
         renderImmediate(content)
         runLint(content)
         isLoaded = true
+    }
+
+    private func failLoadContent(_ error: Error, path: String, generation: Int) {
+        guard generation == contentLoadGeneration else { return }
+        AppLogger.file.error("Failed to load file at \(path): \(error.localizedDescription)")
+        AppLogger.captureError(error, category: "file", message: "File load failed: \(path)")
+        lastError = error
     }
 
     private func renderImmediate(_ markdown: String) {
