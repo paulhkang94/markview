@@ -1,6 +1,6 @@
 # MarkView Gotchas
 
-Project-specific pitfalls and quirks. Cross-repo learnings go to `claude-repl-template-oss/docs/learnings/`.
+Project-specific pitfalls and quirks. Cross-repo learnings go to `claude-repl-template/docs/learnings/`.
 
 ### CMARK_OPT_SOURCEPOS changes all HTML output
 
