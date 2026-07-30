@@ -74,14 +74,24 @@ fi
 # Step 2: Build with xcodebuild (handles app + extension + signing order)
 echo "--- Building with xcodebuild ---"
 XCODE_BUILD_DIR="$PROJECT_DIR/build/Build/Products/Release"
-xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
+# Log to file instead of `| tail -5`: the pipe showed only the last 5 lines on
+# failure ("** BUILD FAILED **" without the compile error), hiding root causes.
+XCODE_LOG="$PROJECT_DIR/build/xcodebuild.log"
+mkdir -p "$PROJECT_DIR/build"
+if ! xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
     -scheme "$APP_NAME" \
     -configuration Release \
     -derivedDataPath "$PROJECT_DIR/build" \
     CODE_SIGN_IDENTITY="-" \
     CODE_SIGN_STYLE=Manual \
     ONLY_ACTIVE_ARCH=NO \
-    2>&1 | tail -5
+    > "$XCODE_LOG" 2>&1; then
+    echo "ERROR: xcodebuild failed - error lines:"
+    grep -m20 -E '(^|: )error:|BUILD FAILED' "$XCODE_LOG" || tail -20 "$XCODE_LOG"
+    echo "Full log: $XCODE_LOG"
+    exit 1
+fi
+tail -5 "$XCODE_LOG"
 echo "✓ xcodebuild complete"
 
 # Step 3: Copy built .app to project root
@@ -100,7 +110,14 @@ echo "✓ App bundle copied to $APP_DIR"
 MCP_NAME="MarkViewMCPServer"
 MCP_BIN_NAME="markview-mcp-server"
 echo "--- Building MCP server (SPM) ---"
-swift build -c release --product "$MCP_NAME" 2>&1 | tail -3
+MCP_LOG="$PROJECT_DIR/build/mcp-build.log"
+if ! swift build -c release --product "$MCP_NAME" > "$MCP_LOG" 2>&1; then
+    echo "ERROR: swift build ($MCP_NAME) failed - error lines:"
+    grep -m20 -E '(^|: )error:' "$MCP_LOG" || tail -20 "$MCP_LOG"
+    echo "Full log: $MCP_LOG"
+    exit 1
+fi
+tail -3 "$MCP_LOG"
 SPM_BUILD_DIR=".build/release"
 if [ -f "$SPM_BUILD_DIR/$MCP_NAME" ]; then
     cp "$SPM_BUILD_DIR/$MCP_NAME" "$APP_DIR/Contents/MacOS/$MCP_BIN_NAME"
