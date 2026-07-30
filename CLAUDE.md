@@ -73,6 +73,7 @@ python3 scripts/test-hooks.py         # auto_install.py + render_verify_gate.py 
 python3 scripts/test-post-launch.py   # post_launch.py tests (10 tests, never opens a real browser tab)
 python3 scripts/test-github-parity-check.py  # github_parity_check.py tests (13 tests, no live GitHub API/swift build)
 python3 scripts/test-ci-status.py     # ci_status.py tests (24 tests, no live gh CLI)
+python3 scripts/test-sentry-check.py  # sentry_check.py tests (12 tests, no live Sentry API/Keychain)
 make playwright                       # Playwright e2e DOM tests (66 tests) — rebuilds MarkViewHTMLGen, runs Chromium
 ```
 
