@@ -16,6 +16,8 @@ import MarkViewCore
 /// production logging behavior is unchanged. Tests get the default no-op.
 @MainActor
 public final class PreviewViewModel: ObservableObject {
+    public typealias LintOperation = @Sendable (String) -> [LintDiagnostic]
+
     @Published public var renderedHTML: String = ""
     @Published public var isLoaded: Bool = false
     @Published public var editorContent: String = ""
@@ -42,10 +44,12 @@ public final class PreviewViewModel: ObservableObject {
     private var fileWatcher: FileWatcher?
     private var renderTask: Task<Void, Never>?
     private var lintTask: Task<Void, Never>?
+    private var lintGeneration = 0
     private var autoSaveTimer: Timer?
     private var template: String?
     private var originalContent: String = ""
     private let linter = MarkdownLinter()
+    private let lintOperation: LintOperation
     /// Monotonic token for loadContent (item-713 fourth hang class, mar-037):
     /// only the NEWEST in-flight read may publish. A stale completion (a
     /// newer loadFile/reloadFromDisk/watcher-triggered read started while an
@@ -56,7 +60,11 @@ public final class PreviewViewModel: ObservableObject {
     /// reading back the file we just wrote and triggering a redundant (or racy) content reload.
     private var suppressFileWatcher = false
 
-    public init() {}
+    public init(lintOperation: @escaping LintOperation = { markdown in
+        MarkdownLinter().lint(markdown)
+    }) {
+        self.lintOperation = lintOperation
+    }
 
     public func loadFile(at path: String) {
         currentFilePath = path
@@ -166,6 +174,7 @@ public final class PreviewViewModel: ObservableObject {
         stopAutoSaveTimer()
         renderTask?.cancel()
         lintTask?.cancel()
+        lintGeneration += 1
         currentFilePath = nil
         fileName = "MarkView"
         renderedHTML = ""
@@ -257,19 +266,33 @@ public final class PreviewViewModel: ObservableObject {
     }
 
     private func lintDebounced(_ markdown: String) {
-        lintTask?.cancel()
-        lintTask = Task {
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
-            guard !Task.isCancelled else { return }
-            runLint(markdown)
-        }
+        scheduleLint(markdown, debounceNanoseconds: 300_000_000)
     }
 
     private func runLint(_ markdown: String) {
-        let diagnostics = linter.lint(markdown)
-        lintDiagnostics = diagnostics
-        lintWarnings = diagnostics.filter { $0.severity == .warning }.count
-        lintErrors = diagnostics.filter { $0.severity == .error }.count
+        scheduleLint(markdown)
+    }
+
+    /// Markdown linting is CPU-bound and can be expensive for large documents.
+    /// Run it away from the main actor, then publish only the newest result.
+    private func scheduleLint(_ markdown: String, debounceNanoseconds: UInt64? = nil) {
+        lintTask?.cancel()
+        lintGeneration += 1
+        let generation = lintGeneration
+        let operation = lintOperation
+        lintTask = Task {
+            if let debounceNanoseconds {
+                try? await Task.sleep(nanoseconds: debounceNanoseconds)
+                guard !Task.isCancelled else { return }
+            }
+            let diagnostics = await Task.detached(priority: .userInitiated) {
+                operation(markdown)
+            }.value
+            guard !Task.isCancelled, generation == lintGeneration else { return }
+            lintDiagnostics = diagnostics
+            lintWarnings = diagnostics.filter { $0.severity == .warning }.count
+            lintErrors = diagnostics.filter { $0.severity == .error }.count
+        }
     }
 
     private func watchFile(at path: String) {

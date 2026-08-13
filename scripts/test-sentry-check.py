@@ -48,16 +48,22 @@ def _issue(
 class FakeAPI:
     """Duck-typed stand-in for SentryAPI: path -> canned response."""
 
-    def __init__(self, issues=None, latest_releases=None):
+    def __init__(self, issues=None, latest_releases=None, latest_events=None):
         self.issues = issues or []
         self.latest_releases = latest_releases or {}
+        self.latest_events = latest_events or {}
+        self.calls = []
 
     def get(self, path, params=None):
+        self.calls.append((path, params))
         if path.endswith("/issues/") and "/projects/" in path:
             return self.issues
         for iid, rel in self.latest_releases.items():
             if f"/issues/{iid}/events/latest/" in path:
                 return {"release": {"version": rel}}
+        for iid, event in self.latest_events.items():
+            if f"/issues/{iid}/events/latest/" in path:
+                return event
         return {}
 
 
@@ -170,6 +176,61 @@ class TestMainExitCodes(unittest.TestCase):
             with patch("sys.stderr", new=StringIO()):
                 rc = mod.main([])
         self.assertEqual(rc, 2)
+
+    def test_issue_detail_json_includes_actionable_frames(self):
+        event = {
+            "eventID": "evt-1",
+            "dateCreated": "2026-08-12T20:00:00Z",
+            "release": {"version": "1.7.1"},
+            "entries": [
+                {
+                    "type": "threads",
+                    "data": {
+                        "values": [
+                            {
+                                "stacktrace": {
+                                    "frames": [
+                                        {
+                                            "function": "CFRunLoopRun",
+                                            "module": "CoreFoundation",
+                                            "inApp": False,
+                                        },
+                                        {
+                                            "function": "MarkdownLinter.countOccurrences",
+                                            "module": "MarkViewCore",
+                                            "filename": "MarkdownLinter.swift",
+                                            "lineNo": 118,
+                                            "inApp": True,
+                                        },
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-3Q", iid="42")],
+            latest_events={"42": event},
+        )
+        with patch("sys.stdout", new=StringIO()) as out:
+            rc = self.m.main(["--issue", "APPLE-MACOS-3Q", "--json"], api=api)
+        self.assertEqual(rc, 0)
+        payload = __import__("json").loads(out.getvalue())
+        self.assertEqual(payload["issue"]["shortId"], "APPLE-MACOS-3Q")
+        self.assertEqual(payload["event"]["release"], "1.7.1")
+        self.assertEqual(
+            payload["event"]["in_app_frames"][0]["function"],
+            "MarkdownLinter.countOccurrences",
+        )
+        self.assertEqual(api.calls[0][1]["query"], "is:unresolved")
+
+    def test_issue_detail_missing_short_id_exits_1(self):
+        with patch("sys.stderr", new=StringIO()) as err:
+            rc = self.m.main(["--issue", "APPLE-MACOS-NOPE"], api=FakeAPI())
+        self.assertEqual(rc, 1)
+        self.assertIn("not found", err.getvalue())
 
 
 if __name__ == "__main__":

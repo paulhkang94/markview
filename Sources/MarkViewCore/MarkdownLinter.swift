@@ -2,8 +2,8 @@ import Foundation
 
 // MARK: - Diagnostic Types
 
-public struct LintDiagnostic: Equatable {
-    public enum Severity: String {
+public struct LintDiagnostic: Equatable, Sendable {
+    public enum Severity: String, Sendable {
         case warning, error
     }
 
