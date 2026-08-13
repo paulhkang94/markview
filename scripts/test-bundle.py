@@ -527,6 +527,9 @@ class TestGoldenCharacterization(unittest.TestCase):
             install_dir = tmp / "Applications/MarkView.app"
             mod._run = self._fake_run(tmp, install_dir)
             mod.LSREGISTER = Path(__file__)  # any real file → `.is_file()` True
+            # Never depend on a real xcodegen install — the CI "Verify" job
+            # (unlike "Bundle") doesn't install it, so this must be stubbed.
+            mod._which = lambda name: "/opt/homebrew/bin/xcodegen"
 
             out = []
             rc = mod.run_bundle(
@@ -567,6 +570,7 @@ class TestGoldenCharacterization(unittest.TestCase):
             self._make_project(tmp)
             install_dir = tmp / "Applications/MarkView.app"
             mod._run = self._fake_run(tmp, install_dir)
+            mod._which = lambda name: "/opt/homebrew/bin/xcodegen"
 
             out = []
             rc = mod.run_bundle(
