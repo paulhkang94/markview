@@ -4465,6 +4465,30 @@ runner.test("PreviewViewModel.loadFile: reads real file content off the main thr
     }
 }
 
+runner.test("PreviewViewModel linting runs off the main actor") {
+    try MainActor.assumeIsolated {
+        let slowLint: PreviewViewModel.LintOperation = { _ in
+            Thread.sleep(forTimeInterval: 0.4)
+            return []
+        }
+        let vm = PreviewViewModel(lintOperation: slowLint)
+        let started = Date()
+        vm.contentDidChange("**unclosed")
+
+        let mainActorStayedResponsive = drainMainActor(timeout: 1) {
+            // lintDebounced starts the injected 400ms operation after 300ms.
+            // At 350ms the main actor must still be able to resume this task.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+        }
+        let elapsed = Date().timeIntervalSince(started)
+
+        try expect(mainActorStayedResponsive,
+            "main actor must remain responsive while lint computation runs")
+        try expect(elapsed < 0.55,
+            "350ms main-actor heartbeat was delayed by synchronous linting (elapsed: \(elapsed)s)")
+    }
+}
+
 runner.test("RecentFilesManager: recordOpen/removeFromRecents/clearAll round-trip through UserDefaults") {
     try MainActor.assumeIsolated {
         let (dir, files) = try makeTempMarkdownFiles(1, prefix: "mar038-recents")

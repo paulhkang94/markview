@@ -8,6 +8,7 @@ Replaces the ad-hoc curl + inline-python pattern used for the recurring
 Usage:
     python3 scripts/sentry_check.py                       # unresolved issues, last 14d
     python3 scripts/sentry_check.py --release 1.7.1       # issues with events on that release
+    python3 scripts/sentry_check.py --issue APPLE-MACOS-2Z # latest event + in-app frames
     python3 scripts/sentry_check.py --gate 1.7.1 --watch APPLE-MACOS-33,APPLE-MACOS-3B
                                                           # close-gate verdict for a release
     python3 scripts/sentry_check.py --json                # machine-readable output
@@ -94,6 +95,55 @@ def latest_event_release(api: SentryAPI, issue_id: str) -> str:
     return rel.get("version", "?") if isinstance(rel, dict) else "?"
 
 
+def latest_event(api: SentryAPI, issue_id: str) -> dict:
+    data = api.get(f"/organizations/{ORG}/issues/{issue_id}/events/latest/")
+    return data if isinstance(data, dict) else {}
+
+
+def _stack_frames(event: dict) -> list[dict]:
+    """Return normalized in-app frames from exception and thread entries."""
+    frames: list[dict] = []
+    for entry in event.get("entries") or []:
+        if not isinstance(entry, dict) or entry.get("type") not in {"threads", "exception"}:
+            continue
+        values = (entry.get("data") or {}).get("values") or []
+        for value in values:
+            stack = value.get("stacktrace") if isinstance(value, dict) else None
+            for frame in (stack or {}).get("frames") or []:
+                if not isinstance(frame, dict) or not frame.get("inApp"):
+                    continue
+                frames.append(
+                    {
+                        "function": frame.get("function") or "?",
+                        "module": frame.get("module") or "",
+                        "filename": frame.get("filename") or "",
+                        "lineNo": frame.get("lineNo"),
+                    }
+                )
+    return frames
+
+
+def event_summary(event: dict) -> dict:
+    release = event.get("release") or {}
+    return {
+        "event_id": event.get("eventID") or event.get("id") or "?",
+        "timestamp": event.get("dateCreated") or event.get("dateReceived") or "?",
+        "release": release.get("version", "?") if isinstance(release, dict) else release,
+        "in_app_frames": _stack_frames(event),
+    }
+
+
+def issue_detail(api: SentryAPI, short_id: str) -> dict | None:
+    # Sentry's project-issues search does not accept `shortId:` as a query
+    # field. Fetch the bounded unresolved set and exact-match locally.
+    issues = fetch_issues(api, "is:unresolved")
+    issue = next((row for row in issues if row.get("shortId") == short_id), None)
+    if issue is None:
+        return None
+    event = latest_event(api, str(issue.get("id")))
+    return {"issue": issue_row(issue), "event": event_summary(event)}
+
+
 def issue_row(issue: dict, latest_release: str | None = None) -> dict:
     return {
         "shortId": issue.get("shortId", "?"),
@@ -155,9 +205,29 @@ def format_rows(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def format_issue_detail(detail: dict) -> str:
+    issue = detail["issue"]
+    event = detail["event"]
+    lines = [
+        f"{issue['shortId']} | {issue['culprit'] or issue['title']} | count: {issue['count']}",
+        f"latest event: {event['timestamp']} | release: {event['release']}",
+        "in-app frames:",
+    ]
+    frames = event["in_app_frames"]
+    if not frames:
+        lines.append("  (none reported)")
+    for frame in frames:
+        location = frame["filename"]
+        if frame["lineNo"] is not None:
+            location += f":{frame['lineNo']}"
+        lines.append(f"  {frame['function']} | {frame['module']} | {location}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release", help="list issues with events on this release")
+    parser.add_argument("--issue", metavar="SHORT_ID", help="show latest event stack summary")
     parser.add_argument(
         "--gate", metavar="RELEASE", help="run close-gate verdict for a release"
     )
@@ -180,6 +250,14 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
         api = SentryAPI(token)
 
     try:
+        if args.issue:
+            detail = issue_detail(api, args.issue)
+            if detail is None:
+                print(f"ERROR: Sentry issue {args.issue} not found", file=sys.stderr)
+                return 1
+            print(json.dumps(detail, indent=2) if args.as_json else format_issue_detail(detail))
+            return 0
+
         if args.gate:
             rows = release_report(api, args.gate)
             watch = [w.strip() for w in args.watch.split(",") if w.strip()]

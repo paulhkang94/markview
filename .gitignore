@@ -52,6 +52,7 @@ docs/personal/
 docs/research/*
 !docs/research/e2e-perf-testing-approaches.md
 !docs/research/editor-bug-analysis.md
+!docs/research/markview-hang-triage-2026-08-12.md
 !docs/research/ql-webview-sandbox-analysis.md
 !docs/research/quicklook-extension-spm.md
 
