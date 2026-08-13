@@ -314,6 +314,7 @@ def tier_script_tests() -> bool:
         ("scripts/test-github-parity-check.py", "github_parity_check"),
         ("scripts/test-ci-status.py", "ci_status"),
         ("scripts/test-sentry-check.py", "sentry_check"),
+        ("scripts/test-bundle.py", "bundle"),
     ]
     all_passed = True
     for rel_path, label in suites:
