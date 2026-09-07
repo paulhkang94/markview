@@ -3,8 +3,8 @@
 bundle.py — Build .app bundle using xcodebuild (XcodeGen project).
 
 Usage:
-    python3 scripts/bundle.py [--install] [--notarize]
-    bash scripts/bundle.sh [--install] [--notarize]   (thin exec wrapper)
+    python3 scripts/bundle.py [--install] [--notarize] [--force]
+    bash scripts/bundle.sh [--install] [--notarize] [--force]   (thin exec wrapper)
 
 Prerequisites: brew install xcodegen && xcodegen generate
 
@@ -17,16 +17,24 @@ those fixtures, and the mar-026 log-to-file fix (surface xcodebuild/
 swift-build root causes instead of a masked `| tail -5` pipe) that this
 port preserves.
 
+mar-048: `--install` refuses (unless `--force`) when a Dock tile is pinned
+to a `build/` output path — that tree is ephemeral (xcodebuild output,
+deleted by dev-cleanup.py), so a Dock tile pointing into it silently
+breaks. The check is read-only (`defaults export`, never `defaults
+write`) — it never mutates the Dock.
+
 Every external command runs through `_run()` so tests can stub the
 subprocess boundary without invoking a real xcodebuild/swift/codesign.
 """
 
 from __future__ import annotations
 
+import plistlib
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
@@ -148,22 +156,95 @@ def _find_frameworks_signables(directory: Path) -> list[Path]:
 # ── Argument parsing ────────────────────────────────────────────────────────
 
 
-def parse_args(argv: list[str]) -> tuple[bool, bool]:
-    """Returns (do_install, do_notarize). Raises BundleError on an unknown
-    option, matching bash's `Unknown option: X` + usage + exit 1."""
+def parse_args(argv: list[str]) -> tuple[bool, bool, bool]:
+    """Returns (do_install, do_notarize, do_force). Raises BundleError on an
+    unknown option, matching bash's `Unknown option: X` + usage + exit 1."""
     do_install = False
     do_notarize = False
+    do_force = False
     for arg in argv:
         if arg == "--install":
             do_install = True
         elif arg == "--notarize":
             do_notarize = True
+        elif arg == "--force":
+            do_force = True
         else:
             raise BundleError(
                 f"Unknown option: {arg}\n"
-                "Usage: bash scripts/bundle.sh [--install] [--notarize]"
+                "Usage: bash scripts/bundle.sh [--install] [--notarize] [--force]"
             )
-    return do_install, do_notarize
+    return do_install, do_notarize, do_force
+
+
+# ── Dock tile safety (mar-048) ──────────────────────────────────────────────
+
+
+def _decode_dock_file_url(url: str) -> Path | None:
+    """Decode a Dock tile's `file://` URL (mirrors
+    `tile-data.file-data._CFURLString`) into a filesystem path."""
+    if not url or not url.startswith("file://"):
+        return None
+    return Path(unquote(urlparse(url).path))
+
+
+def read_dock_persistent_apps(out=print) -> list[dict]:
+    """Read Dock app tiles via `defaults export com.apple.dock -`. Read-only —
+    never calls `defaults write` or otherwise mutates the Dock. Returns []
+    (never raises) if the export fails or doesn't parse, so callers degrade
+    to "nothing to warn about" rather than aborting the whole bundle build."""
+    rc, stdout, _ = _run(["defaults", "export", "com.apple.dock", "-"])
+    if rc != 0 or not stdout:
+        return []
+    try:
+        data = plistlib.loads(stdout.encode("utf-8"))
+    except (ValueError, plistlib.InvalidFileException):
+        return []
+    apps = data.get("persistent-apps", [])
+    return apps if isinstance(apps, list) else []
+
+
+def find_dock_tiles_pointing_at_build(project_dir: Path, out=print) -> list[str]:
+    """Return the file:// paths (decoded) of any pinned Dock tile that lives
+    inside `project_dir/build/` — the ephemeral xcodebuild output tree that
+    dev-cleanup.py deletes. A Dock tile pinned there breaks (shows a generic
+    icon) once that tree is cleaned; the installed app under /Applications
+    is the stable target."""
+    build_root = (project_dir / "build").resolve()
+    hits: list[str] = []
+    for tile in read_dock_persistent_apps(out):
+        file_data = tile.get("tile-data", {}).get("file-data", {})
+        url = file_data.get("_CFURLString")
+        path = _decode_dock_file_url(url) if isinstance(url, str) else None
+        if path is None:
+            continue
+        resolved = path.resolve()
+        if resolved == build_root or build_root in resolved.parents:
+            hits.append(str(path))
+    return hits
+
+
+def check_dock_not_pointing_at_build(
+    project_dir: Path, force: bool, out=print
+) -> None:
+    """`--install` guard: refuse (unless `--force`) when a Dock tile is
+    pinned to a `build/` output path. Read-only — never mutates the Dock."""
+    hits = find_dock_tiles_pointing_at_build(project_dir, out)
+    if not hits:
+        return
+    if force:
+        out("⚠ Dock tile(s) pinned to a build/ output path (continuing: --force):")
+        for hit in hits:
+            out(f"  {hit}")
+        return
+    lines = [
+        "ERROR: Dock has a tile pinned to a build/ output path — it will break "
+        "(show a generic icon) once build/ is cleaned:",
+        *(f"  {hit}" for hit in hits),
+        f"Re-pin the Dock tile to the installed app (/Applications/{APP_NAME}.app), "
+        "or pass --force to skip this check.",
+    ]
+    raise BundleError("\n".join(lines))
 
 
 # ── Signing identity ────────────────────────────────────────────────────────
@@ -598,7 +679,10 @@ def run_bundle(
     install_dir: Path | None = None,
     out=print,
 ) -> int:
-    do_install, do_notarize = parse_args(argv)
+    do_install, do_notarize, do_force = parse_args(argv)
+
+    if do_install:
+        check_dock_not_pointing_at_build(project_dir, do_force, out)
 
     app_dir = project_dir / f"{APP_NAME}.app"
     if install_dir is None:

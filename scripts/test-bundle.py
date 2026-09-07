@@ -64,13 +64,21 @@ AD_HOC_IDENTITY_OUTPUT = "     0 valid identities found\n"
 class TestHelpers(unittest.TestCase):
     def test_parse_args_defaults(self):
         mod = _load("bundle")
-        self.assertEqual(mod.parse_args([]), (False, False))
+        self.assertEqual(mod.parse_args([]), (False, False, False))
 
     def test_parse_args_install_and_notarize(self):
         mod = _load("bundle")
-        self.assertEqual(mod.parse_args(["--install"]), (True, False))
-        self.assertEqual(mod.parse_args(["--notarize"]), (False, True))
-        self.assertEqual(mod.parse_args(["--install", "--notarize"]), (True, True))
+        self.assertEqual(mod.parse_args(["--install"]), (True, False, False))
+        self.assertEqual(mod.parse_args(["--notarize"]), (False, True, False))
+        self.assertEqual(
+            mod.parse_args(["--install", "--notarize"]), (True, True, False)
+        )
+
+    def test_parse_args_force(self):
+        mod = _load("bundle")
+        self.assertEqual(
+            mod.parse_args(["--install", "--force"]), (True, False, True)
+        )
 
     def test_parse_args_unknown_option_raises(self):
         mod = _load("bundle")
@@ -157,6 +165,141 @@ class TestHelpers(unittest.TestCase):
             (sentry_dir / "Sentry").write_text("not executable, not a dylib")
             found = mod._find_frameworks_signables(tmp)
         self.assertIn(sentry_dir / "Sentry", found)
+
+
+# ── Dock tile safety (mar-048) ──────────────────────────────────────────────
+
+
+def _dock_export_xml(tile_urls: list[str]) -> str:
+    """Build a fake `defaults export com.apple.dock -` XML payload with one
+    persistent-apps file-tile per URL (mirrors the real tile-data shape)."""
+    apps = [
+        {
+            "tile-data": {
+                "file-data": {"_CFURLString": url, "_CFURLStringType": 15},
+                "file-label": f"App{i}",
+            },
+            "tile-type": "file-tile",
+        }
+        for i, url in enumerate(tile_urls)
+    ]
+    return plistlib.dumps({"persistent-apps": apps}).decode("utf-8")
+
+
+class TestDockGuard(unittest.TestCase):
+    def test_decode_dock_file_url(self):
+        mod = _load("bundle")
+        self.assertEqual(
+            mod._decode_dock_file_url("file:///Applications/MarkView.app/"),
+            Path("/Applications/MarkView.app"),
+        )
+        self.assertEqual(
+            mod._decode_dock_file_url("file:///tmp/Google%20Chrome.app/"),
+            Path("/tmp/Google Chrome.app"),
+        )
+        self.assertIsNone(mod._decode_dock_file_url(""))
+        self.assertIsNone(mod._decode_dock_file_url("not-a-url"))
+
+    def test_read_dock_persistent_apps_parses_real_shaped_export(self):
+        mod = _load("bundle")
+        xml = _dock_export_xml(["file:///Applications/MarkView.app/"])
+        mod._run = lambda cmd, cwd=None: (0, xml, "")
+        apps = mod.read_dock_persistent_apps()
+        self.assertEqual(len(apps), 1)
+        self.assertEqual(
+            apps[0]["tile-data"]["file-data"]["_CFURLString"],
+            "file:///Applications/MarkView.app/",
+        )
+
+    def test_read_dock_persistent_apps_returns_empty_on_export_failure(self):
+        mod = _load("bundle")
+        mod._run = lambda cmd, cwd=None: (1, "", "no such domain")
+        self.assertEqual(mod.read_dock_persistent_apps(), [])
+
+    def test_read_dock_persistent_apps_returns_empty_on_garbage_output(self):
+        mod = _load("bundle")
+        mod._run = lambda cmd, cwd=None: (0, "not a plist", "")
+        self.assertEqual(mod.read_dock_persistent_apps(), [])
+
+    def test_find_dock_tiles_pointing_at_build_matches_nested_path(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            xml = _dock_export_xml(
+                [
+                    f"file://{project_dir}/build/Build/Products/Release/MarkView.app/",
+                    "file:///Applications/MarkView.app/",
+                ]
+            )
+            mod._run = lambda cmd, cwd=None: (0, xml, "")
+            hits = mod.find_dock_tiles_pointing_at_build(project_dir)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("build/Build/Products/Release/MarkView.app", hits[0])
+
+    def test_find_dock_tiles_pointing_at_build_no_hits(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            xml = _dock_export_xml(["file:///Applications/MarkView.app/"])
+            mod._run = lambda cmd, cwd=None: (0, xml, "")
+            hits = mod.find_dock_tiles_pointing_at_build(project_dir)
+        self.assertEqual(hits, [])
+
+    def test_check_dock_not_pointing_at_build_raises_without_force(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            xml = _dock_export_xml([f"file://{project_dir}/build/MarkView.app/"])
+            mod._run = lambda cmd, cwd=None: (0, xml, "")
+            with self.assertRaises(mod.BundleError) as cm:
+                mod.check_dock_not_pointing_at_build(project_dir, force=False)
+        msg = str(cm.exception)
+        self.assertIn("Dock has a tile pinned to a build/ output path", msg)
+        self.assertIn(str(project_dir), msg)
+        self.assertIn("--force", msg)
+
+    def test_check_dock_not_pointing_at_build_force_warns_not_raises(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            xml = _dock_export_xml([f"file://{project_dir}/build/MarkView.app/"])
+            mod._run = lambda cmd, cwd=None: (0, xml, "")
+            out = []
+            mod.check_dock_not_pointing_at_build(
+                project_dir, force=True, out=out.append
+            )
+        self.assertTrue(any("build/" in line for line in out))
+
+    def test_check_dock_not_pointing_at_build_no_dock_hits_is_silent(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            mod._run = lambda cmd, cwd=None: (0, "", "")
+            out = []
+            mod.check_dock_not_pointing_at_build(
+                project_dir, force=False, out=out.append
+            )
+        self.assertEqual(out, [])
+
+    def test_run_bundle_install_aborts_before_build_when_dock_pinned(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            xml = _dock_export_xml([f"file://{project_dir}/build/MarkView.app/"])
+            calls = []
+
+            def fake_run(cmd, cwd=None):
+                calls.append(cmd)
+                if cmd[0] == "defaults":
+                    return 0, xml, ""
+                return 0, "", ""
+
+            mod._run = fake_run
+            with self.assertRaises(mod.BundleError) as cm:
+                mod.run_bundle(["--install"], project_dir=project_dir)
+        self.assertIn("build/ output path", str(cm.exception))
+        # No xcodegen/xcodebuild/security calls happened — the guard fired first.
+        self.assertFalse(any(c[0] == "xcodebuild" for c in calls))
 
 
 # ── bump_build_number ─────────────────────────────────────────────────────────
