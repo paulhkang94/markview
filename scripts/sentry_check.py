@@ -65,16 +65,12 @@ class SentryAPI:
         url = f"{BASE}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self._token}"}
-        )
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self._token}"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.load(resp)
 
 
-def fetch_issues(
-    api: SentryAPI, query: str, stats_period: str | None = "14d"
-) -> list[dict]:
+def fetch_issues(api: SentryAPI, query: str, stats_period: str | None = "14d") -> list[dict]:
     params: dict = {"query": query}
     # Sentry rejects statsPeriod values other than '', '24h', '14d' on this endpoint;
     # release-scoped queries use the default window (omit the param).
@@ -133,7 +129,7 @@ def event_summary(event: dict) -> dict:
     }
 
 
-def issue_detail(api: SentryAPI, short_id: str) -> dict | None:
+def issue_detail(api: SentryAPI, short_id: str, raw: bool = False) -> dict | None:
     # Sentry's project-issues search does not accept `shortId:` as a query
     # field. Fetch the bounded unresolved set and exact-match locally.
     issues = fetch_issues(api, "is:unresolved")
@@ -141,6 +137,12 @@ def issue_detail(api: SentryAPI, short_id: str) -> dict | None:
     if issue is None:
         return None
     event = latest_event(api, str(issue.get("id")))
+    if raw:
+        # Read-only escape hatch for hang triage: the summary drops thread
+        # state, contexts, tags and breadcrumbs, which is exactly what a hang
+        # investigation needs. Dumping the untouched event keeps triage on the
+        # tested client path instead of ad-hoc curl/inline-python.
+        return {"raw_event": event}
     return {"issue": issue_row(issue), "event": event_summary(event)}
 
 
@@ -169,9 +171,7 @@ def gate_verdict(rows: list[dict], release: str, watch: list[str]) -> dict:
     """Close-gate semantics: PASS only if the release HAS field events (adoption)
     AND no watched group fired on it AND no hang group's latest event is on it."""
     watched_fired = [r for r in rows if r["shortId"] in watch]
-    live_hangs = [
-        r for r in rows if is_hang(r) and r.get("latestEventRelease") == release
-    ]
+    live_hangs = [r for r in rows if is_hang(r) and r.get("latestEventRelease") == release]
     if not rows:
         verdict = "NO_ADOPTION"
     elif watched_fired or live_hangs:
@@ -193,11 +193,7 @@ def gate_verdict(rows: list[dict], release: str, watch: list[str]) -> dict:
 def format_rows(rows: list[dict]) -> str:
     lines = []
     for r in rows:
-        rel = (
-            f" | latest-release: {r['latestEventRelease']}"
-            if r.get("latestEventRelease")
-            else ""
-        )
+        rel = f" | latest-release: {r['latestEventRelease']}" if r.get("latestEventRelease") else ""
         lines.append(
             f"{r['shortId']:<16} | {r['culprit'] or r['title']:<50} "
             f"| count: {r['count']:>4} | {r['firstSeen']} -> {r['lastSeen']}{rel}"
@@ -228,15 +224,19 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release", help="list issues with events on this release")
     parser.add_argument("--issue", metavar="SHORT_ID", help="show latest event stack summary")
-    parser.add_argument(
-        "--gate", metavar="RELEASE", help="run close-gate verdict for a release"
-    )
+    parser.add_argument("--gate", metavar="RELEASE", help="run close-gate verdict for a release")
     parser.add_argument(
         "--watch",
         default="",
         help="comma-separated Sentry shortIds that must NOT fire on the gated release",
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="with --issue: print the untouched latest-event JSON "
+        "(thread state, contexts, tags, breadcrumbs). Read-only.",
+    )
     args = parser.parse_args(argv)
 
     if api is None:
@@ -251,10 +251,13 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
 
     try:
         if args.issue:
-            detail = issue_detail(api, args.issue)
+            detail = issue_detail(api, args.issue, raw=args.raw)
             if detail is None:
                 print(f"ERROR: Sentry issue {args.issue} not found", file=sys.stderr)
                 return 1
+            if args.raw:
+                print(json.dumps(detail["raw_event"], indent=2))
+                return 0
             print(json.dumps(detail, indent=2) if args.as_json else format_issue_detail(detail))
             return 0
 
