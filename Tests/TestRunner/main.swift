@@ -4523,7 +4523,11 @@ runner.test("mar-049: PreviewViewModel rendering runs off the main actor") {
 
         try expect(mainActorStayedResponsive,
             "main actor must remain responsive while the markdown render runs")
-        try expect(elapsed < 0.35,
+        // 0.45s budget for a 200ms heartbeat behind a 400ms render: the same
+        // proportional slack the lint test above allows, so a loaded CI runner
+        // does not turn this into a flake. The synchronous implementation
+        // measured 0.709s here, well clear of the budget.
+        try expect(elapsed < 0.45,
             "200ms main-actor heartbeat was delayed by a synchronous render (elapsed: \(elapsed)s) — that block is APPLE-MACOS-4J")
     }
 }
@@ -4619,6 +4623,67 @@ runner.test("mar-049: isLoaded flips only after the first render is published, n
     }
 }
 
+runner.test("mar-049: unloadFile mid-render leaves the model unloaded (no resurrection)") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(1, prefix: "mar049-unload")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let slowRender: PreviewViewModel.RenderOperation = { _ in
+            Thread.sleep(forTimeInterval: 0.4)
+            return "<p>rendered</p>"
+        }
+        let vm = PreviewViewModel(renderOperation: slowRender)
+        vm.loadFile(at: files[0].path)
+
+        let settled = drainMainActor(timeout: 3) {
+            // Close the document while the first render is still inside the
+            // renderer. Neither the detached read nor the detached render
+            // observes cancellation, so only the generation bumps in
+            // unloadFile can keep them from publishing.
+            let deadline = Date().addingTimeInterval(1.5)
+            while vm.editorContent.isEmpty && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            vm.unloadFile()
+            // Past the full render duration: anything that was going to
+            // publish has published by now.
+            try? await Task.sleep(nanoseconds: 700_000_000)
+        }
+
+        try expect(settled, "the unload sequence must complete within the timeout")
+        try expect(!vm.isLoaded,
+            "a render that completes after unloadFile must not re-set isLoaded — the app would show a closed document instead of the home screen")
+        try expect(vm.renderedHTML.isEmpty,
+            "a render that completes after unloadFile must not republish renderedHTML")
+        try expect(vm.editorContent.isEmpty,
+            "unloadFile must leave the editor empty")
+    }
+}
+
+runner.test("mar-049: unloadFile mid-read drops the in-flight file read (contentLoadGeneration)") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(1, prefix: "mar049-unload-read")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let vm = PreviewViewModel()
+        // Both calls happen in ONE main-actor turn, so the detached read cannot
+        // reach finishLoadContent in between: the read is guaranteed to still
+        // be in flight at unload time, with no timing assumption at all.
+        vm.loadFile(at: files[0].path)
+        vm.unloadFile()
+
+        let settled = drainMainActor(timeout: 2) {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
+
+        try expect(settled, "the read must land within the timeout")
+        try expect(vm.editorContent.isEmpty,
+            "a read landing after unloadFile must be dropped by contentLoadGeneration — republishing it refills a closed model's editor")
+        try expect(!vm.isLoaded,
+            "a read landing after unloadFile must not start a render that flips isLoaded back on")
+        try expect(vm.renderedHTML.isEmpty,
+            "a read landing after unloadFile must not produce rendered HTML for a closed document")
+    }
+}
+
 runner.test("mar-049: PreviewViewModel no longer renders markdown on the main actor (source guard)") {
     // Tier-4 source guard, paired with the four behavioral tests above.
     let source = try String(contentsOfFile: "Sources/MarkViewAppCore/PreviewViewModel.swift", encoding: .utf8)
@@ -4641,6 +4706,8 @@ runner.test("mar-049: PreviewViewModel no longer renders markdown on the main ac
     }
     try expect(unload.contains("renderGeneration += 1"),
         "unloadFile must invalidate in-flight renders — otherwise a render for a closed document republishes HTML and re-sets isLoaded")
+    try expect(unload.contains("contentLoadGeneration += 1"),
+        "unloadFile must invalidate the in-flight file read too — otherwise the read lands, refills editorContent, and starts a render that re-sets isLoaded")
 }
 
 runner.test("RecentFilesManager: recordOpen/removeFromRecents/clearAll round-trip through UserDefaults") {

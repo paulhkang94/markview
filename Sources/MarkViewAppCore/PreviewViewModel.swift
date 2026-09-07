@@ -33,20 +33,25 @@ public final class PreviewViewModel: ObservableObject {
     /// the file finishes being read. Rendering now runs off the main actor
     /// (see `scheduleRender`), so those are no longer the same instant, and
     /// gating on the read would reveal the preview pane while `renderedHTML`
-    /// is still empty (blank flash on a cold open) or still holds the
-    /// previous document (stale content). ContentView gates the entire
-    /// editor/preview/status-bar/toolbar tree — plus HTML and PDF export —
-    /// on this flag, so "loaded" has to mean "renderedHTML matches the
-    /// content that was loaded".
+    /// is still empty: a blank flash on a cold open. Whenever this flag is
+    /// false `renderedHTML` is empty (it starts empty and `unloadFile()`
+    /// clears it), so the risk here is the blank pane, not stale HTML.
+    /// ContentView gates the entire editor/preview/status-bar/toolbar tree —
+    /// plus HTML and PDF export — on this flag, so "loaded" has to mean
+    /// "renderedHTML matches the content that was loaded".
     ///
     /// One deliberate exception: `startUntitled()` sets it synchronously.
     /// That buffer's content is empty, so an empty preview is already
     /// truthful and flipping on render completion would only add a frame of
     /// home screen after ⌘T.
     ///
-    /// Once true it stays true until `unloadFile()`. A reload of an
-    /// already-loaded document therefore keeps showing the previous render
-    /// (never the home screen) for the duration of the new render.
+    /// Once true it stays true until `unloadFile()`, so this flag says nothing
+    /// about renders after the first. Those now have a desync window that did
+    /// not exist when rendering was synchronous: on a reload or a keystroke,
+    /// `editorContent` updates immediately while `renderedHTML` lags by the
+    /// render duration, so the editor pane can be a render ahead of the
+    /// preview pane. That is the deliberate trade for an unblocked main
+    /// thread, and it is bounded by one render.
     @Published public var isLoaded: Bool = false
     @Published public var editorContent: String = ""
     @Published public var isDirty: Bool = false
@@ -219,9 +224,14 @@ public final class PreviewViewModel: ObservableObject {
         stopAutoSaveTimer()
         renderTask?.cancel()
         lintTask?.cancel()
-        // Cancellation alone cannot stop a render that is already inside cmark
-        // (mar-049), so invalidate it by generation too — otherwise it would
-        // republish HTML and re-set isLoaded for a document just closed.
+        // Every in-flight async stage has to be invalidated by generation, not
+        // just cancelled: a detached read is already blocked in the filesystem
+        // and a detached render is already inside cmark, and neither observes
+        // cancellation. Without the contentLoadGeneration bump, a read that
+        // lands after unloadFile passes finishLoadContent's guard, republishes
+        // editorContent, and starts a fresh render that re-sets isLoaded on a
+        // closed document (PR #76 review).
+        contentLoadGeneration += 1
         renderGeneration += 1
         lintGeneration += 1
         currentFilePath = nil
@@ -281,8 +291,9 @@ public final class PreviewViewModel: ObservableObject {
 
     /// Main-actor completion of loadContent. Superseded reads (a newer
     /// loadFile/reloadFromDisk/watcher-triggered call started while this one
-    /// was still on disk) are dropped so rapid successive reloads always
-    /// converge on the newest content instead of racing.
+    /// was still on disk, or an `unloadFile()` in between) are dropped so
+    /// rapid successive reloads always converge on the newest content instead
+    /// of racing, and a closed document is never resurrected.
     private func finishLoadContent(_ content: String, generation: Int) {
         guard generation == contentLoadGeneration else { return }
         editorContent = content
@@ -291,8 +302,9 @@ public final class PreviewViewModel: ObservableObject {
         // isLoaded is deliberately NOT set here (mar-049). The render is now
         // asynchronous, so the flag flips when the first render publishes —
         // the instant renderedHTML actually matches this content. Setting it
-        // here would reveal the preview pane over empty (cold open) or
-        // previous-document (reload) HTML. See the isLoaded contract.
+        // here would reveal the preview pane over empty HTML on a cold open.
+        // Note that editorContent above is published a full render ahead of
+        // renderedHTML; see the desync window on the isLoaded contract.
         renderImmediate(content)
         runLint(content)
     }
