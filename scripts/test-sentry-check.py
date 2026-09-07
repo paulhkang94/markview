@@ -97,14 +97,18 @@ class TestGateVerdict(unittest.TestCase):
         self.assertEqual(result["verdict"], "NO_ADOPTION")
 
     def test_watched_group_fired_fails(self):
-        api = FakeAPI(issues=[_issue("APPLE-MACOS-33", iid="1")], latest_releases={"1": "1.7.0"})
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-33", iid="1")], latest_releases={"1": "1.7.0"}
+        )
         rows = self._rows(api)
         result = self.m.gate_verdict(rows, "1.7.1", watch=["APPLE-MACOS-33"])
         self.assertEqual(result["verdict"], "FAIL")
         self.assertEqual(result["watched_fired"], ["APPLE-MACOS-33"])
 
     def test_live_hang_group_fails_even_if_unwatched(self):
-        api = FakeAPI(issues=[_issue("APPLE-MACOS-2Z", iid="2")], latest_releases={"2": "1.7.1"})
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-2Z", iid="2")], latest_releases={"2": "1.7.1"}
+        )
         rows = self._rows(api)
         result = self.m.gate_verdict(rows, "1.7.1", watch=[])
         self.assertEqual(result["verdict"], "FAIL")
@@ -112,7 +116,9 @@ class TestGateVerdict(unittest.TestCase):
 
     def test_non_hang_issue_with_old_latest_release_passes(self):
         api = FakeAPI(
-            issues=[_issue("APPLE-MACOS-2", title="NSCocoaErrorDomain: Code: 260", iid="3")],
+            issues=[
+                _issue("APPLE-MACOS-2", title="NSCocoaErrorDomain: Code: 260", iid="3")
+            ],
             latest_releases={"3": "1.5.0"},
         )
         rows = self._rows(api)
@@ -120,7 +126,9 @@ class TestGateVerdict(unittest.TestCase):
         self.assertEqual(result["verdict"], "PASS")
 
     def test_hang_with_older_latest_release_passes(self):
-        api = FakeAPI(issues=[_issue("APPLE-MACOS-4", iid="4")], latest_releases={"4": "1.4.2"})
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-4", iid="4")], latest_releases={"4": "1.4.2"}
+        )
         rows = self._rows(api)
         result = self.m.gate_verdict(rows, "1.7.1", watch=[])
         self.assertEqual(result["verdict"], "PASS")
@@ -131,14 +139,18 @@ class TestMainExitCodes(unittest.TestCase):
         self.m = _load("sentry_check")
 
     def test_gate_fail_exits_1(self):
-        api = FakeAPI(issues=[_issue("APPLE-MACOS-2Z", iid="2")], latest_releases={"2": "1.7.1"})
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-2Z", iid="2")], latest_releases={"2": "1.7.1"}
+        )
         with patch("sys.stdout", new=StringIO()) as out:
             rc = self.m.main(["--gate", "1.7.1"], api=api)
         self.assertEqual(rc, 1)
         self.assertIn("GATE FAIL", out.getvalue())
 
     def test_gate_pass_exits_0(self):
-        api = FakeAPI(issues=[_issue("APPLE-MACOS-4", iid="4")], latest_releases={"4": "1.4.2"})
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-4", iid="4")], latest_releases={"4": "1.4.2"}
+        )
         with patch("sys.stdout", new=StringIO()) as out:
             rc = self.m.main(["--gate", "1.7.1", "--watch", "APPLE-MACOS-33"], api=api)
         self.assertEqual(rc, 0)
@@ -220,11 +232,26 @@ class TestMainExitCodes(unittest.TestCase):
             "release": {"version": "1.7.2"},
             "contexts": {"device": {"free_memory": 123}},
         }
-        api = FakeAPI(issues=[_issue("APPLE-MACOS-4J", iid="77")], latest_events={"77": event})
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-4J", iid="77")],
+            latest_events={"77": event},
+        )
         with patch("sys.stdout", new=StringIO()) as out:
             rc = self.m.main(["--issue", "APPLE-MACOS-4J", "--raw"], api=api)
         self.assertEqual(rc, 0)
         self.assertEqual(__import__("json").loads(out.getvalue()), event)
+
+    def test_raw_without_issue_is_a_usage_error(self):
+        # --raw is only meaningful for --issue; a typo'd invocation must fail
+        # loudly instead of silently printing ordinary listing/gate output.
+        for argv in (["--raw"], ["--gate", "1.7.2", "--raw"], ["--release", "1.7.2", "--raw"]):
+            with self.subTest(argv=argv):
+                with patch("sys.stdout", new=StringIO()):
+                    with patch("sys.stderr", new=StringIO()) as err:
+                        with self.assertRaises(SystemExit) as ctx:
+                            self.m.main(argv, api=FakeAPI())
+                self.assertEqual(ctx.exception.code, 2)
+                self.assertIn("--raw requires --issue", err.getvalue())
 
     def test_issue_detail_missing_short_id_exits_1(self):
         with patch("sys.stderr", new=StringIO()) as err:

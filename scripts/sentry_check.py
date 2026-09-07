@@ -9,12 +9,22 @@ Usage:
     python3 scripts/sentry_check.py                       # unresolved issues, last 14d
     python3 scripts/sentry_check.py --release 1.7.1       # issues with events on that release
     python3 scripts/sentry_check.py --issue APPLE-MACOS-2Z # latest event + in-app frames
+    python3 scripts/sentry_check.py --issue APPLE-MACOS-2Z --raw
+                                                          # untouched latest-event JSON
     python3 scripts/sentry_check.py --gate 1.7.1 --watch APPLE-MACOS-33,APPLE-MACOS-3B
                                                           # close-gate verdict for a release
     python3 scripts/sentry_check.py --json                # machine-readable output
 
 Token: macOS Keychain item SENTRY_AUTH_TOKEN (account "sentry"). Never passed
 via argv or exported env.
+
+PRIVACY - `--raw` output is not redacted. A Sentry macOS event can carry the
+reporter's IP address (`user.ip_address`), device name and model
+(`contexts.device`), tags, and absolute filesystem paths in breadcrumbs and
+stack frames. Read it in the terminal only. Never paste raw output into a
+tracked file, an issue, or a pull request body - this is a public repository.
+The default (non-`--raw`) `--issue` summary keeps only normalized in-app frames
+and carries none of that.
 
 Exit codes:
     0  listing OK / gate PASS
@@ -65,12 +75,16 @@ class SentryAPI:
         url = f"{BASE}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {self._token}"})
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {self._token}"}
+        )
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.load(resp)
 
 
-def fetch_issues(api: SentryAPI, query: str, stats_period: str | None = "14d") -> list[dict]:
+def fetch_issues(
+    api: SentryAPI, query: str, stats_period: str | None = "14d"
+) -> list[dict]:
     params: dict = {"query": query}
     # Sentry rejects statsPeriod values other than '', '24h', '14d' on this endpoint;
     # release-scoped queries use the default window (omit the param).
@@ -171,7 +185,9 @@ def gate_verdict(rows: list[dict], release: str, watch: list[str]) -> dict:
     """Close-gate semantics: PASS only if the release HAS field events (adoption)
     AND no watched group fired on it AND no hang group's latest event is on it."""
     watched_fired = [r for r in rows if r["shortId"] in watch]
-    live_hangs = [r for r in rows if is_hang(r) and r.get("latestEventRelease") == release]
+    live_hangs = [
+        r for r in rows if is_hang(r) and r.get("latestEventRelease") == release
+    ]
     if not rows:
         verdict = "NO_ADOPTION"
     elif watched_fired or live_hangs:
@@ -193,7 +209,11 @@ def gate_verdict(rows: list[dict], release: str, watch: list[str]) -> dict:
 def format_rows(rows: list[dict]) -> str:
     lines = []
     for r in rows:
-        rel = f" | latest-release: {r['latestEventRelease']}" if r.get("latestEventRelease") else ""
+        rel = (
+            f" | latest-release: {r['latestEventRelease']}"
+            if r.get("latestEventRelease")
+            else ""
+        )
         lines.append(
             f"{r['shortId']:<16} | {r['culprit'] or r['title']:<50} "
             f"| count: {r['count']:>4} | {r['firstSeen']} -> {r['lastSeen']}{rel}"
@@ -224,7 +244,9 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release", help="list issues with events on this release")
     parser.add_argument("--issue", metavar="SHORT_ID", help="show latest event stack summary")
-    parser.add_argument("--gate", metavar="RELEASE", help="run close-gate verdict for a release")
+    parser.add_argument(
+        "--gate", metavar="RELEASE", help="run close-gate verdict for a release"
+    )
     parser.add_argument(
         "--watch",
         default="",
@@ -234,10 +256,13 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
     parser.add_argument(
         "--raw",
         action="store_true",
-        help="with --issue: print the untouched latest-event JSON "
-        "(thread state, contexts, tags, breadcrumbs). Read-only.",
+        help="requires --issue: print the untouched latest-event JSON "
+        "(thread state, contexts, tags, breadcrumbs). Read-only, but NOT "
+        "redacted - may contain user IP, device name, and absolute paths.",
     )
     args = parser.parse_args(argv)
+    if args.raw and not args.issue:
+        parser.error("--raw requires --issue SHORT_ID")
 
     if api is None:
         token = keychain_token()
