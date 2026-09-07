@@ -75,7 +75,7 @@ swift build -c release
 bash scripts/bundle.sh --install
 ```
 
-Creates `MarkView.app` in `/Applications` and registers it with Launch Services for right-click > Open With in Finder.
+Creates `MarkView.app` in `/Applications` and registers it with Launch Services for right-click > Open With in Finder. Refuses (unless you pass `--force`) if a Dock tile is pinned to a `build/` or repo-root `MarkView.app` path, since both are ephemeral dev output.
 
 ### Install CLI
 
