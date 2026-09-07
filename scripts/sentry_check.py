@@ -9,12 +9,22 @@ Usage:
     python3 scripts/sentry_check.py                       # unresolved issues, last 14d
     python3 scripts/sentry_check.py --release 1.7.1       # issues with events on that release
     python3 scripts/sentry_check.py --issue APPLE-MACOS-2Z # latest event + in-app frames
+    python3 scripts/sentry_check.py --issue APPLE-MACOS-2Z --raw
+                                                          # untouched latest-event JSON
     python3 scripts/sentry_check.py --gate 1.7.1 --watch APPLE-MACOS-33,APPLE-MACOS-3B
                                                           # close-gate verdict for a release
     python3 scripts/sentry_check.py --json                # machine-readable output
 
 Token: macOS Keychain item SENTRY_AUTH_TOKEN (account "sentry"). Never passed
 via argv or exported env.
+
+PRIVACY - `--raw` output is not redacted. A Sentry macOS event can carry the
+reporter's IP address (`user.ip_address`), device name and model
+(`contexts.device`), tags, and absolute filesystem paths in breadcrumbs and
+stack frames. Read it in the terminal only. Never paste raw output into a
+tracked file, an issue, or a pull request body - this is a public repository.
+The default (non-`--raw`) `--issue` summary keeps only normalized in-app frames
+and carries none of that.
 
 Exit codes:
     0  listing OK / gate PASS
@@ -133,7 +143,7 @@ def event_summary(event: dict) -> dict:
     }
 
 
-def issue_detail(api: SentryAPI, short_id: str) -> dict | None:
+def issue_detail(api: SentryAPI, short_id: str, raw: bool = False) -> dict | None:
     # Sentry's project-issues search does not accept `shortId:` as a query
     # field. Fetch the bounded unresolved set and exact-match locally.
     issues = fetch_issues(api, "is:unresolved")
@@ -141,6 +151,12 @@ def issue_detail(api: SentryAPI, short_id: str) -> dict | None:
     if issue is None:
         return None
     event = latest_event(api, str(issue.get("id")))
+    if raw:
+        # Read-only escape hatch for hang triage: the summary drops thread
+        # state, contexts, tags and breadcrumbs, which is exactly what a hang
+        # investigation needs. Dumping the untouched event keeps triage on the
+        # tested client path instead of ad-hoc curl/inline-python.
+        return {"raw_event": event}
     return {"issue": issue_row(issue), "event": event_summary(event)}
 
 
@@ -237,7 +253,16 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
         help="comma-separated Sentry shortIds that must NOT fire on the gated release",
     )
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="requires --issue: print the untouched latest-event JSON "
+        "(thread state, contexts, tags, breadcrumbs). Read-only, but NOT "
+        "redacted - may contain user IP, device name, and absolute paths.",
+    )
     args = parser.parse_args(argv)
+    if args.raw and not args.issue:
+        parser.error("--raw requires --issue SHORT_ID")
 
     if api is None:
         token = keychain_token()
@@ -251,10 +276,13 @@ def main(argv: list[str] | None = None, api: SentryAPI | None = None) -> int:
 
     try:
         if args.issue:
-            detail = issue_detail(api, args.issue)
+            detail = issue_detail(api, args.issue, raw=args.raw)
             if detail is None:
                 print(f"ERROR: Sentry issue {args.issue} not found", file=sys.stderr)
                 return 1
+            if args.raw:
+                print(json.dumps(detail["raw_event"], indent=2))
+                return 0
             print(json.dumps(detail, indent=2) if args.as_json else format_issue_detail(detail))
             return 0
 

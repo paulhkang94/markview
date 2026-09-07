@@ -29,7 +29,19 @@ Focused result on 2026-08-12: `MarkViewTestRunner` - 382 passed, 0 failed.
 `scripts/sentry_check.py --issue [SHORT_ID] [--json]` now returns the latest
 event timestamp, release, and normalized in-app frames. This replaces repeated
 Keychain lookup, API calls, and ad hoc event-payload parsing during hang triage.
-It deliberately avoids printing the raw event payload.
+The summary path deliberately avoids printing the raw event payload.
+
+> **Amended 2026-09-07.** That is still true of the default `--issue` output, but
+> it is no longer the only mode. Triaging `APPLE-MACOS-4J` needed thread state,
+> `contexts`, tags, and breadcrumbs, none of which survive the summary, so
+> `--issue [SHORT_ID] --raw` was added as an opt-in full dump of the untouched
+> event.
+>
+> **`--raw` output is not redacted.** A Sentry macOS event can carry the
+> reporter's IP address (`user.ip_address`), device name and model
+> (`contexts.device`), tags, and absolute filesystem paths in breadcrumbs and
+> stack frames. Read it in the terminal. Never paste it into a tracked file, an
+> issue, or a pull request body - this repository is public.
 
 ## Release follow-up
 

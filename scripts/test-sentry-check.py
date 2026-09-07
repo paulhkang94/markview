@@ -226,6 +226,33 @@ class TestMainExitCodes(unittest.TestCase):
         )
         self.assertEqual(api.calls[0][1]["query"], "is:unresolved")
 
+    def test_issue_detail_raw_dumps_untouched_event(self):
+        event = {
+            "eventID": "evt-raw",
+            "release": {"version": "1.7.2"},
+            "contexts": {"device": {"free_memory": 123}},
+        }
+        api = FakeAPI(
+            issues=[_issue("APPLE-MACOS-4J", iid="77")],
+            latest_events={"77": event},
+        )
+        with patch("sys.stdout", new=StringIO()) as out:
+            rc = self.m.main(["--issue", "APPLE-MACOS-4J", "--raw"], api=api)
+        self.assertEqual(rc, 0)
+        self.assertEqual(__import__("json").loads(out.getvalue()), event)
+
+    def test_raw_without_issue_is_a_usage_error(self):
+        # --raw is only meaningful for --issue; a typo'd invocation must fail
+        # loudly instead of silently printing ordinary listing/gate output.
+        for argv in (["--raw"], ["--gate", "1.7.2", "--raw"], ["--release", "1.7.2", "--raw"]):
+            with self.subTest(argv=argv):
+                with patch("sys.stdout", new=StringIO()):
+                    with patch("sys.stderr", new=StringIO()) as err:
+                        with self.assertRaises(SystemExit) as ctx:
+                            self.m.main(argv, api=FakeAPI())
+                self.assertEqual(ctx.exception.code, 2)
+                self.assertIn("--raw requires --issue", err.getvalue())
+
     def test_issue_detail_missing_short_id_exits_1(self):
         with patch("sys.stderr", new=StringIO()) as err:
             rc = self.m.main(["--issue", "APPLE-MACOS-NOPE"], api=FakeAPI())
