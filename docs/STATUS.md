@@ -22,7 +22,7 @@ pending work, and key architectural decisions.
 - Headline changes: tab system (MV-001 restore-all-tabs, MV-002 renderComplete, MV-003/MV-005 per-tab scroll restore, MV-007 ⌘T untitled tabs, MV-009 ⌃Tab cycling), release scripts → Python, npm OIDC trusted publishing + automatic MCP registry publish, dSYM upload to Sentry (v1.7.0 is the first release with symbolicated crash/hang reports).
 - **Open issues**: 6 (as of 2026-07-13) - 5 are Sentry-auto-filed "App Hanging ≥2000 ms" reports (#30, #45-#48); triage + first fix: `docs/personal/item-713-hang-triage-2026-07-13.md`, branch `fix/item-713-js-bundle-cache`. The 6th is enhancement #26 (remember window position).
 
-### APPLE-MACOS-4J (v1.7.2, triaged 2026-09-07, FIXED on `mar-hang-4j-fix`)
+### APPLE-MACOS-4J (v1.7.2, triaged 2026-09-07, fixed in #76)
 
 v1.7.2 shipped with a reproduced, root-caused main-thread hang. The triage below
 is kept so the next maintainer does not re-derive it; the fix is described at the
@@ -53,23 +53,27 @@ end of the section and is not in a released build yet.
   WebKit (`WebCore: Scrolling` is a different thread), swift-markdown (not on this
   path - the renderer is swift-cmark), and cmark lock contention (registration is
   `CMARK_RUN_ONCE`).
-- **Fixed on branch `mar-hang-4j-fix`** (mar-049, 2026-09-07, not yet released):
+- **Fixed in #76** (mar-049, 2026-09-07; unreleased as of 1.7.2):
   `PreviewViewModel.scheduleRender` runs the cmark render in a detached task at
   `.userInitiated` and publishes on the main actor behind a `renderGeneration`
   guard, mirroring `scheduleLint` (#69) and `contentLoadGeneration` (mar-037).
   All four render entry points (`startUntitled`, `autoFixLint`,
   `finishLoadContent`, `renderDebounced`) route through it, and `unloadFile`
-  bumps the generation so a render for a closed document cannot republish.
+  bumps the read, render, and lint generations so nothing in flight can
+  republish into a closed document.
 - **New `isLoaded` contract**: it now flips true when the FIRST render is
   published, not when the file is read, so the preview pane is never revealed
-  over empty or previous-document HTML. `startUntitled` is the one synchronous
-  flip (its content is empty, so an empty preview is already truthful). The
-  contract is documented on the property itself and pinned by tests.
+  over empty HTML on a cold open. `startUntitled` is the one synchronous flip
+  (its content is empty, so an empty preview is already truthful). The trade is
+  a bounded desync window on later renders: `editorContent` updates immediately
+  while `renderedHTML` lags by one render. The contract is documented on the
+  property itself and pinned by tests.
 - **Regression tests** (`Tests/TestRunner/main.swift`, prefix `mar-049:`): an
   injected `RenderOperation` makes the timing deterministic, the same technique
-  #69 used for linting. Four behavioral tests (main-actor responsiveness,
-  off-main-thread invocation, generation guard, `isLoaded` contract) plus one
-  Tier-4 source guard. Confirmed red against the synchronous implementation.
+  #69 used for linting. Six behavioral tests (main-actor responsiveness,
+  off-main-thread invocation, generation guard, `isLoaded` contract, unload
+  mid-render, unload mid-read) plus one Tier-4 source guard. Confirmed red
+  against the synchronous implementation.
 - **Not changed, tracked as follow-ups**: the 100 ms `FileWatcher` debounce
   (which lets an appended-to file re-render up to ~10x/second) and
   `CMARK_OPT_SOURCEPOS` (~9x output amplifier on node-dense documents). Both are

@@ -51,12 +51,12 @@ same family, `APPLE-MACOS-4J`, was triaged on 2026-09-07 and showed the
 (`finishLoadContent` -> `renderImmediate` -> `MarkdownRenderer.renderHTML` ->
 cmark), reproduced above 2000 ms on two realistic document shapes.
 
-Fixed on branch `mar-hang-4j-fix` (mar-049): `PreviewViewModel.scheduleRender`
+Fixed in #76 (mar-049), unreleased as of 1.7.2: `PreviewViewModel.scheduleRender`
 renders in a detached task and publishes behind a `renderGeneration` guard, the
 same shape as `scheduleLint`. The `isLoaded` flag now flips when the first render
 publishes rather than when the file is read, so the preview is never revealed
-over empty or previous-document HTML; the contract is documented on the property
-and pinned by the `mar-049:` tests. Full triage evidence stays untracked in
+over empty HTML on a cold open; the contract is documented on the property and
+pinned by the `mar-049:` tests. Full triage evidence stays untracked in
 `docs/personal/hang-4j-triage-2026-09-07.md`; a summary lives in `docs/STATUS.md`.
 
 ## Release follow-up
