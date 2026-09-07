@@ -43,6 +43,22 @@ The summary path deliberately avoids printing the raw event payload.
 > stack frames. Read it in the terminal. Never paste it into a tracked file, an
 > issue, or a pull request body - this repository is public.
 
+## Follow-on: APPLE-MACOS-4J (1.7.2)
+
+`APPLE-MACOS-3Q` above moved *linting* off the main actor. The next member of the
+same family, `APPLE-MACOS-4J`, was triaged on 2026-09-07 and showed the
+*rendering* half still running synchronously on the MainActor
+(`finishLoadContent` -> `renderImmediate` -> `MarkdownRenderer.renderHTML` ->
+cmark), reproduced above 2000 ms on two realistic document shapes.
+
+Fixed on branch `mar-hang-4j-fix` (mar-049): `PreviewViewModel.scheduleRender`
+renders in a detached task and publishes behind a `renderGeneration` guard, the
+same shape as `scheduleLint`. The `isLoaded` flag now flips when the first render
+publishes rather than when the file is read, so the preview is never revealed
+over empty or previous-document HTML; the contract is documented on the property
+and pinned by the `mar-049:` tests. Full triage evidence stays untracked in
+`docs/personal/hang-4j-triage-2026-09-07.md`; a summary lives in `docs/STATUS.md`.
+
 ## Release follow-up
 
 - Ship the lint change in the next release after normal verification.
