@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dev-cleanup.py — Reclaim local dev-build disk space for MarkView (mar-048).
+dev_cleanup.py — Reclaim local dev-build disk space for MarkView (mar-048).
 
 Removes three classes of ephemeral build output that accumulate across dev
 iterations and are never the record source (the record source is /Applications,
@@ -13,13 +13,18 @@ installed by scripts/bundle.py --install):
   - ~/Library/Developer/Xcode/DerivedData/MarkView-*   (Xcode.app GUI DerivedData
                                                          for this project)
 
+`static_targets()` is the single source of truth for the first two (the
+project-relative, always-known-location roots) — scripts/bundle.py imports
+it so its Dock-tile guard can never drift out of sync with what this script
+actually deletes.
+
 Dry-run by default: lists every target with its size and deletes nothing.
 Pass --apply to actually delete. Every path is printed with its size before
 deletion in both modes, so a dry run tells you exactly what --apply will do.
 
 Usage:
-    python3 scripts/dev-cleanup.py            # dry run (default)
-    python3 scripts/dev-cleanup.py --apply     # actually delete
+    python3 scripts/dev_cleanup.py            # dry run (default)
+    python3 scripts/dev_cleanup.py --apply     # actually delete
 
 No subprocess calls — pure filesystem walk/delete, so tests exercise real
 temp directories (project_dir/home are injectable) rather than stubbing a
@@ -56,7 +61,7 @@ def parse_args(argv: list[str]) -> bool:
             do_apply = True
         else:
             raise CleanupError(
-                f"Unknown option: {arg}\nUsage: python3 scripts/dev-cleanup.py [--apply]"
+                f"Unknown option: {arg}\nUsage: python3 scripts/dev_cleanup.py [--apply]"
             )
     return do_apply
 
@@ -75,6 +80,7 @@ def human_size(num_bytes: int) -> str:
         value /= 1024
         if value < 1024:
             return f"{value:.1f} {unit}"
+    value /= 1024
     return f"{value:.1f} TB"
 
 
@@ -111,12 +117,22 @@ def _remove(path: Path) -> None:
 # ── Targets ──────────────────────────────────────────────────────────────────
 
 
+def static_targets(project_dir: Path) -> list[Path]:
+    """The two ephemeral-output roots whose location is knowable from
+    `project_dir` alone (no home-directory glob needed): the xcodebuild
+    `build/` output and the repo-root `.app` bundle. Returned unconditionally
+    (not filtered by existence) — this is also the root list
+    scripts/bundle.py's Dock-tile guard matches against, so a Dock tile
+    pinned to either path is caught even before the first cleanup run."""
+    return [project_dir / "build", project_dir / f"{APP_NAME}.app"]
+
+
 def find_targets(project_dir: Path, home: Path) -> list[Path]:
     """Existing cleanup targets for this project: the repo-local build/
     output, the repo-root .app bundle, and any DerivedData products under
     Xcode's global cache for this project. Only paths that currently exist
     are returned, in a stable (build, app, DerivedData...) order."""
-    targets = [project_dir / "build", project_dir / f"{APP_NAME}.app"]
+    targets = list(static_targets(project_dir))
     derived_data = home / "Library/Developer/Xcode/DerivedData"
     if derived_data.is_dir():
         targets.extend(sorted(derived_data.glob(f"{APP_NAME}-*")))

@@ -355,7 +355,9 @@ swift build                        # Debug build (all targets)
 swift build -c release             # Release build
 bash scripts/bundle.sh             # Create MarkView.app bundle
 bash scripts/bundle.sh --install   # Bundle + install to /Applications
+bash scripts/bundle.sh --install --force  # ...skip the Dock-tile ephemeral-output guard
 bash scripts/install-cli.sh        # Install mdpreview CLI to ~/.local/bin/
+python3 scripts/dev_cleanup.py [--apply]  # Reclaim build/, MarkView.app, DerivedData
 ```
 
 ### Bundle Structure

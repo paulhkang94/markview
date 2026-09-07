@@ -70,15 +70,11 @@ class TestHelpers(unittest.TestCase):
         mod = _load("bundle")
         self.assertEqual(mod.parse_args(["--install"]), (True, False, False))
         self.assertEqual(mod.parse_args(["--notarize"]), (False, True, False))
-        self.assertEqual(
-            mod.parse_args(["--install", "--notarize"]), (True, True, False)
-        )
+        self.assertEqual(mod.parse_args(["--install", "--notarize"]), (True, True, False))
 
     def test_parse_args_force(self):
         mod = _load("bundle")
-        self.assertEqual(
-            mod.parse_args(["--install", "--force"]), (True, False, True)
-        )
+        self.assertEqual(mod.parse_args(["--install", "--force"]), (True, False, True))
 
     def test_parse_args_unknown_option_raises(self):
         mod = _load("bundle")
@@ -221,7 +217,7 @@ class TestDockGuard(unittest.TestCase):
         mod._run = lambda cmd, cwd=None: (0, "not a plist", "")
         self.assertEqual(mod.read_dock_persistent_apps(), [])
 
-    def test_find_dock_tiles_pointing_at_build_matches_nested_path(self):
+    def test_find_dock_tiles_pointing_at_ephemeral_output_matches_nested_path(self):
         mod = _load("bundle")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td)
@@ -232,51 +228,65 @@ class TestDockGuard(unittest.TestCase):
                 ]
             )
             mod._run = lambda cmd, cwd=None: (0, xml, "")
-            hits = mod.find_dock_tiles_pointing_at_build(project_dir)
+            hits = mod.find_dock_tiles_pointing_at_ephemeral_output(project_dir)
         self.assertEqual(len(hits), 1)
         self.assertIn("build/Build/Products/Release/MarkView.app", hits[0])
 
-    def test_find_dock_tiles_pointing_at_build_no_hits(self):
+    def test_find_dock_tiles_pointing_at_ephemeral_output_matches_repo_root_app(self):
+        mod = _load("bundle")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td)
+            xml = _dock_export_xml(
+                [
+                    f"file://{project_dir}/MarkView.app/",
+                    "file:///Applications/MarkView.app/",
+                ]
+            )
+            mod._run = lambda cmd, cwd=None: (0, xml, "")
+            hits = mod.find_dock_tiles_pointing_at_ephemeral_output(project_dir)
+        self.assertEqual(len(hits), 1)
+        self.assertIn(f"{project_dir}/MarkView.app", hits[0])
+        self.assertNotIn("/Applications", hits[0])
+
+    def test_find_dock_tiles_pointing_at_ephemeral_output_no_hits(self):
         mod = _load("bundle")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td)
             xml = _dock_export_xml(["file:///Applications/MarkView.app/"])
             mod._run = lambda cmd, cwd=None: (0, xml, "")
-            hits = mod.find_dock_tiles_pointing_at_build(project_dir)
+            hits = mod.find_dock_tiles_pointing_at_ephemeral_output(project_dir)
         self.assertEqual(hits, [])
 
-    def test_check_dock_not_pointing_at_build_raises_without_force(self):
+    def test_check_dock_not_pointing_at_ephemeral_output_raises_without_force(self):
         mod = _load("bundle")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td)
             xml = _dock_export_xml([f"file://{project_dir}/build/MarkView.app/"])
             mod._run = lambda cmd, cwd=None: (0, xml, "")
             with self.assertRaises(mod.BundleError) as cm:
-                mod.check_dock_not_pointing_at_build(project_dir, force=False)
+                mod.check_dock_not_pointing_at_ephemeral_output(project_dir, force=False)
         msg = str(cm.exception)
-        self.assertIn("Dock has a tile pinned to a build/ output path", msg)
+        self.assertIn("Dock has a tile pinned to an ephemeral output path", msg)
         self.assertIn(str(project_dir), msg)
         self.assertIn("--force", msg)
 
-    def test_check_dock_not_pointing_at_build_force_warns_not_raises(self):
+    def test_check_dock_not_pointing_at_ephemeral_output_force_warns_not_raises(self):
         mod = _load("bundle")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td)
             xml = _dock_export_xml([f"file://{project_dir}/build/MarkView.app/"])
             mod._run = lambda cmd, cwd=None: (0, xml, "")
             out = []
-            mod.check_dock_not_pointing_at_build(
-                project_dir, force=True, out=out.append
-            )
+            mod.check_dock_not_pointing_at_ephemeral_output(project_dir, force=True, out=out.append)
         self.assertTrue(any("build/" in line for line in out))
 
-    def test_check_dock_not_pointing_at_build_no_dock_hits_is_silent(self):
+    def test_check_dock_not_pointing_at_ephemeral_output_no_dock_hits_is_silent(self):
         mod = _load("bundle")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td)
             mod._run = lambda cmd, cwd=None: (0, "", "")
             out = []
-            mod.check_dock_not_pointing_at_build(
+            mod.check_dock_not_pointing_at_ephemeral_output(
                 project_dir, force=False, out=out.append
             )
         self.assertEqual(out, [])
@@ -297,7 +307,7 @@ class TestDockGuard(unittest.TestCase):
             mod._run = fake_run
             with self.assertRaises(mod.BundleError) as cm:
                 mod.run_bundle(["--install"], project_dir=project_dir)
-        self.assertIn("build/ output path", str(cm.exception))
+        self.assertIn("ephemeral output path", str(cm.exception))
         # No xcodegen/xcodebuild/security calls happened — the guard fired first.
         self.assertFalse(any(c[0] == "xcodebuild" for c in calls))
 
@@ -320,9 +330,7 @@ class TestBumpBuildNumber(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             _write_plist(tmp / "Sources/MarkView/Info.plist", {"CFBundleVersion": "1"})
-            _write_plist(
-                tmp / "Sources/MarkViewQuickLook/Info.plist", {"CFBundleVersion": "1"}
-            )
+            _write_plist(tmp / "Sources/MarkViewQuickLook/Info.plist", {"CFBundleVersion": "1"})
             build = mod.bump_build_number(tmp)
         self.assertEqual(build, "42")
         plutil_calls = [c for c in calls if c[0] == "plutil"]
@@ -379,9 +387,7 @@ class TestBumpBuildNumber(unittest.TestCase):
 
 
 class TestVerifyBundleStructure(unittest.TestCase):
-    def _make_app(
-        self, tmp: Path, *, with_doctypes: bool = True, with_ql: bool = True
-    ) -> Path:
+    def _make_app(self, tmp: Path, *, with_doctypes: bool = True, with_ql: bool = True) -> Path:
         app_dir = tmp / "MarkView.app"
         _write_exec(app_dir / "Contents/MacOS/MarkView")
         plist_data = {"CFBundleShortVersionString": "9.9.9"}
@@ -405,9 +411,7 @@ class TestVerifyBundleStructure(unittest.TestCase):
             tmp = Path(td)
             app_dir = self._make_app(tmp)
             out = []
-            valid = mod.verify_bundle_structure(
-                app_dir, "Developer ID Application", out.append
-            )
+            valid = mod.verify_bundle_structure(app_dir, "Developer ID Application", out.append)
         self.assertTrue(valid)
         self.assertIn("=== Bundle verification passed ===", out)
         self.assertIn("  ✓ Quick Look extension exists", out)
@@ -448,9 +452,7 @@ class TestVerifyBundleStructure(unittest.TestCase):
             tmp = Path(td)
             app_dir = self._make_app(tmp)
             out = []
-            valid = mod.verify_bundle_structure(
-                app_dir, "Developer ID Application", out.append
-            )
+            valid = mod.verify_bundle_structure(app_dir, "Developer ID Application", out.append)
         self.assertFalse(valid)
         self.assertIn(
             "  ✗ Code signature invalid with Developer ID — bundle will be rejected by Gatekeeper",
@@ -472,9 +474,7 @@ class TestVerifyBundleStructure(unittest.TestCase):
             out = []
             valid = mod.verify_bundle_structure(app_dir, "-", out.append)
         self.assertTrue(valid)
-        self.assertIn(
-            "  ⚠ Ad-hoc signature (expected — no Developer ID cert found)", out
-        )
+        self.assertIn("  ⚠ Ad-hoc signature (expected — no Developer ID cert found)", out)
 
 
 # ── install_bundle ────────────────────────────────────────────────────────────
@@ -600,16 +600,13 @@ def _build_fake_release_app(build_products: Path) -> None:
     )
     (build_products / "Contents/PkgInfo").write_text("APPL????")
     _write_exec(
-        build_products
-        / "Contents/PlugIns/MarkViewQuickLook.appex/Contents/MacOS/MarkViewQuickLook"
+        build_products / "Contents/PlugIns/MarkViewQuickLook.appex/Contents/MacOS/MarkViewQuickLook"
     )
     _write_plist(
         build_products / "Contents/PlugIns/MarkViewQuickLook.appex/Contents/Info.plist",
         {"CFBundleShortVersionString": "9.9.9"},
     )
-    sentry_bin = (
-        build_products / "Contents/Frameworks/Sentry.framework/Versions/A/Sentry"
-    )
+    sentry_bin = build_products / "Contents/Frameworks/Sentry.framework/Versions/A/Sentry"
     _write_exec(sentry_bin)
     (build_products / "Contents/Resources/MarkView_MarkViewCore.bundle").mkdir(
         parents=True, exist_ok=True
@@ -619,16 +616,10 @@ def _build_fake_release_app(build_products: Path) -> None:
 class TestGoldenCharacterization(unittest.TestCase):
     def _make_project(self, tmp: Path) -> None:
         _write_plist(tmp / "Sources/MarkView/Info.plist", {"CFBundleVersion": "1"})
-        _write_plist(
-            tmp / "Sources/MarkViewQuickLook/Info.plist", {"CFBundleVersion": "1"}
-        )
-        (tmp / "Sources/MarkView/MarkView.entitlements").parent.mkdir(
-            parents=True, exist_ok=True
-        )
+        _write_plist(tmp / "Sources/MarkViewQuickLook/Info.plist", {"CFBundleVersion": "1"})
+        (tmp / "Sources/MarkView/MarkView.entitlements").parent.mkdir(parents=True, exist_ok=True)
         (tmp / "Sources/MarkView/MarkView.entitlements").write_text("<plist/>")
-        (tmp / "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements").write_text(
-            "<plist/>"
-        )
+        (tmp / "Sources/MarkViewQuickLook/MarkViewQuickLook.entitlements").write_text("<plist/>")
 
     def _fake_run(self, tmp: Path, install_dir: Path):
         build_products = tmp / "build/Build/Products/Release/MarkView.app"
@@ -699,12 +690,8 @@ class TestGoldenCharacterization(unittest.TestCase):
                 "Contents/MacOS/markview-mcp-server",
                 "Contents/PlugIns/MarkViewQuickLook.appex/Contents/MacOS/MarkViewQuickLook",
             ):
-                self.assertTrue(
-                    (app_dir / rel).exists(), f"missing in app bundle: {rel}"
-                )
-                self.assertTrue(
-                    (install_dir / rel).exists(), f"missing in installed copy: {rel}"
-                )
+                self.assertTrue((app_dir / rel).exists(), f"missing in app bundle: {rel}")
+                self.assertTrue((install_dir / rel).exists(), f"missing in installed copy: {rel}")
 
     def test_run_bundle_without_install_skips_install_dir(self):
         mod = _load("bundle")
@@ -716,9 +703,7 @@ class TestGoldenCharacterization(unittest.TestCase):
             mod._which = lambda name: "/opt/homebrew/bin/xcodegen"
 
             out = []
-            rc = mod.run_bundle(
-                [], project_dir=tmp, install_dir=install_dir, out=out.append
-            )
+            rc = mod.run_bundle([], project_dir=tmp, install_dir=install_dir, out=out.append)
 
         self.assertEqual(rc, 0)
         self.assertFalse(install_dir.exists())
@@ -842,9 +827,7 @@ class TestFailurePaths(unittest.TestCase):
 class TestMain(unittest.TestCase):
     def test_main_exits_with_bundle_error_code(self):
         mod = _load("bundle")
-        mod.run_bundle = lambda argv, **kw: (_ for _ in ()).throw(
-            mod.BundleError("boom", code=3)
-        )
+        mod.run_bundle = lambda argv, **kw: (_ for _ in ()).throw(mod.BundleError("boom", code=3))
         with (
             patch.object(sys, "argv", ["bundle.py"]),
             patch("sys.stderr", new_callable=StringIO) as err,

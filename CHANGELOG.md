@@ -4,6 +4,8 @@
 
 - Internal: `scripts/sentry_check.py --issue SHORT_ID --raw` prints the untouched latest event JSON through the existing Keychain-authenticated read-only client, so hang triage that needs thread state, `contexts`, tags, or breadcrumbs stays on the tested path instead of an ad-hoc curl script (mar-043 follow-up). The dump is not redacted; see the script docstring before sharing it.
 - Internal: record the root cause of the v1.7.2 `APPLE-MACOS-4J` main-thread render hang in `docs/STATUS.md`. Reproduced and root-caused, fix deferred to its own PR.
+- Internal: make the Verify CI job a required status check on `main` so a red Verify can no longer auto-merge (mar-047, #75).
+- Internal: `bundle.py --install` refuses (unless `--force`) when a Dock tile is pinned to a `build/` output path or the repo-root `MarkView.app` - both are ephemeral dev output deleted by the new `scripts/dev_cleanup.py`, which reclaims `build/`, `MarkView.app`, and stale Xcode DerivedData for this project in one dry-run-by-default step (mar-048, #75).
 
 ## v1.7.2
 

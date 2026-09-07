@@ -23,21 +23,13 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 APP_BUNDLE = PROJECT_DIR / "MarkView.app"
-BUNDLE_RSRC = (
-    APP_BUNDLE / "Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources"
-)
+BUNDLE_RSRC = APP_BUNDLE / "Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources"
 APPEX = APP_BUNDLE / "Contents/PlugIns/MarkViewQuickLook.appex"
-APPEX_RSRC = (
-    APPEX / "Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources"
-)
+APPEX_RSRC = APPEX / "Contents/Resources/MarkView_MarkViewCore.bundle/Contents/Resources"
 INSTALLED_APP = Path("/Applications/MarkView.app")
 
-_GLOBAL_STAMP_DEFAULT = (
-    Path.home() / "repos/claude-repl-template/.claude/memory/.last-verify-at"
-)
-GLOBAL_STAMP = Path(
-    os.environ.get("COMMIT_GATE_VERIFY_STAMP", str(_GLOBAL_STAMP_DEFAULT))
-)
+_GLOBAL_STAMP_DEFAULT = Path.home() / "repos/claude-repl-template/.claude/memory/.last-verify-at"
+GLOBAL_STAMP = Path(os.environ.get("COMMIT_GATE_VERIFY_STAMP", str(_GLOBAL_STAMP_DEFAULT)))
 PER_REPO_STAMP = PROJECT_DIR / ".last-verify-at"
 
 RESOURCES = ["mermaid.min.js", "prism-bundle.min.js", "template.html"]
@@ -211,9 +203,7 @@ def tier_bundle() -> bool:
 
     # Code signing
     print("\n  --- Signing Verification ---")
-    rc, _ = run_captured(
-        ["codesign", "--verify", "--deep", "--strict", str(APP_BUNDLE)]
-    )
+    rc, _ = run_captured(["codesign", "--verify", "--deep", "--strict", str(APP_BUNDLE)])
     if rc == 0:
         print("  ✓ Code signature valid (deep + strict)")
     else:
@@ -229,9 +219,7 @@ def tier_bundle() -> bool:
         print("  Signing: unknown")
 
     if "Developer ID" in authority:
-        rc, _ = run_captured(
-            ["spctl", "--assess", "--type", "execute", str(APP_BUNDLE)]
-        )
+        rc, _ = run_captured(["spctl", "--assess", "--type", "execute", str(APP_BUNDLE)])
         print(
             "  ✓ Gatekeeper: accepted"
             if rc == 0
@@ -283,12 +271,8 @@ def tier_golden_drift() -> bool:
     _, out = run_filtered(["swift", "run", "MarkViewTestRunner", "--generate-goldens"])
     if out.strip():
         print(out)
-    rc, diff_stat = run_captured(
-        ["git", "diff", "--stat", "Tests/TestRunner/Fixtures/expected/"]
-    )
-    rc2, _ = run_captured(
-        ["git", "diff", "--quiet", "Tests/TestRunner/Fixtures/expected/"]
-    )
+    rc, diff_stat = run_captured(["git", "diff", "--stat", "Tests/TestRunner/Fixtures/expected/"])
+    rc2, _ = run_captured(["git", "diff", "--quiet", "Tests/TestRunner/Fixtures/expected/"])
     if rc2 == 0:
         ok("Golden baselines are up to date")
         return True
@@ -315,7 +299,7 @@ def tier_script_tests() -> bool:
         ("scripts/test-ci-status.py", "ci_status"),
         ("scripts/test-sentry-check.py", "sentry_check"),
         ("scripts/test-bundle.py", "bundle"),
-        ("scripts/test-dev-cleanup.py", "dev-cleanup"),
+        ("scripts/test-dev-cleanup.py", "dev_cleanup"),
     ]
     all_passed = True
     for rel_path, label in suites:
@@ -381,13 +365,9 @@ def tier_extended_visual() -> bool:
 
 def tier_extended_ql() -> bool:
     header("Extended: Quick Look System Integration")
-    ql_appex = Path(
-        "/Applications/MarkView.app/Contents/PlugIns/MarkViewQuickLook.appex"
-    )
+    ql_appex = Path("/Applications/MarkView.app/Contents/PlugIns/MarkViewQuickLook.appex")
     if not ql_appex.is_dir():
-        skip(
-            "Quick Look extension not installed (run: bash scripts/bundle.sh --install)"
-        )
+        skip("Quick Look extension not installed (run: bash scripts/bundle.sh --install)")
         return True
 
     passed = 0
@@ -428,9 +408,7 @@ def tier_extended_ql() -> bool:
         )
 
     rc, _ = run_captured(["plutil", "-lint", str(ql_appex / "Contents/Info.plist")])
-    ql_check(
-        rc == 0, "Extension Info.plist is valid XML", "Extension Info.plist is invalid"
-    )
+    ql_check(rc == 0, "Extension Info.plist is valid XML", "Extension Info.plist is invalid")
 
     _, plist_content = run_captured(
         ["plutil", "-convert", "xml1", "-o", "-", str(ql_appex / "Contents/Info.plist")]
@@ -441,9 +419,7 @@ def tier_extended_ql() -> bool:
         "QLSupportedContentTypes",
         "CFBundleIdentifier",
     ]:
-        ql_check(
-            key in plist_content, f"Info.plist has {key}", f"Info.plist missing {key}"
-        )
+        ql_check(key in plist_content, f"Info.plist has {key}", f"Info.plist missing {key}")
 
     _, ext_point = run_captured(
         [
@@ -482,9 +458,7 @@ def tier_extended_ql() -> bool:
         print("  ✓ Developer ID signed — Finder spacebar preview should work")
         passed += 1
 
-    _, arch_out = run_captured(
-        ["file", str(ql_appex / "Contents/MacOS/MarkViewQuickLook")]
-    )
+    _, arch_out = run_captured(["file", str(ql_appex / "Contents/MacOS/MarkViewQuickLook")])
     ql_check(
         "arm64" in arch_out or "Mach-O" in arch_out,
         "Binary is valid Mach-O/arm64",
@@ -549,15 +523,11 @@ def tier_extended_ql() -> bool:
             )
             failed += 1
         else:
-            ql_warn(
-                "Extension NOT registered with pluginkit (expected for ad-hoc signed apps)"
-            )
+            ql_warn("Extension NOT registered with pluginkit (expected for ad-hoc signed apps)")
 
     fixture = PROJECT_DIR / "Tests/TestRunner/Fixtures/basic.md"
     if fixture.is_file():
-        _, md_type_out = run_captured(
-            ["mdls", "-attr", "kMDItemContentType", str(fixture)]
-        )
+        _, md_type_out = run_captured(["mdls", "-attr", "kMDItemContentType", str(fixture)])
         import re
 
         m = re.search(r'"([^"]+)"', md_type_out)
@@ -570,9 +540,7 @@ def tier_extended_ql() -> bool:
         else:
             ql_warn("Could not determine UTType for .md files")
 
-    print(
-        f"\n  Quick Look E2E: {passed} passed, {failed} failed, {skipped} skipped/advisory"
-    )
+    print(f"\n  Quick Look E2E: {passed} passed, {failed} failed, {skipped} skipped/advisory")
     if failed > 0:
         fail("Quick Look integration has failures")
         return False

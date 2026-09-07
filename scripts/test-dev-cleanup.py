@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Tests for dev-cleanup.py (mar-048).
+Tests for dev_cleanup.py (mar-048).
 
 Tier 2 behavioral tests against real temp directories (no subprocess calls
-in dev-cleanup.py at all, so nothing to stub) — every test builds an
+in dev_cleanup.py at all, so nothing to stub) — every test builds an
 isolated `project_dir` / `home` under tempfile.TemporaryDirectory() and
 asserts against that, never the real repo or the real
 ~/Library/Developer/Xcode/DerivedData.
@@ -40,15 +40,15 @@ def _write_file(path: Path, size: int) -> None:
 
 class TestParseArgs(unittest.TestCase):
     def test_defaults_to_dry_run(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         self.assertEqual(mod.parse_args([]), False)
 
     def test_apply_flag(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         self.assertEqual(mod.parse_args(["--apply"]), True)
 
     def test_unknown_option_raises(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with self.assertRaises(mod.CleanupError) as cm:
             mod.parse_args(["--bogus"])
         self.assertIn("Unknown option: --bogus", str(cm.exception))
@@ -60,15 +60,19 @@ class TestParseArgs(unittest.TestCase):
 
 class TestHumanSize(unittest.TestCase):
     def test_bytes(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         self.assertEqual(mod.human_size(0), "0 B")
         self.assertEqual(mod.human_size(512), "512 B")
 
     def test_kb_mb_gb(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         self.assertEqual(mod.human_size(2048), "2.0 KB")
         self.assertEqual(mod.human_size(5 * 1024 * 1024), "5.0 MB")
         self.assertEqual(mod.human_size(3 * 1024 * 1024 * 1024), "3.0 GB")
+
+    def test_tb(self):
+        mod = _load("dev_cleanup")
+        self.assertEqual(mod.human_size(2 * 1024 * 1024 * 1024 * 1024), "2.0 TB")
 
 
 # ── _dir_size ────────────────────────────────────────────────────────────────
@@ -76,7 +80,7 @@ class TestHumanSize(unittest.TestCase):
 
 class TestDirSize(unittest.TestCase):
     def test_sums_nested_files(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             _write_file(tmp / "a.txt", 100)
@@ -84,15 +88,41 @@ class TestDirSize(unittest.TestCase):
             self.assertEqual(mod._dir_size(tmp), 300)
 
     def test_single_file(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "solo.bin"
             _write_file(f, 42)
             self.assertEqual(mod._dir_size(f), 42)
 
     def test_missing_path_is_zero(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         self.assertEqual(mod._dir_size(Path("/nonexistent/path/xyz")), 0)
+
+
+# ── static_targets ───────────────────────────────────────────────────────────
+
+
+class TestStaticTargets(unittest.TestCase):
+    def test_returns_build_and_app_roots_unconditionally(self):
+        mod = _load("dev_cleanup")
+        project_dir = Path("/tmp/does-not-exist-repo")
+        self.assertEqual(
+            mod.static_targets(project_dir),
+            [project_dir / "build", project_dir / "MarkView.app"],
+        )
+
+    def test_find_targets_static_prefix_matches_static_targets(self):
+        """Drift guard: find_targets' project-relative prefix must always
+        equal static_targets() — this is the list scripts/bundle.py's
+        Dock-tile guard matches against, so the two must never diverge."""
+        mod = _load("dev_cleanup")
+        with tempfile.TemporaryDirectory() as td:
+            project_dir = Path(td) / "repo"
+            home = Path(td) / "home"
+            (project_dir / "build").mkdir(parents=True)
+            (project_dir / "MarkView.app").mkdir(parents=True)
+            targets = mod.find_targets(project_dir, home)
+        self.assertEqual(targets[:2], mod.static_targets(project_dir))
 
 
 # ── find_targets ─────────────────────────────────────────────────────────────
@@ -100,7 +130,7 @@ class TestDirSize(unittest.TestCase):
 
 class TestFindTargets(unittest.TestCase):
     def test_returns_only_existing_targets(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"
@@ -110,7 +140,7 @@ class TestFindTargets(unittest.TestCase):
         self.assertEqual(targets, [project_dir / "build"])
 
     def test_finds_app_bundle_and_derived_data(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"
@@ -130,7 +160,7 @@ class TestFindTargets(unittest.TestCase):
         self.assertNotIn(dd / "OtherProject-xyz789", targets)
 
     def test_no_targets_when_nothing_exists(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"
@@ -143,7 +173,7 @@ class TestFindTargets(unittest.TestCase):
 
 class TestRunCleanupDryRun(unittest.TestCase):
     def test_dry_run_lists_targets_and_deletes_nothing(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"
@@ -164,7 +194,7 @@ class TestRunCleanupDryRun(unittest.TestCase):
             self.assertTrue((project_dir / "MarkView.app").exists())
 
     def test_no_targets_reports_nothing_to_clean(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"
@@ -179,7 +209,7 @@ class TestRunCleanupDryRun(unittest.TestCase):
 
 class TestRunCleanupApply(unittest.TestCase):
     def test_apply_deletes_targets_and_reports_freed_size(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"
@@ -199,7 +229,7 @@ class TestRunCleanupApply(unittest.TestCase):
         self.assertFalse(dd.exists())
 
     def test_apply_never_touches_unrelated_derived_data(self):
-        mod = _load("dev-cleanup")
+        mod = _load("dev_cleanup")
         with tempfile.TemporaryDirectory() as td:
             project_dir = Path(td) / "repo"
             home = Path(td) / "home"

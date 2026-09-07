@@ -75,7 +75,7 @@ python3 scripts/test-github-parity-check.py  # github_parity_check.py tests (13 
 python3 scripts/test-ci-status.py     # ci_status.py tests (24 tests, no live gh CLI)
 python3 scripts/test-sentry-check.py  # sentry_check.py tests (14 tests, no live Sentry API/Keychain)
 python3 scripts/test-bundle.py        # bundle.py tests, incl. mar-048 Dock-tile guard (no real xcodebuild/codesign/Dock)
-python3 scripts/test-dev-cleanup.py   # dev-cleanup.py tests (mar-048; real tempdirs, never the actual repo or ~/Library)
+python3 scripts/test-dev-cleanup.py   # dev_cleanup.py tests (mar-048; real tempdirs, never the actual repo or ~/Library)
 make playwright                       # Playwright e2e DOM tests (66 tests) — rebuilds MarkViewHTMLGen, runs Chromium
 ```
 
