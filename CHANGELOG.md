@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Internal: `scripts/sentry_check.py --issue SHORT_ID --raw` prints the untouched latest event JSON through the existing Keychain-authenticated read-only client, so hang triage that needs thread state, `contexts`, tags, or breadcrumbs stays on the tested path instead of an ad-hoc curl script (mar-043 follow-up). The dump is not redacted; see the script docstring before sharing it.
+- Internal: record the root cause of the v1.7.2 `APPLE-MACOS-4J` main-thread render hang in `docs/STATUS.md`. Reproduced and root-caused, fix deferred to its own PR.
+
 ## v1.7.2
 
 - Fix a Markdown-lint main-thread hang (#69): the live linter ran synchronously on the main actor on every keystroke, so a large document could freeze typing. Linting now runs off the main thread with generation/cancellation guards and a deterministic heartbeat regression test.

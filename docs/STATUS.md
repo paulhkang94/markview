@@ -22,6 +22,44 @@ pending work, and key architectural decisions.
 - Headline changes: tab system (MV-001 restore-all-tabs, MV-002 renderComplete, MV-003/MV-005 per-tab scroll restore, MV-007 ⌘T untitled tabs, MV-009 ⌃Tab cycling), release scripts → Python, npm OIDC trusted publishing + automatic MCP registry publish, dSYM upload to Sentry (v1.7.0 is the first release with symbolicated crash/hang reports).
 - **Open issues**: 6 (as of 2026-07-13) - 5 are Sentry-auto-filed "App Hanging ≥2000 ms" reports (#30, #45-#48); triage + first fix: `docs/personal/item-713-hang-triage-2026-07-13.md`, branch `fix/item-713-js-bundle-cache`. The 6th is enhancement #26 (remember window position).
 
+### Known unfixed hang: APPLE-MACOS-4J (v1.7.2, triaged 2026-09-07)
+
+v1.7.2 has a reproduced, root-caused, **unfixed** main-thread hang. Recorded here
+so the next maintainer does not re-derive it.
+
+- **What**: Sentry App Hang (>= 2000 ms main-thread block), 1 event, first seen
+  2026-09-03, latest event on release 1.7.2. `python3 scripts/sentry_check.py --gate 1.7.2`
+  fails on it as a live hang group. The Sentry group title is `xrealloc`, which is
+  only the innermost frame, not the cause.
+- **Root cause**: the markdown render still runs synchronously on the MainActor.
+  Sampled thread 0, innermost last:
+  `PreviewViewModel.loadContent` (`PreviewViewModel.swift:226`) ->
+  `finishLoadContent` (`:242`) -> `renderImmediate` (`:255`) ->
+  `MarkdownRenderer.renderHTML` (`MarkdownRenderer.swift:30`) -> cmark
+  `cmark_render_html` -> `escape_html` -> `cmark_strbuf_grow` -> `xrealloc`.
+  All four source line numbers were checked against the v1.7.2 tree and match exactly.
+- **Family**: this is the next member of the sequence mar-037 (file read off main)
+  and #69 (linting off main). Each fix moved one piece of the document-load path
+  off the main actor and left the next one behind. It is **not** a #69 regression:
+  `runLint` is called at `:243`, after the hung `renderImmediate` at `:242`, and no
+  lint frames appear on the stack.
+- **Reproduced**: a release build of the same `MarkViewCore` render path crosses
+  2000 ms in a single render on two realistic document shapes (a 9.7 MB
+  escape-dense document at 2.46 s, a 4.5 MB GFM table at 2.25 s). `CMARK_OPT_SOURCEPOS`
+  (`MarkdownRenderer.swift:12`) inflates output roughly 9x on node-dense input and is
+  the largest single lever on render cost.
+- **Ruled out**: memory pressure (61.8 MB app memory, 5.5 GB free, thermal nominal),
+  WebKit (`WebCore: Scrolling` is a different thread), swift-markdown (not on this
+  path - the renderer is swift-cmark), and cmark lock contention (registration is
+  `CMARK_RUN_ONCE`).
+- **Fix deferred to its own PR**: moving `renderHTML` to a detached task with a
+  generation guard (mirroring `scheduleLint` at `PreviewViewModel.swift:275-296`)
+  is under 50 lines but is not mechanical - `isLoaded` is set on the line after
+  `renderImmediate`, so an async render needs a new loading-state contract, which
+  is a product decision plus an `--extended` verify run.
+- Full evidence, breadcrumb timeline, and hypothesis ranking: `docs/personal/hang-4j-triage-2026-09-07.md`
+  (untracked - the raw event payload is unredacted field data).
+
 > **BINARY_VERSION contract**: `postinstall.js` BINARY_VERSION points to the last
 > successfully notarized GitHub Release binary. npm patches (JS wrapper changes) do
 > NOT bump BINARY_VERSION. App releases ALWAYS bump it: `release.sh --bump` updates
