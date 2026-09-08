@@ -91,6 +91,20 @@ public final class PreviewViewModel: ObservableObject {
     /// overwriting newer HTML. Same pattern as `contentLoadGeneration`
     /// (mar-037) and `lintGeneration` (#69).
     private var renderGeneration = 0
+    /// Bounds cmark concurrency to one in-flight render (mar-050 / PR #76
+    /// review finding 5): true from the moment `scheduleRender` starts a
+    /// debounce-then-cmark `Task` until that Task's coalescing loop has no
+    /// more pending work. While true, a newer `scheduleRender` call does NOT
+    /// start a second `Task`/detached cmark run — it only overwrites
+    /// `pendingRenderMarkdown`. See `scheduleRender` for the full rationale.
+    private var isRenderRunning = false
+    /// Newest markdown superseding an in-flight render (mar-050). Set by
+    /// every `scheduleRender` call made while `isRenderRunning` is true;
+    /// consumed exactly once, by the in-flight Task's loop, when the current
+    /// cmark call finishes — never queued one entry per keystroke.
+    /// `unloadFile()` clears this so a coalesced render never fires into a
+    /// document that has since been closed.
+    private var pendingRenderMarkdown: String?
     /// Monotonic token for loadContent (item-713 fourth hang class, mar-037):
     /// only the NEWEST in-flight read may publish. A stale completion (a
     /// newer loadFile/reloadFromDisk/watcher-triggered read started while an
@@ -233,6 +247,11 @@ public final class PreviewViewModel: ObservableObject {
         // closed document (PR #76 review).
         contentLoadGeneration += 1
         renderGeneration += 1
+        // A coalesced render (mar-050) is invisible to the generation guard
+        // until the in-flight cmark call it's waiting behind finishes and the
+        // loop in scheduleRender picks it up — clear it here so that pickup
+        // never happens for a document that's about to be closed.
+        pendingRenderMarkdown = nil
         lintGeneration += 1
         currentFilePath = nil
         fileName = "MarkView"
@@ -347,23 +366,74 @@ public final class PreviewViewModel: ObservableObject {
     /// Publishing sets `isLoaded`: see the contract on that property. This is
     /// the single site that flips it for file-backed content, which is what
     /// keeps all four render entry points consistent.
+    ///
+    /// Bounded concurrency (mar-050 / PR #76 review finding 5): cancelling
+    /// the *outer* `Task` here (the old implementation) never stops an
+    /// already-launched `Task.detached` cmark call — cmark cannot be
+    /// interrupted mid-document, and a detached task is not a structured
+    /// child of the Task that spawned it, so cancellation does not propagate
+    /// to it either. Sustained typing on a large document therefore queued
+    /// one detached cmark run per keystroke/debounce, all running
+    /// concurrently, with the generation guard above only preventing the
+    /// stale ones from publishing — not from burning CPU. `isRenderRunning`
+    /// now serializes the render pipeline to at most one in-flight cmark call:
+    /// while one is running (including its debounce sleep), a newer
+    /// `scheduleRender` call just overwrites `pendingRenderMarkdown` and
+    /// returns, instead of starting a second `Task`. When the in-flight cmark
+    /// call finishes, the SAME Task loops to render the newest coalesced
+    /// input directly, with no additional debounce — intermediate inputs are
+    /// dropped, never queued one-by-one.
     private func scheduleRender(_ markdown: String, debounceNanoseconds: UInt64? = nil) {
-        renderTask?.cancel()
         renderGeneration += 1
         let generation = renderGeneration
+
+        guard !isRenderRunning else {
+            pendingRenderMarkdown = markdown
+            return
+        }
+
+        renderTask?.cancel()
+        isRenderRunning = true
         let operation = renderOperation
-        let currentTemplate = template
         renderTask = Task {
+            var currentMarkdown = markdown
+            var currentGeneration = generation
             if let debounceNanoseconds {
                 try? await Task.sleep(nanoseconds: debounceNanoseconds)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.isRenderRunning = false
+                    return
+                }
+                // A newer input may have coalesced in during the debounce
+                // sleep — render that instead of the value that started this
+                // Task, so a burst of keystrokes converges on the latest one.
+                if let pending = self.pendingRenderMarkdown {
+                    self.pendingRenderMarkdown = nil
+                    currentMarkdown = pending
+                    currentGeneration = self.renderGeneration
+                }
             }
-            let html = await Task.detached(priority: .userInitiated) {
-                MarkdownRenderer.wrapInTemplate(operation(markdown), template: currentTemplate)
-            }.value
-            guard generation == renderGeneration else { return }
-            renderedHTML = html
-            isLoaded = true
+            while true {
+                // Fresh, non-mutated `let` bindings scoped to this iteration:
+                // `currentMarkdown`/`currentGeneration` are `var`s reassigned
+                // across iterations, and Swift 6 rejects sending a mutable
+                // outer capture into a detached closure even when the access
+                // is sequential (each iteration awaits the previous one).
+                let markdownToRender = currentMarkdown
+                let currentTemplate = self.template
+                let html = await Task.detached(priority: .userInitiated) {
+                    MarkdownRenderer.wrapInTemplate(operation(markdownToRender), template: currentTemplate)
+                }.value
+                if currentGeneration == self.renderGeneration {
+                    self.renderedHTML = html
+                    self.isLoaded = true
+                }
+                guard let pending = self.pendingRenderMarkdown else { break }
+                self.pendingRenderMarkdown = nil
+                currentMarkdown = pending
+                currentGeneration = self.renderGeneration
+            }
+            self.isRenderRunning = false
         }
     }
 
