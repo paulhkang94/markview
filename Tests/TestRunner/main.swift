@@ -4692,7 +4692,10 @@ runner.test("mar-049: PreviewViewModel no longer renders markdown on the main ac
     }
     try expect(scheduleRender.contains("Task.detached"),
         "the markdown render must run off the main actor — that is the APPLE-MACOS-4J fix")
-    try expect(scheduleRender.contains("generation == renderGeneration"),
+    // mar-050 renamed the local to currentGeneration/self.renderGeneration when
+    // it introduced the coalescing loop (a superseded render is still dropped
+    // by the same generation comparison — see the mar-050 tests below).
+    try expect(scheduleRender.contains("currentGeneration == self.renderGeneration"),
         "a superseded render must be dropped by the renderGeneration guard before it publishes")
 
     guard let finishLoad = extractFunctionBody(source, functionSignature: "func finishLoadContent") else {
@@ -4708,6 +4711,219 @@ runner.test("mar-049: PreviewViewModel no longer renders markdown on the main ac
         "unloadFile must invalidate in-flight renders — otherwise a render for a closed document republishes HTML and re-sets isLoaded")
     try expect(unload.contains("contentLoadGeneration += 1"),
         "unloadFile must invalidate the in-flight file read too — otherwise the read lands, refills editorContent, and starts a render that re-sets isLoaded")
+}
+
+// =============================================================================
+// MARK: - mar-050 (PR #76 review finding 5): bounded render concurrency
+//
+// mar-049 moved cmark off the main actor and added a generation guard so a
+// stale render can never publish — but generation only protects publication,
+// not CPU. `scheduleRender` cancelled the *outer* Task on every call, and
+// that cancellation never reached an already-launched `Task.detached` cmark
+// call (cmark cannot be interrupted mid-document). Sustained typing on a
+// 9.7 MB document therefore queued ~16 concurrent cmark runs, each burning
+// CPU whose result the generation guard then discarded. These tests prove
+// the fix bounds concurrency to one in-flight cmark call and coalesces
+// superseded inputs instead of queuing them one-by-one.
+// =============================================================================
+
+/// Thread-safe concurrency probe: tracks the current and maximum number of
+/// concurrent `renderOperation` invocations, plus how many actually ran.
+/// `renderOperation` executes off the main actor on arbitrary background
+/// threads (mar-049), so this needs its own lock — `LockedBox` only guards a
+/// single value, not an enter/exit pair.
+final class ConcurrencyProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = 0
+    private var maxSeen = 0
+    private var executedCount = 0
+
+    func enter() {
+        lock.lock()
+        current += 1
+        executedCount += 1
+        maxSeen = max(maxSeen, current)
+        lock.unlock()
+    }
+
+    func exit() {
+        lock.lock()
+        current -= 1
+        lock.unlock()
+    }
+
+    var maxConcurrent: Int { lock.lock(); defer { lock.unlock() }; return maxSeen }
+    var executed: Int { lock.lock(); defer { lock.unlock() }; return executedCount }
+}
+
+runner.test("mar-050: at most one cmark render is in flight, and far fewer renders execute than inputs, under a burst") {
+    try MainActor.assumeIsolated {
+        let probe = ConcurrencyProbe()
+        let slowRender: PreviewViewModel.RenderOperation = { markdown in
+            probe.enter()
+            Thread.sleep(forTimeInterval: 0.25)
+            probe.exit()
+            return "<p>\(markdown)</p>"
+        }
+        let vm = PreviewViewModel(renderOperation: slowRender)
+        let inputCount = 8
+        let lastInput = "burst-\(inputCount - 1)"
+
+        let settled = drainMainActor(timeout: 8) {
+            vm.startUntitled() // kicks off the first (immediate) render
+            for i in 0..<inputCount {
+                vm.contentDidChange("burst-\(i)")
+                // 180ms between keystrokes: past the 150ms render debounce (so
+                // most keystrokes' own debounce elapses and would start a render
+                // pre-fix) but well under the 250ms render itself, so a
+                // still-running render from an earlier keystroke overlaps the
+                // next one's start — this is the "sustained typing on a large
+                // doc" shape from the PR #76 review finding, not a synthetic race.
+                try? await Task.sleep(nanoseconds: 180_000_000)
+            }
+            let deadline = Date().addingTimeInterval(5)
+            while !vm.renderedHTML.contains(lastInput) && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+
+        try expect(settled, "the burst must settle within the timeout")
+        try expect(vm.renderedHTML.contains(lastInput),
+            "the published output must correspond to the newest input, got: \(vm.renderedHTML.prefix(120))")
+        try expect(probe.maxConcurrent == 1,
+            "at most one cmark render may be in flight at a time, observed max concurrent: \(probe.maxConcurrent)")
+        try expect(probe.executed < inputCount,
+            "coalescing must execute far fewer renders than inputs: executed \(probe.executed) renders for \(inputCount) inputs")
+    }
+}
+
+runner.test("mar-050: intermediate inputs during a burst are dropped, never queued one-by-one") {
+    try MainActor.assumeIsolated {
+        let probe = ConcurrencyProbe()
+        let seenMarkdown = LockedBox<[String]>([])
+        let recordingRender: PreviewViewModel.RenderOperation = { markdown in
+            probe.enter()
+            seenMarkdown.value.append(markdown)
+            Thread.sleep(forTimeInterval: 0.25)
+            probe.exit()
+            return "<p>\(markdown)</p>"
+        }
+        let vm = PreviewViewModel(renderOperation: recordingRender)
+        let inputCount = 8
+
+        let settled = drainMainActor(timeout: 8) {
+            vm.startUntitled()
+            for i in 0..<inputCount {
+                vm.contentDidChange("mid-\(i)")
+                try? await Task.sleep(nanoseconds: 180_000_000)
+            }
+            let deadline = Date().addingTimeInterval(5)
+            while !vm.renderedHTML.contains("mid-\(inputCount - 1)") && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+
+        try expect(settled, "the burst must settle within the timeout")
+        let executedInputs = seenMarkdown.value
+        try expect(executedInputs.count < inputCount,
+            "intermediate inputs must coalesce, not queue: got \(executedInputs.count) executed renders for \(inputCount) inputs: \(executedInputs)")
+        try expect(executedInputs.last == "mid-\(inputCount - 1)",
+            "the last render executed must be the newest input, got: \(executedInputs.last ?? "<none>")")
+    }
+}
+
+runner.test("mar-050: unloadFile mid-render clears a coalesced pending render (no leak into the closed document)") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(1, prefix: "mar050-unload-pending")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let slowRender: PreviewViewModel.RenderOperation = { _ in
+            Thread.sleep(forTimeInterval: 0.4)
+            return "<p>rendered</p>"
+        }
+        let vm = PreviewViewModel(renderOperation: slowRender)
+        vm.loadFile(at: files[0].path)
+
+        let settled = drainMainActor(timeout: 3) {
+            // Wait for the first render (from finishLoadContent) to be genuinely
+            // in flight, then coalesce a second input onto it before closing —
+            // this is the case a bare renderGeneration bump does not cover: a
+            // pendingRenderMarkdown left behind must not survive the close.
+            let deadline = Date().addingTimeInterval(1.5)
+            while vm.editorContent.isEmpty && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            vm.contentDidChange("typed while render in flight")
+            vm.unloadFile()
+            // Past the full render duration plus a coalesced follow-up, if one
+            // were wrongly still pending: anything that was going to publish
+            // has published by now.
+            try? await Task.sleep(nanoseconds: 900_000_000)
+        }
+
+        try expect(settled, "the unload sequence must complete within the timeout")
+        try expect(!vm.isLoaded,
+            "a coalesced render that resolves after unloadFile must not re-set isLoaded on a closed document")
+        try expect(vm.renderedHTML.isEmpty,
+            "a coalesced render that resolves after unloadFile must not republish renderedHTML")
+        try expect(vm.editorContent.isEmpty,
+            "unloadFile must leave the editor empty even though a render was coalesced just before close")
+    }
+}
+
+runner.test("mar-050: opening a new file while the previous document's render is in flight never publishes the old document's content") {
+    try MainActor.assumeIsolated {
+        let (dir, files) = try makeTempMarkdownFiles(2, prefix: "mar050-reopen")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let slowRender: PreviewViewModel.RenderOperation = { markdown in
+            Thread.sleep(forTimeInterval: 0.3)
+            return "<p>\(markdown)</p>"
+        }
+        let vm = PreviewViewModel(renderOperation: slowRender)
+        vm.loadFile(at: files[0].path) // doc0's read+render starts
+
+        let settled = drainMainActor(timeout: 5) {
+            let deadline = Date().addingTimeInterval(2)
+            while vm.editorContent.isEmpty && Date() < deadline {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            // Close, then open a different file while doc0's render for the
+            // OLD content may still be inside cmark on a background thread.
+            vm.unloadFile()
+            vm.loadFile(at: files[1].path)
+            let loaded = Date().addingTimeInterval(3)
+            while !vm.isLoaded && Date() < loaded {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+
+        try expect(settled, "the close+reopen sequence must settle within the timeout")
+        try expect(vm.isLoaded, "the newly opened file must finish loading")
+        try expect(vm.fileName == "doc1.md", "the newly opened file must be doc1, got \(vm.fileName)")
+        try expect(vm.renderedHTML.contains("Doc 1"),
+            "renderedHTML must reflect doc1's content, got: \(vm.renderedHTML.prefix(160))")
+        try expect(!vm.renderedHTML.contains("Doc 0"),
+            "a stale render for the closed doc0 must never be the last thing published")
+    }
+}
+
+runner.test("mar-050: scheduleRender coalesces instead of starting a second Task while a render is in flight (source guard)") {
+    // Tier-4 source guard, paired with the four behavioral tests above.
+    let source = try String(contentsOfFile: "Sources/MarkViewAppCore/PreviewViewModel.swift", encoding: .utf8)
+    guard let scheduleRender = extractFunctionBody(source, functionSignature: "func scheduleRender") else {
+        try expect(false, "PreviewViewModel must define scheduleRender(_:debounceNanoseconds:)"); return
+    }
+    try expect(scheduleRender.contains("guard !isRenderRunning else"),
+        "a newer input must coalesce instead of starting a second render Task while one is already running")
+    try expect(scheduleRender.contains("pendingRenderMarkdown = markdown"),
+        "coalescing must overwrite the pending input, not append/queue it")
+    try expect(scheduleRender.contains("while true"),
+        "the in-flight Task must loop to pick up coalesced work directly, instead of a new Task being spawned per input")
+
+    guard let unload = extractFunctionBody(source, functionSignature: "func unloadFile") else {
+        try expect(false, "PreviewViewModel must define unloadFile"); return
+    }
+    try expect(unload.contains("pendingRenderMarkdown = nil"),
+        "unloadFile must clear a coalesced pending render too — otherwise it fires into the now-closed document once the in-flight cmark call finishes")
 }
 
 runner.test("RecentFilesManager: recordOpen/removeFromRecents/clearAll round-trip through UserDefaults") {
