@@ -59,8 +59,11 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
     static let lightModeCSS = ""
 
     private var webView: WKWebView!
-    private var completionHandler: ((Error?) -> Void)?
+    private let request = QuickLookPreviewRequest()
     private var tempFileURL: URL?
+    private var preparationTask: Task<Void, Never>?
+    private var activeRequest = 0
+    private var activeNavigation: WKNavigation?
 
     /// Detect whether the system is in dark mode.
     private var isDarkMode: Bool {
@@ -87,67 +90,77 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
     // MARK: - QLPreviewingController (callback-based API)
 
     func preparePreviewOfFile(at url: URL, completionHandler handler: @escaping (Error?) -> Void) {
-        self.completionHandler = handler
-
-        let markdown: String
-        do {
-            markdown = try String(contentsOf: url, encoding: .utf8)
-        } catch {
-            Self.logger.error("Quick Look failed to read \(url.path): \(error.localizedDescription)")
-            handler(error)
-            return
-        }
-
-        let html = MarkdownRenderer.renderHTML(from: markdown)
-        let accessible = MarkdownRenderer.postProcessForAccessibility(html)
-        var document = MarkdownRenderer.wrapInTemplate(accessible)
-
-        // Inject appearance-appropriate CSS. We detect dark mode in Swift because
-        // WKWebView's WebContent process doesn't inherit the system appearance in
-        // the extension sandbox, so @media (prefers-color-scheme) doesn't work.
+        preparationTask?.cancel()
+        preparationTask = nil
+        activeNavigation = nil
+        webView?.stopLoading()
+        cleanupTempFile()
+        let generation = request.begin(completion: handler)
+        guard request.isCurrent(generation) else { return }
+        activeRequest = generation
+        _ = view // Ensure WKWebView exists before handing it a prepared document.
         let colorCSS = isDarkMode ? Self.darkModeCSS : Self.lightModeCSS
-        let fullCSS = "<style>\(Self.layoutCSS)\n\(colorCSS)</style>"
-        document = document.replacingOccurrences(of: "</head>", with: "\(fullCSS)</head>")
+        let css = "\(Self.layoutCSS)\n\(colorCSS)"
+        let temporaryDirectory = FileManager.default.temporaryDirectory
 
-        // Write to temp file and load via file URL — more reliable in sandboxed extensions
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempFile = tempDir.appendingPathComponent("ql-preview-\(UUID().uuidString).html")
-        do {
-            try document.write(to: tempFile, atomically: true, encoding: .utf8)
-            tempFileURL = tempFile
-            webView.loadFileURL(tempFile, allowingReadAccessTo: tempDir)
-        } catch {
-            Self.logger.error("Failed to write temp HTML: \(error.localizedDescription)")
-            webView.loadHTMLString(document, baseURL: nil)
+        preparationTask = Task(priority: .userInitiated) { [weak self] in
+            do {
+                let document = try await QuickLookDocumentRenderer.shared.prepare(
+                    fileURL: url, css: css, temporaryDirectory: temporaryDirectory
+                )
+                guard let self, self.request.isCurrent(generation), !Task.isCancelled else {
+                    if let file = document.fileURL { try? FileManager.default.removeItem(at: file) }
+                    return
+                }
+                self.preparationTask = nil
+                self.tempFileURL = document.fileURL
+                if let file = document.fileURL {
+                    self.activeNavigation = self.webView.loadFileURL(file, allowingReadAccessTo: temporaryDirectory)
+                } else {
+                    Self.logger.error("Failed to write temp HTML: \(document.writeError ?? "unknown error")")
+                    self.activeNavigation = self.webView.loadHTMLString(document.html, baseURL: nil)
+                }
+                if self.activeNavigation == nil {
+                    self.completeCurrent(NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError))
+                }
+            } catch {
+                guard let self, self.request.isCurrent(generation) else { return }
+                self.preparationTask = nil
+                Self.logger.error("Quick Look failed to prepare \(url.path): \(error.localizedDescription)")
+                self.completeCurrent(error)
+            }
         }
     }
 
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if let handler = completionHandler {
-            handler(nil)
-            completionHandler = nil
-        }
-        cleanupTempFile()
+        guard let navigation, let activeNavigation, navigation === activeNavigation else { return }
+        completeCurrent(nil)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard let navigation, let activeNavigation, navigation === activeNavigation else { return }
         Self.logger.error("WKWebView didFail: \(error.localizedDescription)")
-        if let handler = completionHandler {
-            handler(error)
-            completionHandler = nil
-        }
-        cleanupTempFile()
+        completeCurrent(error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard let navigation, let activeNavigation, navigation === activeNavigation else { return }
         Self.logger.error("WKWebView didFailProvisionalNavigation: \(error.localizedDescription)")
-        if let handler = completionHandler {
-            handler(error)
-            completionHandler = nil
-        }
+        completeCurrent(error)
+    }
+
+    private func completeCurrent(_ error: Error?) {
+        let generation = activeRequest
+        activeNavigation = nil
         cleanupTempFile()
+        request.finish(generation, error: error)
+    }
+
+    deinit {
+        preparationTask?.cancel()
+        if let file = tempFileURL { try? FileManager.default.removeItem(at: file) }
     }
 
     private func cleanupTempFile() {
