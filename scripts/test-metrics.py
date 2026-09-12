@@ -66,6 +66,48 @@ class TestBarChart(unittest.TestCase):
         self.assertTrue(all(c == "█" for c in bar))
 
 
+class TestNpmDailyDownloads(unittest.TestCase):
+    def setUp(self):
+        self.m = _load("metrics")
+
+    def fetch_result(self, daily):
+        def fetch(url):
+            base = "https://api.npmjs.org/downloads"
+            if url == f"{base}/point/last-week/{self.m.NPM_PKG}":
+                return {"downloads": 70}
+            if url == f"{base}/point/last-month/{self.m.NPM_PKG}":
+                return {"downloads": 300}
+            if url == f"{base}/range/last-month/{self.m.NPM_PKG}":
+                return daily
+            self.fail(f"Unsupported npm download request: {url}")
+
+        with patch.object(self.m, "fetch_json", side_effect=fetch):
+            return self.m.get_npm_downloads()
+
+    def test_latest_fourteen_available_days_keep_dates_and_counts(self):
+        from datetime import date, timedelta
+
+        days = [
+            {"day": (date(2026, 8, 10) + timedelta(days=i)).isoformat(), "downloads": i}
+            for i in range(30)
+        ]
+        result = self.fetch_result({"downloads": days})
+        self.assertEqual(result["daily_last_14d"], days[16:])
+        self.assertEqual(result["downloads_7d"], 70)
+        self.assertEqual(result["downloads_30d"], 300)
+
+    def test_short_history_is_preserved_without_inventing_days(self):
+        days = [{"day": "2026-09-01", "downloads": 0}]
+        self.assertEqual(self.fetch_result({"downloads": days})["daily_last_14d"], days)
+
+    def test_unavailable_daily_response_keeps_totals_and_empty_history(self):
+        for daily in (None, {}, {"downloads": []}):
+            with self.subTest(daily=daily):
+                result = self.fetch_result(daily)
+                self.assertEqual(result["daily_last_14d"], [])
+                self.assertEqual(result["downloads_7d"], 70)
+
+
 class TestSnapshotIO(unittest.TestCase):
     def setUp(self):
         self.m = _load("metrics")
