@@ -3979,8 +3979,9 @@ runner.test("MV-002: WebPreviewView registers renderComplete with a once-per-loa
     let wpvSource = try! String(contentsOfFile: "Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
     try expect(wpvSource.contains("TemplateConstants.renderCompleteHandler"),
         "WebPreviewView must register the renderComplete message handler (MV-002)")
-    try expect(wpvSource.contains("renderCompleteFired"),
-        "Coordinator must dedupe renderComplete per load — it can arrive from both mermaid completion and the timeout fallback")
+    // Wiring smoke check; the lifecycle scenarios below verify actual deduplication.
+    try expect(wpvSource.contains("loadLifecycle.claimCompletion("),
+        "Coordinator must use the tested once-per-loaded-generation completion owner")
 }
 
 runner.test("MV-001: unloadFile must not mark explicitly-closed (fires on EVERY tab close)") {
@@ -5602,6 +5603,46 @@ runner.test("Quick Look cancellation during rendering skips publication and leav
         let files = try FileManager.default.contentsOfDirectory(atPath: input.directory.path)
         try expect(files == ["input.md"], "canceled render must not leave a prepared HTML file")
     }
+}
+
+print("\n--- Full-page preview completion lifetime ---")
+
+runner.test("preview lifecycle: old timeout cannot complete a newer loaded page") {
+    var state = PreviewLoadLifecycle()
+    var restored: [Int] = []
+    let old = state.begin()
+    state.markLoaded(old)
+    let oldTimeout = { if state.claimCompletion(old) { restored.append(old) } }
+    let current = state.begin()
+    state.markLoaded(current)
+    oldTimeout()
+    try expect(restored.isEmpty, "an old timer must not consume the new page's completion")
+    if state.claimCompletion(current) { restored.append(current) }
+    try expect(restored == [current], "the current page must still complete once")
+    try expect(!state.claimCompletion(current), "message and timeout must converge on one completion")
+}
+
+runner.test("preview lifecycle: preparation cannot complete an unpublished page") {
+    var state = PreviewLoadLifecycle()
+    let old = state.begin()
+    state.markLoaded(old)
+    let current = state.begin()
+    try expect(!state.claimCompletion(old), "the outgoing page loses ownership when a new load begins")
+    try expect(!state.claimCompletion(current), "a pending or failed preparation is not a loaded page")
+    try expect(state.markLoaded(current), "successful publication should make completion available")
+    try expect(state.claimCompletion(current), "the published current page can complete")
+}
+
+runner.test("preview lifecycle: stale and duplicate publication cannot rearm completion") {
+    var state = PreviewLoadLifecycle()
+    let old = state.begin()
+    let current = state.begin()
+    try expect(!state.markLoaded(old), "stale preparation must be rejected")
+    try expect(state.markLoaded(current), "the current preparation is accepted")
+    try expect(state.claimCompletion(current), "first completion is accepted")
+    try expect(!state.markLoaded(current), "duplicate publication must not rearm the page")
+    try expect(!state.markLoaded(old), "stale publication must not rearm the page")
+    try expect(!state.claimCompletion(current), "completion stays consumed")
 }
 
 print("")

@@ -401,7 +401,8 @@ struct WebPreviewView: NSViewRepresentable {
         /// loadFileURL. A stale completion (tab switch or live edit during preparation)
         /// deletes its temp file and exits without touching the web view, so rapid
         /// successive reloads always converge on the newest content.
-        private var loadGeneration = 0
+        private var loadLifecycle = PreviewLoadLifecycle()
+        private var loadGeneration: Int { loadLifecycle.generation }
 
         func updateContent(_ html: String, in webView: WKWebView) {
             let currentCSS = "\(Int(previewFontSize))|\(previewWidth)|\(theme)"
@@ -448,9 +449,8 @@ struct WebPreviewView: NSViewRepresentable {
         /// via PreviewPageBuilder (MarkViewCore);
         /// only the completion touches the web view, back on the main actor.
         private func loadViaFileURL(_ styledHTML: String, in webView: WKWebView) {
-            loadGeneration += 1
+            let generation = loadLifecycle.begin()
             fullReloadInFlight = true
-            let generation = loadGeneration
             let baseDir = baseDirectoryURL
             let pipeline = self.pipeline
             Task.detached(priority: .userInitiated) { [weak self] in
@@ -491,14 +491,17 @@ struct WebPreviewView: NSViewRepresentable {
             }
             // Images are already inlined as data URIs, so WKWebView only needs access to the
             // temp directory. Never grant access to "/" or user home — least-privilege scope.
-            renderCompleteFired = false
+            guard loadLifecycle.markLoaded(generation) else {
+                try? FileManager.default.removeItem(at: tempFile)
+                return
+            }
             webView.loadFileURL(tempFile, allowingReadAccessTo: tempFile.deletingLastPathComponent())
             // The page's renderComplete message drives scroll-listener install + restore
             // the moment all transforms finish (MV-002). The 2s timer only covers a page
-            // whose JS died before posting; the fired-flag makes the two paths converge
-            // to exactly one execution per load.
+            // whose JS died before posting. Both paths claim the loaded generation
+            // exactly once; an older timer cannot finish a newer page.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.handleRenderComplete()
+                self?.handleRenderComplete(generation: generation)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 do {
@@ -510,17 +513,13 @@ struct WebPreviewView: NSViewRepresentable {
             }
         }
 
-        /// True once the current page load's post-render work ran — renderComplete can
-        /// arrive from page JS AND the fallback timer; only the first wins (MV-002).
-        private var renderCompleteFired = false
-
         /// Deterministic post-render hook (MV-002, replaces the 0.5s+0.2s asyncAfter
         /// timing hacks): installs the scroll listener and restores the persisted
         /// position exactly once per page load. The syncController persists via @State
         /// in ContentView, so lastPreviewLine survives the destroy/recreate cycle.
-        private func handleRenderComplete() {
-            guard !renderCompleteFired, let webView = webView else { return }
-            renderCompleteFired = true
+        private func handleRenderComplete(generation: Int? = nil) {
+            guard let webView,
+                  loadLifecycle.claimCompletion(generation ?? loadGeneration) else { return }
             webView.evaluateJavaScript(Self.scrollListenerJS)
             if let line = syncController?.lastPreviewLine, line > 0 {
                 scrollToSourceLine(line)
