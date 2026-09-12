@@ -110,13 +110,16 @@ def get_npm_downloads() -> dict:
     print("Fetching npm download stats...", file=sys.stderr)
     week = fetch_json(f"https://api.npmjs.org/downloads/point/last-week/{NPM_PKG}")
     month = fetch_json(f"https://api.npmjs.org/downloads/point/last-month/{NPM_PKG}")
+    # npm supports last-month, not last-14-days. Use its latest published days
+    # so a delayed daily aggregation does not introduce an incomplete UTC day.
+    # https://github.com/npm/registry/blob/main/docs/download-counts.md
     daily_data = fetch_json(
-        f"https://api.npmjs.org/downloads/range/last-14-days/{NPM_PKG}"
+        f"https://api.npmjs.org/downloads/range/last-month/{NPM_PKG}"
     )
     return {
         "downloads_7d": (week or {}).get("downloads", 0),
         "downloads_30d": (month or {}).get("downloads", 0),
-        "daily_last_14d": (daily_data or {}).get("downloads", []),
+        "daily_last_14d": (daily_data or {}).get("downloads", [])[-14:],
     }
 
 
