@@ -75,6 +75,13 @@ jobs:
           fetch-depth: 0   # full clone — check-version-sync.sh checks git tag existence for BINARY_VERSION sync.
           # fetch-tags:true is insufficient with shallow clones; fetch-depth:0 is the correct fix.
 
+      # Explicit interpreter pin — fleet standard per
+      # docs/research/python-version-upgrade-evaluation-2026-09-11.md (~/repos/docs).
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
       - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
@@ -97,6 +104,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+
+      # Explicit interpreter pin — fleet standard per
+      # docs/research/python-version-upgrade-evaluation-2026-09-11.md (~/repos/docs).
+      # scripts/bundle.sh execs bundle.py.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4
@@ -132,6 +147,14 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+
+      # Explicit interpreter pin — fleet standard per
+      # docs/research/python-version-upgrade-evaluation-2026-09-11.md (~/repos/docs).
+      # scripts/test-mcp.sh runs inline python3 harness code.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Cache SPM dependencies
         uses: actions/cache@v4

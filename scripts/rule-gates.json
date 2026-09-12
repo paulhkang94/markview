@@ -121,6 +121,14 @@
       "ci_pattern": "check_version_sync\\.py --expect-tag",
       "gate_type": "script_run",
       "tier": 1
+    },
+    {
+      "id": "python-jobs-pin-interpreter-in-ci",
+      "description": "Every ci.yml job that runs Python (verify, bundle, mcp) must pin an explicit interpreter via actions/setup-python instead of floating on the runner image's default python3 — see docs/research/python-version-upgrade-evaluation-2026-09-11.md (fleet standard: 3.14) in ~/repos/docs.",
+      "ci_files": [".github/workflows/ci.yml"],
+      "ci_pattern": "actions/setup-python@v5[\\s\\S]*?python-version:\\s*[\"']3\\.14[\"']",
+      "gate_type": "job",
+      "tier": 1
     }
   ]
 }
