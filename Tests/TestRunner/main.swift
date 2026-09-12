@@ -5438,6 +5438,172 @@ runner.test("mar-037: PreviewViewModel no longer reads file content on the main 
 
 // =============================================================================
 
+// Quick Look uses this production preparation boundary; no WKWebView is created here.
+func quickLookInput() throws -> (directory: URL, file: URL) {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("markview-ql-tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let file = directory.appendingPathComponent("input.md")
+    try "# Preview\n\n| A | B |\n|---|---|\n| 1 | 2 |".write(to: file, atomically: true, encoding: .utf8)
+    return (directory, file)
+}
+
+runner.test("Quick Look preparation renders off the main thread with exact pipeline parity") {
+    let input = try quickLookInput()
+    defer { try? FileManager.default.removeItem(at: input.directory) }
+    try MainActor.assumeIsolated {
+        let ranOnMain = LockedBox(true)
+        let document = LockedBox<QuickLookDocument?>(nil)
+        let error = LockedBox<String?>(nil)
+        let worker = QuickLookDocumentRenderer { markdown in
+            ranOnMain.value = Thread.isMainThread
+            return MarkdownRenderer.renderHTML(from: markdown)
+        }
+        let finished = drainMainActor {
+            do { document.value = try await worker.prepare(fileURL: input.file, css: "body { padding: 24px; }", temporaryDirectory: input.directory) }
+            catch let failure { error.value = String(describing: failure) }
+        }
+        try expect(finished && error.value == nil, "preparation must complete without error")
+        try expect(!ranOnMain.value, "Quick Look rendering must not execute on the main thread")
+        guard let prepared = document.value, let file = prepared.fileURL else {
+            throw TestError.assertionFailed("prepared HTML file missing")
+        }
+        let markdown = try String(contentsOf: input.file, encoding: .utf8)
+        let expected = quickLookPipeline(markdown).replacingOccurrences(of: "</head>", with: "<style>body { padding: 24px; }</style></head>")
+        try expect(prepared.html == expected, "preparation must preserve accessibility, template and CSS order")
+        try expect(try String(contentsOf: file, encoding: .utf8) == expected, "written HTML must match the returned document")
+    }
+}
+
+runner.test("Quick Look preparation serializes competing renders") {
+    let input = try quickLookInput()
+    defer { try? FileManager.default.removeItem(at: input.directory) }
+    try MainActor.assumeIsolated {
+        let probe = ConcurrencyProbe()
+        let completed = LockedBox(0)
+        let worker = QuickLookDocumentRenderer { markdown in
+            probe.enter()
+            defer { probe.exit() }
+            Thread.sleep(forTimeInterval: 0.05)
+            return MarkdownRenderer.renderHTML(from: markdown)
+        }
+        let finished = drainMainActor {
+            let jobs = (0..<3).map { _ in
+                Task {
+                    try await worker.prepare(fileURL: input.file, css: "", temporaryDirectory: input.directory)
+                }
+            }
+            for job in jobs {
+                if (try? await job.value) != nil { completed.value += 1 }
+            }
+        }
+        try expect(finished && completed.value == 3, "all prepared documents must complete")
+        try expect(probe.executed == 3 && probe.maxConcurrent == 1, "cmark preparations must remain serialized")
+    }
+}
+
+runner.test("Quick Look preserves HTML fallback when the temporary file cannot be written") {
+    let input = try quickLookInput()
+    defer { try? FileManager.default.removeItem(at: input.directory) }
+    try MainActor.assumeIsolated {
+        let worker = QuickLookDocumentRenderer()
+        let document = LockedBox<QuickLookDocument?>(nil)
+        let finished = drainMainActor {
+            document.value = try? await worker.prepare(fileURL: input.file, css: "", temporaryDirectory: input.directory.appendingPathComponent("missing"))
+        }
+        try expect(finished, "fallback preparation must complete")
+        try expect(document.value?.fileURL == nil, "failed write must not return a nonexistent file")
+        try expect(document.value?.writeError != nil, "write failure must remain observable")
+        try expect(document.value?.html.contains("<h1") == true, "in-memory HTML fallback must remain usable")
+    }
+}
+
+runner.test("Quick Look missing input and canceled preparation create no preview files") {
+    let input = try quickLookInput()
+    defer { try? FileManager.default.removeItem(at: input.directory) }
+    try MainActor.assumeIsolated {
+        let worker = QuickLookDocumentRenderer { _ in
+            Thread.sleep(forTimeInterval: 0.05)
+            return "<p>rendered</p>"
+        }
+        let failures = LockedBox(0)
+        let finished = drainMainActor {
+            do { _ = try await worker.prepare(fileURL: input.directory.appendingPathComponent("absent.md"), css: "", temporaryDirectory: input.directory) }
+            catch { failures.value += 1 }
+            let job = Task { try await worker.prepare(fileURL: input.file, css: "", temporaryDirectory: input.directory) }
+            job.cancel()
+            do { _ = try await job.value }
+            catch is CancellationError { failures.value += 1 }
+            catch { }
+        }
+        try expect(finished && failures.value == 2, "read failure and cancellation must both propagate")
+        let files = try FileManager.default.contentsOfDirectory(atPath: input.directory.path)
+        try expect(files == ["input.md"], "failed preparations must not leak temporary HTML")
+    }
+}
+
+runner.test("Quick Look stale results and repeated navigation callbacks cannot complete a newer request") {
+    try MainActor.assumeIsolated {
+        let requests = QuickLookPreviewRequest()
+        var events: [String] = []
+        let old = requests.begin { events.append($0 is CancellationError ? "old-canceled" : "old-finished") }
+        let new = requests.begin { events.append($0 == nil ? "new-finished" : "new-error") }
+        requests.finish(old, error: nil)
+        try expect(events == ["old-canceled"], "superseded request must complete once as canceled")
+        try expect(!requests.isCurrent(old) && requests.isCurrent(new), "only the latest unfinished request may publish")
+        requests.finish(new, error: nil)
+        requests.finish(new, error: NSError(domain: "fixture", code: 1))
+        try expect(events == ["old-canceled", "new-finished"], "late or duplicate navigation callbacks must have no effect")
+        try expect(!requests.isCurrent(new), "finished preparation must not publish again")
+    }
+}
+
+runner.test("Quick Look completion reentry preserves the newest request") {
+    try MainActor.assumeIsolated {
+        let requests = QuickLookPreviewRequest()
+        var events: [String] = []
+        var inner = 0
+        _ = requests.begin { _ in
+            events.append("first-canceled")
+            inner = requests.begin { _ in events.append("inner-finished") }
+        }
+        let outer = requests.begin { error in
+            events.append(error is CancellationError ? "outer-canceled" : "outer-finished")
+        }
+        try expect(events == ["first-canceled", "outer-canceled"], "reentered preparation must supersede the outer begin")
+        try expect(!requests.isCurrent(outer) && requests.isCurrent(inner), "reentry must not overwrite the newer completion")
+        requests.finish(inner, error: nil)
+        try expect(events == ["first-canceled", "outer-canceled", "inner-finished"], "newest completion must remain callable exactly once")
+    }
+}
+
+runner.test("Quick Look cancellation during rendering skips publication and leaves no temporary file") {
+    let input = try quickLookInput()
+    defer { try? FileManager.default.removeItem(at: input.directory) }
+    try MainActor.assumeIsolated {
+        let started = LockedBox(false)
+        let release = DispatchSemaphore(value: 0)
+        let canceled = LockedBox(false)
+        let worker = QuickLookDocumentRenderer { _ in
+            started.value = true
+            _ = release.wait(timeout: .now() + 5)
+            return "<p>finished work</p>"
+        }
+        let finished = drainMainActor {
+            let job = Task { try await worker.prepare(fileURL: input.file, css: "", temporaryDirectory: input.directory) }
+            let deadline = Date().addingTimeInterval(3)
+            while !started.value && Date() < deadline { try? await Task.sleep(nanoseconds: 10_000_000) }
+            job.cancel()
+            release.signal()
+            do { _ = try await job.value }
+            catch is CancellationError { canceled.value = true }
+            catch { }
+        }
+        try expect(finished && started.value && canceled.value, "in-flight render cancellation must be observed after cmark returns")
+        let files = try FileManager.default.contentsOfDirectory(atPath: input.directory.path)
+        try expect(files == ["input.md"], "canceled render must not leave a prepared HTML file")
+    }
+}
+
 print("")
 runner.summary()
 exit(runner.failed > 0 ? 1 : 0)

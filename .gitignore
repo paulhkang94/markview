@@ -26,6 +26,8 @@ Package.resolved
 # Development tooling (local only — not for distribution)
 .claude/
 CLAUDE.md
+AGENTS.md
+AGENTS.override.md
 hooks/
 scripts/cl-*.sh
 scripts/claude-*.sh
