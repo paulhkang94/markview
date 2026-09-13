@@ -48,16 +48,6 @@ docs/MARKET-ANALYSIS.md
 # Personal/private docs
 docs/personal/
 
-# Research docs — safelist model: ignore everything, whitelist approved technical docs.
-# Do NOT add strategy, adoption, competitive, financial, or business docs here.
-# Approved docs must be explicitly force-tracked; any other research doc is private by default.
-docs/research/*
-!docs/research/e2e-perf-testing-approaches.md
-!docs/research/editor-bug-analysis.md
-!docs/research/markview-hang-triage-2026-08-12.md
-!docs/research/ql-webview-sandbox-analysis.md
-!docs/research/quicklook-extension-spm.md
-
 # Smithery build artifacts and debug artifacts
 npm/.smithery/
 .smithery/
@@ -88,3 +78,19 @@ __pycache__/
 Tests/playwright/fixtures/.generated-at
 # Commit fixtures (*.html) to git so CI runs without Swift build
 # Regenerate with: bash scripts/gen-playwright-fixtures.sh
+# BEGIN GENERATED PUBLIC DOCS
+# Generated from .public-docs.json; edit the manifest, then use --write-ignore.
+CLAUDE.md
+AGENTS.md
+AGENTS.override.md
+SESSION-RESUME.md
+.claude/
+.codex/
+docs/personal/
+docs/research/*
+!docs/research/e2e-perf-testing-approaches.md
+!docs/research/editor-bug-analysis.md
+!docs/research/markview-hang-triage-2026-08-12.md
+!docs/research/ql-webview-sandbox-analysis.md
+!docs/research/quicklook-extension-spm.md
+# END GENERATED PUBLIC DOCS
