@@ -19,16 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - name: Ensure no private config files are committed
-        run: |
-          # CLAUDE.md is intentional in this repo (project AI dev guide — not private LOOP infra).
-          # Block .claude/ directory contents and scripts/claude-* only.
-          blocked=$(git ls-tree -r --name-only HEAD | grep -E '^\.(claude)/|^hooks/|^scripts/claude-' || true)
-          if [ -n "$blocked" ]; then
-            echo "::error::Private configuration files detected in repo:"
-            echo "$blocked"
-            exit 1
-          fi
+        run: python3 scripts/public_repo_guard.py --docs-only --ref HEAD
 
   check-version-sync:
     runs-on: ubuntu-latest
