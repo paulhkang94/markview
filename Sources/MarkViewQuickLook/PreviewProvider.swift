@@ -37,23 +37,8 @@ class PreviewViewController: NSViewController, @preconcurrency QLPreviewingContr
         body { max-width: 100% !important; padding: 24px 48px !important; }
     """
 
-    /// Dark mode overrides — matches the template's @media (prefers-color-scheme: dark) block.
-    /// Duplicated here because WKWebView's WebContent process in the extension sandbox
-    /// does not receive the host system's appearance, so media queries don't fire.
-    static let darkModeCSS = """
-        body { color: #e6edf3 !important; background: #0d1117 !important; }
-        a { color: #58a6ff !important; }
-        code:not([class*="language-"]) { background: #343942 !important; color: #e6edf3 !important; }
-        pre { background: #161b22 !important; color: #e6edf3 !important; }
-        th, td { border-color: #3d444d !important; color: #e6edf3 !important; }
-        tr { background-color: #0d1117 !important; border-top-color: #3d444db3 !important; }
-        tr:nth-child(2n) { background-color: #151b23 !important; }
-        blockquote { border-left-color: #3d444d !important; color: #8b949e !important; }
-        hr { border-top-color: #3d444d !important; }
-        h1, h2, h3, h4, h5 { color: #e6edf3 !important; }
-        h1, h2 { border-bottom-color: #3d444d !important; }
-        h6 { color: #8b949e !important; }
-    """
+    /// Shared overrides force the host appearance in the extension's WebContent process.
+    static let darkModeCSS = DarkModeCSS.quickLook
 
     /// Light mode — the template defaults are light, so only layout overrides needed.
     static let lightModeCSS = ""
