@@ -76,7 +76,7 @@ def run_filtered(cmd: list[str], cwd: Path = PROJECT_DIR) -> tuple[int, str]:
     """Run command, return filtered output (strips Swift build noise)."""
     rc, combined = run_captured(cmd, cwd)
     noise = ("[", "Building ", "Build of ", "warning:")
-    lines = [l for l in combined.splitlines() if l.strip() and not l.startswith(noise)]
+    lines = [line for line in combined.splitlines() if line.strip() and not line.startswith(noise)]
     return rc, "\n".join(lines)
 
 
@@ -210,7 +210,7 @@ def tier_bundle() -> bool:
         print("  ⚠ Strict signature verification failed (expected for ad-hoc)")
 
     _, sign_info = run_captured(["codesign", "-d", "--verbose=2", str(APP_BUNDLE)])
-    authority = next((l for l in sign_info.splitlines() if "Authority=" in l), "")
+    authority = next((line for line in sign_info.splitlines() if "Authority=" in line), "")
     if "Signature=adhoc" in sign_info:
         print("  Signing: ad-hoc")
     elif "Developer ID" in authority:
@@ -257,7 +257,7 @@ def tier_pdf_tests() -> bool:
     rc, out = run_filtered(["swift", "run", "MarkViewPDFTester"])
     print(out)
     last_lines = out.strip().splitlines()[-2:] if out.strip() else []
-    if rc == 0 and any("0 failed" in l for l in last_lines):
+    if rc == 0 and any("0 failed" in line for line in last_lines):
         return True
     fail("PDF tests failed")
     return False
@@ -299,13 +299,14 @@ def tier_script_tests() -> bool:
         ("scripts/test-ci-status.py", "ci_status"),
         ("scripts/test-sentry-check.py", "sentry_check"),
         ("scripts/test-bundle.py", "bundle"),
+        ("scripts/test-window-frame.py", "native window-frame persistence"),
         ("scripts/test-dev-cleanup.py", "dev_cleanup"),
     ]
     all_passed = True
     for rel_path, label in suites:
         rc, out = run_captured(["python3", str(PROJECT_DIR / rel_path)])
         tail = out.strip().splitlines()[-3:]
-        if rc == 0 and any(l.strip().startswith("OK") for l in tail):
+        if rc == 0 and any(line.strip().startswith("OK") for line in tail):
             ok(f"{label} tests passed")
         else:
             print("\n".join(tail))
