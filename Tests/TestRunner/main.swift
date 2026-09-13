@@ -2133,21 +2133,7 @@ runner.test("inline template: all text elements have explicit dark color") {
 
 
 runner.test("WebPreviewView darkModeCSS: all text elements have explicit color") {
-    // Read WebPreviewView.swift and extract the darkModeCSS constant
-    let cwd = FileManager.default.currentDirectoryPath
-    let wpvPath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkView/WebPreviewView.swift")
-    let source = try String(contentsOf: wpvPath, encoding: .utf8)
-
-    // Extract the darkModeCSS array content from source
-    guard let darkStart = source.range(of: "private static let darkModeCSS = ["),
-          let darkEnd = source.range(of: "].joined(separator:", range: darkStart.upperBound..<source.endIndex) else {
-        throw TestError.assertionFailed("Could not find darkModeCSS constant in WebPreviewView.swift")
-    }
-    let darkCSSSource = String(source[darkStart.upperBound..<darkEnd.lowerBound])
-    // Unescape Swift string escapes to get the actual CSS
-    let darkCSS = darkCSSSource
-        .replacingOccurrences(of: "\\\"", with: "\"")
-        .replacingOccurrences(of: "\\n", with: "\n")
+    let darkCSS = DarkModeCSS.app
 
     for (selector, description) in requiredExplicitColorSelectors {
         // Find the CSS rule string for this selector
@@ -2163,40 +2149,60 @@ runner.test("WebPreviewView darkModeCSS: all text elements have explicit color")
     }
 }
 
-runner.test("dark mode CSS is consistent across all 3 locations") {
-    // template.html uses CSS custom properties (--color-*) for dark mode.
-    // The wrapInTemplate fallback uses hardcoded hex values.
-    // Verify each path is internally correct rather than cross-comparing hex values,
-    // since CSS vars and hardcoded values can't be compared directly.
-    let cwd = FileManager.default.currentDirectoryPath
+runner.test("shared dark CSS preserves all three legacy outputs") {
+    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent("Tests/TestRunner/Fixtures/dark-mode-css.json")
+    let golden = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: url))
+    for (name, css) in [("app", DarkModeCSS.app), ("quickLook", DarkModeCSS.quickLook),
+                        ("inlineTemplate", DarkModeCSS.inlineTemplate)] {
+        try expect(golden[name] == css, "Dark CSS changed for \(name)")
+    }
+    let inline = MarkdownRenderer.wrapInTemplate("<p>test</p>")
+    try expect(inline.contains("@media (prefers-color-scheme: dark) { \(DarkModeCSS.inlineTemplate) }"),
+               "Fallback document must include the shared rules")
+}
 
-    // 1. template.html: must define critical CSS vars in the dark media block
-    let templatePath = URL(fileURLWithPath: cwd).appendingPathComponent("Sources/MarkViewCore/Resources/template.html")
-    let templateHTML = try String(contentsOf: templatePath, encoding: .utf8)
-    let requiredDarkVars = ["--color-fg-default", "--color-canvas-default", "--color-border-default", "--color-accent-fg"]
-    for varName in requiredDarkVars {
-        guard templateHTML.contains(varName) else {
-            throw TestError.assertionFailed("template.html missing CSS variable: \(varName)")
+runner.test("shared dark CSS palette agrees with the bundled template") {
+    let path = FileManager.default.currentDirectoryPath + "/Sources/MarkViewCore/Resources/template.html"
+    let template = try String(contentsOfFile: path, encoding: .utf8)
+    let vars = extractDarkModeRules(from: template)[":root"] ?? [:]
+    let rules = parseCSSRules(DarkModeCSS.app)
+    for (variable, selector, property) in [
+        ("--color-canvas-default", "body", "background"),
+        ("--color-canvas-subtle", "tr:nth-child(2n)", "background-color"),
+        ("--color-canvas-inset", "pre", "background"),
+        ("--color-code-bg", "pre", "background"),
+        ("--color-fg-default", "body", "color"),
+        ("--color-fg-muted", "blockquote", "color"),
+        ("--color-border-default", "th, td", "border-color"),
+        ("--color-accent-fg", "a", "color"),
+    ] {
+        let value = rules.first { $0.selector == selector }?.properties[property]?
+            .replacingOccurrences(of: " !important", with: "")
+        try expect(value != nil && value == vars[variable], "Palette drift: \(variable)")
+    }
+}
+
+runner.test("Quick Look forces each dark declaration exactly once") {
+    let rules = parseCSSRules(DarkModeCSS.quickLook)
+    try expect(rules.count == 12, "All dark rules must be present")
+    for rule in rules {
+        for value in rule.properties.values {
+            try expect(value.hasSuffix(" !important"), "Quick Look declaration must override template")
+            try expect(!value.contains("!important !important"), "Do not duplicate importance")
         }
     }
-    guard templateHTML.contains("prefers-color-scheme: dark") else {
-        throw TestError.assertionFailed("template.html missing @media prefers-color-scheme: dark block")
-    }
+}
 
-    // 2. Inline template (wrapInTemplate fallback): must have hardcoded dark mode rules for critical selectors
-    let inlineHTML = MarkdownRenderer.wrapInTemplate("<p>test</p>")
-    let inlineDark = extractDarkModeRules(from: inlineHTML)
-    let criticalSelectors = ["body", "code:not([class*=\"language-\"])", "th, td", "pre"]
-    var missing: [String] = []
-    for sel in criticalSelectors {
-        if inlineDark[sel]?["color"] == nil && inlineDark[sel]?["background"] == nil && inlineDark[sel]?["background-color"] == nil {
-            missing.append(sel)
-        }
-    }
-    if !missing.isEmpty {
-        throw TestError.assertionFailed(
-            "Inline template missing dark mode rules for: " + missing.joined(separator: ", ")
-        )
+runner.test("app and Quick Look use shared CSS and pipeline injection") {
+    let root = FileManager.default.currentDirectoryPath
+    let app = try String(contentsOfFile: root + "/Sources/MarkView/WebPreviewView.swift", encoding: .utf8)
+    let quickLook = try String(contentsOfFile: root + "/Sources/MarkViewQuickLook/PreviewProvider.swift", encoding: .utf8)
+    try expect(app.contains("darkModeCSS = DarkModeCSS.app"), "App must use shared CSS")
+    try expect(quickLook.contains("darkModeCSS = DarkModeCSS.quickLook"), "Quick Look must use shared CSS")
+    try expect(!app.contains("#0d1117") && !quickLook.contains("#0d1117"), "Override colors belong to the shared owner")
+    for method in ["injectPrism", "injectMermaid", "injectKaTeX", "insertBeforeBodyClose"] {
+        try expect(!app.contains("func " + method), "Remove obsolete app injector: \(method)")
     }
 }
 
@@ -3455,8 +3461,9 @@ runner.test("script injection: mermaid.min.js contains </body> literals (DOMPuri
         try expect(mermaid.contains("</body>"), "mermaid.min.js must contain </body> literal — if missing, DOMPurify was removed from bundle and guard is still harmless")
         // Confirm the fix is in place: all inject calls use insertBeforeBodyClose
         let webPreview = try String(contentsOfFile: webPreviewPath, encoding: .utf8)
-        try expect(webPreview.contains("insertBeforeBodyClose"), "WebPreviewView must use insertBeforeBodyClose (backwards-search replace) for all script injections")
-        let forwardReplaceCount = webPreview.components(separatedBy: "replacingOccurrences(of: \"</body>\"").count - 1
+        let pipeline = try String(contentsOfFile: FileManager.default.currentDirectoryPath + "/Sources/MarkViewCore/HTMLPipeline.swift", encoding: .utf8)
+        try expect(pipeline.contains("insertBeforeBodyClose"), "HTMLPipeline owns backwards-search insertion")
+        let forwardReplaceCount = (webPreview + pipeline).components(separatedBy: "replacingOccurrences(of: \"</body>\"").count - 1
         try expect(forwardReplaceCount == 0, "No inject function should use forward replacingOccurrences(of: \"</body>\") — use insertBeforeBodyClose instead (found \(forwardReplaceCount) violations)")
     }
 }
