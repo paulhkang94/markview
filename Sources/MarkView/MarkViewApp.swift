@@ -105,6 +105,7 @@ struct MarkViewApp: App {
         Window("MarkView", id: "main") {
             ContentView(tabManager: tabManager, errorPresenter: errorPresenter)
                 .frame(minWidth: 600, minHeight: 400)
+                .background(WindowFrameAutosave().allowsHitTesting(false))
                 .onAppear {
                     // ⌃Tab / ⌃⇧Tab tab cycling (MV-009) — pre-dispatch NSEvent monitor,
                     // NOT a menu key equivalent. See installTabCycleMonitor for NV-2.
@@ -144,19 +145,6 @@ struct MarkViewApp: App {
                     if ProcessInfo.processInfo.environment["MARKVIEW_LAUNCH_CANARY"] != nil {
                         LaunchCanary.armIfNeeded(tabManager: tabManager)
                     }
-
-                    // Defer window sizing to next run loop — window may not exist yet during onAppear.
-                    // Always apply to override macOS state restoration which saves the previous frame.
-                    DispatchQueue.main.async {
-                        guard let window = NSApplication.shared.windows.first(where: { $0.isVisible || $0.isKeyWindow }) ?? NSApplication.shared.windows.first else { return }
-                        let size = defaultWindowSize
-                        let screen = window.screen ?? NSScreen.main
-                        if let screenFrame = screen?.visibleFrame {
-                            let x = screenFrame.origin.x + (screenFrame.width - size.width) / 2
-                            let y = screenFrame.origin.y + (screenFrame.height - size.height) / 2
-                            window.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
-                        }
-                    }
                 }
                 .onOpenURL { url in
                     if url.isFileURL {
@@ -170,7 +158,7 @@ struct MarkViewApp: App {
                 }
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1200, height: 800)
+        .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button(Strings.openFile) { openFile() }
